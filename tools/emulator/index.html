@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Badge threejs.paris — émulateur</title>
+<title>threejs.paris Badge — Emulator</title>
 <style>
   * { margin: 0; box-sizing: border-box; }
   body { background: #0c140e; color: #e8ecdf; min-height: 100vh;
@@ -32,19 +32,19 @@
 </style>
 </head>
 <body>
-<h1>BADGE — ÉMULATEUR</h1>
+<h1>BADGE — EMULATOR</h1>
 <div id="badge">
   <div id="wrap"><canvas id="scr" width="360" height="360"></canvas></div>
   <div id="btns">
-    <button class="btn" id="bPrev" title="Haut / précédent">&#9650;</button>
-    <button class="btn center" id="bCtr" title="Centre">&#9679;</button>
-    <button class="btn" id="bNext" title="Bas / suivant">&#9660;</button>
+    <button class="btn" id="bPrev" title="Up / previous">&#9650;</button>
+    <button class="btn center" id="bCtr" title="Center">&#9679;</button>
+    <button class="btn" id="bNext" title="Down / next">&#9660;</button>
   </div>
 </div>
 <p id="help">
-  <kbd>&#8592;</kbd>/<kbd>&#8593;</kbd> précédent &nbsp;·&nbsp; <kbd>&#8594;</kbd>/<kbd>&#8595;</kbd> suivant &nbsp;·&nbsp; <kbd>espace</kbd> centre (court = menu/action, <b>maintenu 2 s = extinction</b>)<br>
-  Dans les jeux d'action : centre = agir · quitter = <kbd>&#8592;</kbd>+<kbd>&#8594;</kbd> maintenus 0,8 s · game over : suivant = rejouer<br>
-  Anims &amp; jeux = les vraies sources du firmware (anims_extra.h, games.h, tama.h) compilées en WebAssembly.
+  <kbd>&#8592;</kbd>/<kbd>&#8593;</kbd> previous &nbsp;·&nbsp; <kbd>&#8594;</kbd>/<kbd>&#8595;</kbd> next &nbsp;·&nbsp; <kbd>space</kbd> center button (tap = menu/select, <b>hold 2 s = power off</b>)<br>
+  In action games: center = act · quit = hold <kbd>&#8592;</kbd>+<kbd>&#8594;</kbd> for 0.8 s · game over: next = play again<br>
+  Animations &amp; games are the real firmware sources (anims_extra.h, games.h, tama.h) compiled to WebAssembly.
 </p>
 <script src="emu.js"></script>
 <script>
