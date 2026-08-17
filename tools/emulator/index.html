@@ -25,7 +25,7 @@
   #frame {
     position: fixed; inset: 34px;
     border: 1.5px solid var(--frame); border-radius: 44px;
-    pointer-events: none; z-index: 3;
+    pointer-events: none; z-index: 0;
   }
 
   /* ---- bloc texte (bas-gauche, proportions de la maquette) ---- */
@@ -45,17 +45,17 @@
   #badge3d {
     position: fixed; top: 0; left: 50%;
     transform: translateX(-50%);
-    height: 88vh; aspect-ratio: 732 / 760;
+    height: 88vh; aspect-ratio: 1144 / 1098;
     max-width: 94vw; z-index: 1;
   }
   #badge3d > img {
     width: 100%; height: 100%; display: block;
     user-select: none; pointer-events: none;
   }
-  /* ecran : cercle interieur mesure sur l'asset (centre 371.5, 402.5 ; Ø 218) */
+  /* ecran : mesure sur grille (centre 572.5, 575 ; Ø 314) */
   canvas {
     position: absolute;
-    left: 35.86%; top: 38.62%; width: 29.78%;
+    left: 36.32%; top: 38.07%; width: 27.45%;
     aspect-ratio: 1; border-radius: 50%;
     background: #000;
     image-rendering: pixelated;
@@ -68,13 +68,13 @@
   }
   .hit.on, .hit:active { box-shadow: 0 0 0 3px rgba(33,28,59,.35) inset; }
   /* ∨ (gauche) = next · smiley = center · ∧ (droite) = previous */
-  #bNext { left: 33.74%; top: 69.93%; width: 9.29%; aspect-ratio: 1; }
-  #bCtr  { left: 45.90%; top: 72.89%; width: 9.02%; aspect-ratio: 1; }
-  #bPrev { left: 57.92%; top: 69.87%; width: 9.29%; aspect-ratio: 1; }
+  #bNext { left: 34.88%; top: 70.04%; width: 8.04%; aspect-ratio: 1; }
+  #bCtr  { left: 45.72%; top: 72.95%; width: 7.69%; aspect-ratio: 1; }
+  #bPrev { left: 57.17%; top: 70.04%; width: 8.04%; aspect-ratio: 1; }
 
   @media (max-width: 900px) {
     #badge3d { position: relative; left: auto; transform: none;
-               margin: 0 auto; height: auto; width: min(94vw, 70vh); }
+               margin: 0 auto; height: auto; width: min(94vw, 72vh); }
     #info { position: static; padding: 20px 6vw 40px; max-width: none; }
   }
 </style>
