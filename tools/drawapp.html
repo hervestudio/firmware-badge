@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>badge draw</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { background:#0c140e; color:#eee; font-family:-apple-system,system-ui,sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center;
+         gap:14px; padding:16px; overscroll-behavior:none; }
+  h1 { font-size:15px; letter-spacing:3px; color:#fbd975; font-weight:600; margin-top:2px; }
+  #st { display:inline-block; width:9px; height:9px; border-radius:50%; background:#f0504d;
+        margin-right:7px; vertical-align:1px; }
+  #st.ok { background:#7cf59a; }
+  #wrap { position:relative; width:min(88vw,60vh); }
+  canvas { width:100%; display:block; border-radius:50%; background:#000;
+           border:2px solid #2a3a2e; touch-action:none; }
+  .row { display:flex; gap:9px; flex-wrap:wrap; justify-content:center; max-width:420px; }
+  .sw { width:34px; height:34px; border-radius:50%; border:2px solid #333; }
+  .sw.sel { border-color:#fff; transform:scale(1.15); }
+  .btn { background:#1b241d; color:#eee; border:1px solid #3a4a3e; border-radius:9px;
+         padding:8px 14px; font-size:14px; }
+  .btn.sel { background:#fbd975; color:#111; border-color:#fbd975; }
+  #clear { border-color:#f0504d; color:#f0504d; }
+</style>
+</head>
+<body>
+<h1><span id="st"></span>BADGE DRAW</h1>
+<div id="wrap"><canvas id="c" width="360" height="360"></canvas></div>
+<div class="row" id="cols"></div>
+<div class="row">
+  <button class="btn sel" data-b="0">PLAIN</button>
+  <button class="btn" data-b="1">&#10024; GLITTER</button>
+  <button class="btn" data-b="2">&#127752; IRIS</button>
+  <button class="btn" data-b="3">&#128161; NEON</button>
+  <button class="btn" data-b="4">&#128293; FIRE</button>
+</div>
+<div class="row">
+  <button class="btn" data-r="3">S</button>
+  <button class="btn sel" data-r="7">M</button>
+  <button class="btn" data-r="14">L</button>
+  <button class="btn" id="clear">CLEAR</button>
+</div>
+<script>
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const COLORS = ['#ffffff','#fca3f7','#fbd975','#46d7f5','#7cf59a',
+                '#ff8c42','#f0504d','#6a7bff','#000000'];
+let color = COLORS[1], radius = 7, brush = 0, ws = null;
+
+const cols = document.getElementById('cols');
+COLORS.forEach((c, i) => {
+  const b = document.createElement('button');
+  b.className = 'sw' + (i === 1 ? ' sel' : '');
+  b.style.background = c;
+  if (c === '#000000') { b.style.borderStyle = 'dashed'; b.title = 'eraser'; }
+  b.onclick = () => { color = c;
+    document.querySelectorAll('.sw').forEach(x => x.classList.remove('sel'));
+    b.classList.add('sel'); };
+  cols.appendChild(b);
+});
+document.querySelectorAll('[data-r]').forEach(b => {
+  b.onclick = () => { radius = +b.dataset.r;
+    document.querySelectorAll('[data-r]').forEach(x => x.classList.remove('sel'));
+    b.classList.add('sel'); };
+});
+document.querySelectorAll('[data-b]').forEach(b => {
+  b.onclick = () => { brush = +b.dataset.b;
+    document.querySelectorAll('[data-b]').forEach(x => x.classList.remove('sel'));
+    b.classList.add('sel'); };
+});
+
+function c565(hex) {
+  const n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+}
+function connect() {
+  ws = new WebSocket('ws://' + location.hostname + ':81/');
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => {
+    document.getElementById('st').classList.add('ok');
+    // synchronise l'horloge du badge (heure LOCALE en secondes epoch)
+    ws.send('T' + Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / 1000));
+  };
+  ws.onclose = () => { document.getElementById('st').classList.remove('ok');
+                       setTimeout(connect, 1500); };
+  ws.onerror = () => ws.close();
+}
+connect();
+
+function sendSeg(x0, y0, x1, y1) {
+  if (!ws || ws.readyState !== 1) return;
+  const b = new ArrayBuffer(12), v = new DataView(b);
+  v.setInt16(0, x0, true); v.setInt16(2, y0, true);
+  v.setInt16(4, x1, true); v.setInt16(6, y1, true);
+  v.setUint16(8, c565(color), true); v.setUint8(10, radius); v.setUint8(11, brush);
+  ws.send(b);
+}
+// masque rond local identique a l'ecran du badge
+ctx.beginPath(); ctx.arc(180, 180, 180, 0, 7); ctx.clip();
+function localSeg(x0, y0, x1, y1) {
+  // apercu local approche : les vrais effets (scintillement...) sont sur le badge
+  let c = color;
+  if (brush === 2) c = 'hsl(' + ((x0 + y0) * 1.3 % 360) + ',90%,60%)';
+  if (brush === 4) c = '#ff8c42';
+  ctx.strokeStyle = c; ctx.lineWidth = radius * 2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  if (brush === 1) {
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < 3; i++) {
+      const t = Math.random(), a = Math.random() * 6.3, d = Math.random() * radius;
+      ctx.fillRect(x0 + (x1 - x0) * t + Math.cos(a) * d,
+                   y0 + (y1 - y0) * t + Math.sin(a) * d, 2, 2);
+    }
+  }
+}
+
+let last = null;
+function pos(e) {
+  const r = cv.getBoundingClientRect();
+  return [Math.round((e.clientX - r.left) * 360 / r.width),
+          Math.round((e.clientY - r.top) * 360 / r.height)];
+}
+cv.onpointerdown = e => { cv.setPointerCapture(e.pointerId);
+  last = pos(e); sendSeg(...last, ...last); localSeg(...last, ...last); };
+cv.onpointermove = e => {
+  if (!last) return;
+  const p = pos(e);
+  if (Math.abs(p[0] - last[0]) + Math.abs(p[1] - last[1]) < 2) return;
+  sendSeg(...last, ...p); localSeg(...last, ...p); last = p;
+};
+cv.onpointerup = cv.onpointercancel = () => last = null;
+
+document.getElementById('clear').onclick = () => {
+  if (ws && ws.readyState === 1) ws.send(new Uint8Array([1]));
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 360, 360);
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""Convertit un avatar (carre) en header C RGB565 360x360 pour le badge.
+
+Usage: photo2header.py input.png output.h [NAME]
+Genere aussi <output>.preview.png : reconstruction exacte des donnees 565
+pour valider le rendu avant compilation.
+"""
+import sys
+import numpy as np
+from PIL import Image
+
+W = H = 360
+
+# Matrice de Bayer 8x8 (dithering ordonne) normalisee 0..1
+_B2 = np.array([[0, 2], [3, 1]])
+def _bayer(n):
+    if n == 2:
+        return _B2
+    b = _bayer(n // 2)
+    return np.block([[4 * b, 4 * b + 2], [4 * b + 3, 4 * b + 1]])
+BAYER8 = (_bayer(8) + 0.5) / 64.0
+
+def main():
+    src, dst = sys.argv[1], sys.argv[2]
+    name = sys.argv[3] if len(sys.argv) > 3 else "SPEAKER_PHOTO"
+    img = Image.open(src).convert("RGB")
+    # recadrage carre centre puis 360x360
+    w, h = img.size
+    s = min(w, h)
+    img = img.crop(((w - s) // 2, (h - s) // 2, (w + s) // 2, (h + s) // 2))
+    img = img.resize((W, H), Image.LANCZOS)
+    a = np.asarray(img).astype(np.float32)
+
+    # dithering ordonne : on ajoute [-0.5..0.5] * pas de quantification
+    tile = np.tile(BAYER8, (W // 8, H // 8))[:, :, None] - 0.5
+    steps = np.array([8.0, 4.0, 8.0])  # pas 5/6/5 bits
+    a = np.clip(a + tile * steps, 0, 255)
+
+    r = (a[:, :, 0].astype(np.uint16) >> 3)
+    g = (a[:, :, 1].astype(np.uint16) >> 2)
+    b = (a[:, :, 2].astype(np.uint16) >> 3)
+    px = (r << 11) | (g << 5) | b
+
+    # preview : reconstruit le rendu reel 565
+    pr = ((px >> 11) & 31) * 255 // 31
+    pg = ((px >> 5) & 63) * 255 // 63
+    pb = (px & 31) * 255 // 31
+    prev = np.stack([pr, pg, pb], axis=-1).astype(np.uint8)
+    # masque rond de l'ecran pour la preview uniquement
+    yy, xx = np.mgrid[0:H, 0:W]
+    mask = (xx - W / 2 + 0.5) ** 2 + (yy - H / 2 + 0.5) ** 2 <= (W / 2) ** 2
+    prev[~mask] = 0
+    Image.fromarray(prev).save(dst + ".preview.png")
+
+    flat = px.flatten()
+    with open(dst, "w") as f:
+        f.write("// Genere par photo2header.py — ne pas editer a la main.\n")
+        f.write("// Avatar speaker %dx%d RGB565 (dither Bayer 8x8).\n" % (W, H))
+        f.write("#pragma once\n#include <stdint.h>\n\n")
+        f.write("static const uint16_t %s[%d] = {\n" % (name, W * H))
+        for i in range(0, len(flat), 16):
+            f.write("  " + ",".join("0x%04x" % v for v in flat[i:i + 16]) + ",\n")
+        f.write("};\n")
+    print("wrote %s (%d px) + preview" % (dst, len(flat)))
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,8 @@
+# Build PlatformIO
+.pio/
+
+# Emulateur WASM genere (rebuild : tools/emulator/build.sh)
+tools/emulator/emu.js
+
+# macOS
+.DS_Store

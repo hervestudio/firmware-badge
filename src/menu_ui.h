@@ -1,0 +1,621 @@
+// UI menu du badge — PARTAGEE entre le firmware (main.cpp) et l'emulateur
+// (tools/emulator/emu.cpp) : une seule source pour les deux rendus.
+//
+// - Menu principal "bulles" : 4 categories (Play/Watch/Meet/More) en cercles
+//   pastel avec une petite physique (ressorts + collisions : les bulles se
+//   poussent quand la selection grossit).
+// - Sous-menus : liste par categorie avec defilement amorti + pilule de
+//   selection ajustee au label (position/largeur/couleur animees).
+//
+// Depend de : canvas, rgb565, RGB565_BLACK/WHITE, W/H/CX/CY, millis(),
+// mfPrint/mfTextW (Dingos ExtraBold), mdPrint (Dingos Medium), expf/sqrtf,
+// constrain, snprintf.
+#pragma once
+
+// ------------------------------------------------------------- categories
+enum : uint8_t { UIC_PLAY = 0, UIC_WATCH, UIC_MEET, UIC_MORE };
+#define UI_NCATS 4
+static const char *UI_CAT_NAMES[UI_NCATS] = {"Play", "Watch", "Meet", "More"};
+static const uint16_t UI_PASTELS[UI_NCATS] = {
+    rgb565(0xfb, 0xd9, 0x75), rgb565(0xfc, 0xa3, 0xf7),
+    rgb565(0x9d, 0x97, 0xed), rgb565(0x7e, 0xdb, 0xb0)};
+
+static const char *UI_PLAY_IT[] = {"Snake", "Pong", "Sphere Run", "Roundtris",
+                                   "Sphere Pet"};
+static const char *UI_WATCH_IT[] = {"Conf Buddy", "Snake", "Disco", "Globe",
+                                    "Three Conf", "DVD", "Points"};
+static const char *UI_MEET_IT[] = {"Speaker", "Speaker 2", "Speaker 3"};
+
+// nombre d'entrees par categorie, "Back" compris (toujours en dernier)
+static int uiListCount(int cat)
+{
+  switch (cat)
+  {
+  case UIC_PLAY: return 6;
+  case UIC_WATCH: return 8;
+  case UIC_MEET: return 5; // Schedule + 3 photos + Back
+  default: return 7; // More : Draw, Auto cycle, OTA, Rotate, Settings, info tension, Back
+  }
+}
+
+static void uiListLabel(int cat, int i, bool autoCyc, char *buf, size_t n)
+{
+  if (i == uiListCount(cat) - 1)
+  {
+    snprintf(buf, n, "Back");
+    return;
+  }
+  switch (cat)
+  {
+  case UIC_PLAY: snprintf(buf, n, "%s", UI_PLAY_IT[i]); break;
+  case UIC_WATCH: snprintf(buf, n, "%s", UI_WATCH_IT[i]); break;
+  case UIC_MEET:
+    if (i == 0)
+      snprintf(buf, n, "Schedule");
+    else
+      snprintf(buf, n, "%s", UI_MEET_IT[i - 1]);
+    break;
+  default:
+    if (i == 0)
+      snprintf(buf, n, "Draw (WiFi)");
+    else if (i == 1)
+      snprintf(buf, n, "Auto cycle: %s", autoCyc ? "ON" : "OFF");
+    else if (i == 2)
+      snprintf(buf, n, "OTA flash mode");
+    else if (i == 3)
+      snprintf(buf, n, "Rotate screen");
+    else if (i == 4)
+      snprintf(buf, n, "Settings");
+    else if (batMvRaw > 0) // tension ADC brute (diagnostic jauge)
+      snprintf(buf, n, "Batt: %lu.%02luV", (unsigned long)(batMvRaw / 1000),
+               (unsigned long)(batMvRaw % 1000 / 10));
+    else
+      snprintf(buf, n, "Batt: --");
+  }
+}
+
+// resolution d'une selection -> action a executer par l'appelant
+enum UiAction : uint8_t { UIA_NONE, UIA_ANIM, UIA_GAME, UIA_DRAW, UIA_AUTO,
+                          UIA_OTA, UIA_SCHED, UIA_ROT, UIA_SETTINGS, UIA_BACK };
+static UiAction uiResolve(int cat, int sel, int *arg)
+{
+  if (sel == uiListCount(cat) - 1)
+    return UIA_BACK;
+  switch (cat)
+  {
+  case UIC_PLAY: *arg = sel; return UIA_GAME;
+  case UIC_WATCH: *arg = sel; return UIA_ANIM;    // slots ACTIVE 0..6
+  case UIC_MEET:
+    if (sel == 0)
+      return UIA_SCHED;
+    *arg = 7 + (sel - 1); // slots photos 7..9
+    return UIA_ANIM;
+  default:
+    if (sel == 0)
+      return UIA_DRAW;
+    if (sel == 1)
+      return UIA_AUTO;
+    if (sel == 2)
+      return UIA_OTA;
+    if (sel == 3)
+      return UIA_ROT;
+    if (sel == 4)
+      return UIA_SETTINGS; // protege par code (avatar / personne du badge)
+    return UIA_NONE; // ligne info tension : non cliquable
+  }
+}
+
+// ----------------------------------- rotation logicielle de l'ecran
+// Certains modules ont la dalle collee legerement de travers sur le PCB :
+// on compense en tournant l'image de quelques degres au moment du flush.
+static int uiScreenRot = 0; // degres, -15..+15, persiste en NVS par l'appelant
+
+// etale un 565 sur 32 bits (R|B en mot bas, G en mot haut) : permet le
+// melange pondere des 3 canaux en une seule multiplication
+static inline uint32_t uiSpread565(uint16_t c)
+{
+  return (c | ((uint32_t)c << 16)) & 0x07E0F81Fu;
+}
+
+static void uiRotateBlit(const uint16_t *src, uint16_t *dst, int deg)
+{
+  float a = deg * 3.14159265f / 180.0f;
+  int32_t ca = (int32_t)(cosf(a) * 65536.0f), sa = (int32_t)(sinf(a) * 65536.0f);
+  for (int y = 0; y < H; y++)
+  {
+    int32_t dy = y - CY;
+    int32_t u = ((int32_t)CX << 16) - CX * ca + dy * sa;
+    int32_t v = ((int32_t)CY << 16) + CX * sa + dy * ca;
+    uint16_t *drow = &dst[y * W];
+    for (int x = 0; x < W; x++, u += ca, v -= sa)
+    {
+      int ux = u >> 16, vy = v >> 16;
+      if (ux < 0 || ux >= W - 1 || vy < 0 || vy >= H - 1)
+      {
+        drow[x] = 0;
+        continue;
+      }
+      // "SHARP bilinear" : bilineaire a transition resserree (x2 autour du
+      // demi-pixel) — anti-crenelage sans le flou du bilineaire plein : les
+      // coeurs de pixels restent purs, seuls les bords melangent.
+      const uint16_t *s = &src[vy * W + ux];
+      int rfx = ((int)((u >> 11) & 31) - 16) * 2 + 16;
+      int rfy = ((int)((v >> 11) & 31) - 16) * 2 + 16;
+      uint32_t fx = rfx < 0 ? 0 : (rfx > 31 ? 31 : (uint32_t)rfx);
+      uint32_t fy = rfy < 0 ? 0 : (rfy > 31 ? 31 : (uint32_t)rfy);
+      uint32_t top = ((uiSpread565(s[0]) * (32 - fx) + uiSpread565(s[1]) * fx) >> 5) & 0x07E0F81Fu;
+      uint32_t bot = ((uiSpread565(s[W]) * (32 - fx) + uiSpread565(s[W + 1]) * fx) >> 5) & 0x07E0F81Fu;
+      uint32_t mix = ((top * (32 - fy) + bot * fy) >> 5) & 0x07E0F81Fu;
+      drow[x] = (uint16_t)((mix | (mix >> 16)) & 0xFFFF);
+    }
+  }
+}
+
+// Ecran de calibration : aligner la barre d'horizon jaune avec l'horizontale
+// physique du badge (gauche/droite = -1/+1 degre, centre = sauver et sortir)
+static void uiDrawRotate(int deg)
+{
+  canvas->fillScreen(RGB565_BLACK);
+  uint16_t grid = rgb565(60, 80, 66);
+  canvas->drawCircle(CX, CY, 150, grid);
+  canvas->drawCircle(CX, CY, 100, grid);
+  for (int y = 30; y < H - 30; y += 3)
+    canvas->drawPixel(CX, y, grid);
+  // barre d'HORIZON : elle doit etre parfaitement horizontale a l'oeil
+  canvas->fillRect(30, CY - 2, W - 60, 4, rgb565(0xfb, 0xd9, 0x75));
+  bbPrint(180 - bbTextW("SCREEN TILT") / 2, 74, "SCREEN TILT", RGB565_WHITE);
+  char t[8];
+  snprintf(t, sizeof(t), "%+d", deg);
+  mtPrint(180 - mtTextW(t) / 2, 210, t, RGB565_WHITE);
+  bbPrint(180 - bbTextW("DEG") / 2, 248, "DEG", rgb565(150, 160, 150));
+  mdPrint(180 - mdTextW("center: save") / 2, 296, "center: save",
+          rgb565(130, 130, 130));
+}
+
+// ------------------------------- Settings : code d'acces + choix d'avatar
+// Les Settings (avatar/personne du badge) sont proteges par un code a 5
+// chiffres : gauche/droite = chiffre -/+, centre = valider et passer au
+// suivant. Mauvais code = retour au menu.
+#define UI_PIN_LEN 5
+static const uint8_t UI_PIN_CODE[UI_PIN_LEN] = {0, 0, 0, 0, 0}; // provisoire (etait 39193)
+
+static void uiDrawPin(const uint8_t *digits, int pos, bool error)
+{
+  canvas->fillScreen(RGB565_BLACK);
+  uint16_t accent = rgb565(0xfb, 0xd9, 0x75);
+  bbPrint(180 - bbTextW("SETTINGS") / 2, 78, "SETTINGS", RGB565_WHITE);
+  mdPrint(180 - mdTextW("enter code") / 2, 112, "enter code",
+          rgb565(130, 140, 130));
+  const int bw = 42, bh = 56, gap = 9;
+  const int x0 = CX - (UI_PIN_LEN * bw + (UI_PIN_LEN - 1) * gap) / 2;
+  const int by = 150;
+  for (int i = 0; i < UI_PIN_LEN; i++)
+  {
+    int bx = x0 + i * (bw + gap);
+    uint16_t frame = (i == pos) ? accent : rgb565(70, 82, 72);
+    canvas->fillRoundRect(bx, by, bw, bh, 9, frame);
+    canvas->fillRoundRect(bx + 2, by + 2, bw - 4, bh - 4, 7, RGB565_BLACK);
+    if (i < pos || i == pos) // chiffres deja saisis + chiffre en cours
+    {
+      char d[2] = {(char)('0' + digits[i]), 0};
+      mtPrint(bx + bw / 2 - mtTextW(d) / 2, by + 13, d,
+              (i == pos) ? accent : RGB565_WHITE);
+    }
+  }
+  if (error)
+    mdPrint(180 - mdTextW("wrong code") / 2, 232, "wrong code",
+            rgb565(240, 80, 77));
+  mdPrint(180 - mdTextW("center: next") / 2, 276, "center: next",
+          rgb565(130, 130, 130));
+}
+
+// Cadre de l'ecran de choix d'avatar : la plateforme dessine la sphere (et le
+// visage) PAR-DESSUS, centree en (CX, CY - 26), rayon ~78.
+static void uiDrawAvatarFrame(int idx, int total, const char *name)
+{
+  canvas->fillScreen(RGB565_BLACK);
+  uint16_t accent = rgb565(0xfb, 0xd9, 0x75);
+  bbPrint(180 - bbTextW("WHO AM I ?") / 2, 58, "WHO AM I ?", RGB565_WHITE);
+  mfPrint(26, CY - 40, "<", rgb565(120, 130, 120));
+  mfPrint(334 - mfTextW(">"), CY - 40, ">", rgb565(120, 130, 120));
+  mfPrint(180 - mfTextW(name) / 2, 258, name, accent);
+  char cnt[16];
+  snprintf(cnt, sizeof(cnt), "%d / %d", idx + 1, total);
+  mdPrint(180 - mdTextW(cnt) / 2, 292, cnt, rgb565(130, 140, 130));
+  mdPrint(180 - mdTextW("center: save") / 2, 318, "center: save",
+          rgb565(110, 110, 110));
+}
+
+// -------------------------------------------------------- tete batterie
+static void uiBatteryHeader(int pct, bool charging)
+{
+  char pctTxt[8];
+  if (pct >= 0)
+    snprintf(pctTxt, sizeof(pctTxt), "%d%%", pct);
+  else
+    snprintf(pctTxt, sizeof(pctTxt), "--%%");
+  // centrage PARFAIT du groupe icone (44 px avec la tetine) + espace + texte
+  const int bx = 180 - (44 + 10 + mdTextW(pctTxt)) / 2, by = 44;
+  uint16_t frame = rgb565(210, 210, 210);
+  canvas->drawRoundRect(bx, by, 40, 22, 4, frame);
+  canvas->fillRect(bx + 40, by + 6, 4, 10, frame);
+  if (pct >= 0)
+  {
+    uint16_t fill = pct > 50 ? rgb565(80, 220, 120)
+                             : (pct > 20 ? rgb565(255, 190, 60) : rgb565(240, 80, 70));
+    int w = 34 * pct / 100;
+    if (w > 0)
+      canvas->fillRect(bx + 3, by + 3, w, 16, fill);
+  }
+  mdPrint(bx + 54, by + 5, pctTxt, RGB565_WHITE);
+  if (charging)
+  {
+    uint16_t yl = rgb565(255, 213, 48);
+    canvas->fillTriangle(bx - 14, by - 2, bx - 22, by + 13, bx - 13, by + 11, yl);
+    canvas->fillTriangle(bx - 15, by + 9, bx - 12, by + 24, bx - 6, by + 8, yl);
+  }
+}
+
+// ------------------------------------------- menu principal a bulles
+struct UiBubble
+{
+  float x, y, vx, vy, r;
+};
+static UiBubble uiBub[UI_NCATS];
+static int uiHomeFocus = 0;
+// ancrages et rayons de base (composes d'apres la maquette : Play a gauche,
+// Watch en haut a droite, Meet en bas au centre, More en bas a droite)
+static const float UI_BUB_HOME[UI_NCATS][2] = {
+    {116, 184}, {246, 146}, {184, 264}, {283, 246}};
+static const float UI_BUB_R[UI_NCATS] = {72, 76, 66, 52};
+
+static void uiHomeReset()
+{
+  for (int i = 0; i < UI_NCATS; i++)
+  {
+    uiBub[i].x = UI_BUB_HOME[i][0];
+    uiBub[i].y = UI_BUB_HOME[i][1];
+    uiBub[i].vx = uiBub[i].vy = 0;
+    uiBub[i].r = UI_BUB_R[i] * (i == uiHomeFocus ? 1.26f : 0.80f);
+  }
+}
+
+static void uiHomeNav(int dir) { uiHomeFocus = (uiHomeFocus + dir + UI_NCATS) % UI_NCATS; }
+
+static bool uiDrawHome(float dt, int batPct, bool batCharging)
+{
+  if (dt > 0.25f)
+    dt = 0.05f;
+  canvas->fillScreen(RGB565_BLACK);
+
+  // Physique en SOUS-PAS FIXES de 16 ms : a ~12 fps le badge recevait des pas
+  // de ~90 ms — le rayon grossissait plus vite que le solveur de collisions ne
+  // separait les bulles (morsures). En sous-echantillonnant, l'ESP simule
+  // exactement comme l'emulateur a 60 fps, quel que soit son framerate.
+  float rem = dt;
+  while (rem > 0.0001f)
+  {
+    float h = rem > 0.016f ? 0.016f : rem;
+    rem -= h;
+
+    // cibles de rayon (la focus grossit) + ressort vers l'ancrage ; l'ancrage
+    // est CLAMPE aux murs selon le rayon courant, sinon le ressort et le mur
+    // se battent en permanence (vibration + bulle qui ecrase sa voisine)
+    for (int i = 0; i < UI_NCATS; i++)
+    {
+      float tr = UI_BUB_R[i] * (i == uiHomeFocus ? 1.26f : 0.80f);
+      uiBub[i].r += (tr - uiBub[i].r) * (1 - expf(-h * 10.0f));
+      float hx = UI_BUB_HOME[i][0], hy = UI_BUB_HOME[i][1];
+      float minY = 82.0f + uiBub[i].r;
+      if (hy < minY)
+        hy = minY;
+      float hdx = hx - CX, hdy = hy - CY;
+      float hd = sqrtf(hdx * hdx + hdy * hdy);
+      float hmax = 176.0f - uiBub[i].r;
+      if (hd > hmax && hd > 1)
+      {
+        hx = CX + hdx / hd * hmax;
+        hy = CY + hdy / hd * hmax;
+      }
+      uiBub[i].vx += (hx - uiBub[i].x) * 26.0f * h;
+      uiBub[i].vy += (hy - uiBub[i].y) * 26.0f * h;
+    }
+    // collisions : la bulle qui grossit POUSSE ses voisines
+    for (int a = 0; a < UI_NCATS; a++)
+      for (int b = a + 1; b < UI_NCATS; b++)
+      {
+        float dx = uiBub[b].x - uiBub[a].x, dy = uiBub[b].y - uiBub[a].y;
+        float d2 = dx * dx + dy * dy;
+        float mind = uiBub[a].r + uiBub[b].r + 8.0f;
+        if (d2 < mind * mind && d2 > 1.0f)
+        {
+          float d = sqrtf(d2), ov = mind - d;
+          float nx = dx / d, ny = dy / d;
+          uiBub[a].x -= nx * ov * 0.25f;
+          uiBub[a].y -= ny * ov * 0.25f;
+          uiBub[b].x += nx * ov * 0.25f;
+          uiBub[b].y += ny * ov * 0.25f;
+          uiBub[a].vx -= nx * ov * 4.0f;
+          uiBub[a].vy -= ny * ov * 4.0f;
+          uiBub[b].vx += nx * ov * 4.0f;
+          uiBub[b].vy += ny * ov * 4.0f;
+        }
+      }
+    // integration + amortissement + murs (ecran rond, bandeau batterie)
+    for (int i = 0; i < UI_NCATS; i++)
+    {
+      float damp = expf(-h * 4.0f);
+      uiBub[i].vx *= damp;
+      uiBub[i].vy *= damp;
+      uiBub[i].x += uiBub[i].vx * h;
+      uiBub[i].y += uiBub[i].vy * h;
+      float ddx = uiBub[i].x - CX, ddy = uiBub[i].y - CY;
+      float dd = sqrtf(ddx * ddx + ddy * ddy);
+      float maxd = 176.0f - uiBub[i].r;
+      if (dd > maxd && dd > 1)
+      {
+        uiBub[i].x = CX + ddx / dd * maxd;
+        uiBub[i].y = CY + ddy / dd * maxd;
+        // annule la composante de vitesse SORTANTE (sinon ca vibre au mur)
+        float dot = (uiBub[i].vx * ddx + uiBub[i].vy * ddy) / dd;
+        if (dot > 0)
+        {
+          uiBub[i].vx -= ddx / dd * dot;
+          uiBub[i].vy -= ddy / dd * dot;
+        }
+      }
+      if (uiBub[i].y - uiBub[i].r < 82)
+      {
+        uiBub[i].y = 82 + uiBub[i].r;
+        if (uiBub[i].vy < 0)
+          uiBub[i].vy = 0;
+      }
+    }
+  }
+  // dessin : les non-focus en contour, la focus en dernier, pleine
+  for (int pass = 0; pass < 2; pass++)
+    for (int i = 0; i < UI_NCATS; i++)
+    {
+      if ((pass == 1) != (i == uiHomeFocus))
+        continue;
+      int x = (int)(uiBub[i].x + 0.5f), y = (int)(uiBub[i].y + 0.5f);
+      int r = (int)(uiBub[i].r + 0.5f);
+      uint16_t col = UI_PASTELS[i];
+      uint16_t tcol;
+      const char *nm = UI_CAT_NAMES[i];
+      if (i == uiHomeFocus)
+      {
+        canvas->fillCircle(x, y, r, col);
+        tcol = RGB565_BLACK;
+        // au survol : pastille noire avec fleche "play" a droite du label
+        int tw = mfTextW(nm), ir = 13, gap = 8;
+        int x0 = x - (tw + gap + 2 * ir) / 2;
+        mfPrint(x0, y - 8, nm, tcol);
+        int icx = x0 + tw + gap + ir;
+        canvas->fillCircle(icx, y, ir, RGB565_BLACK);
+        canvas->fillTriangle(icx - 3, y - 6, icx - 3, y + 6, icx + 7, y, col);
+      }
+      else
+      {
+        canvas->drawCircle(x, y, r, col); // contour ~3 px
+        canvas->drawCircle(x, y, r - 1, col);
+        canvas->drawCircle(x, y, r - 2, col);
+        tcol = col;
+        mfPrint(x - mfTextW(nm) / 2, y - 8, nm, tcol);
+      }
+    }
+
+  uiBatteryHeader(batPct, batCharging);
+
+  // encore en mouvement ? (permet a l'appelant de sauter le flush au repos)
+  float act = 0;
+  for (int i = 0; i < UI_NCATS; i++)
+  {
+    float tr = UI_BUB_R[i] * (i == uiHomeFocus ? 1.26f : 0.80f);
+    act += fabsf(tr - uiBub[i].r) + fabsf(uiBub[i].vx) + fabsf(uiBub[i].vy);
+  }
+  return act > 0.8f;
+}
+
+// --------------------------------------------------- ecran Schedule
+// Design Figma "Internal - Three.js Conference" : pastille DAY en haut,
+// type d'event + horaire en Bebas Neue, titre en Dingos ExtraBold 30,
+// pastille NOW, fleches gauche/droite en bas. Donnees d'exemple en dur —
+// remplacees par le vrai programme quand Romain le fournit.
+struct UiEvent
+{
+  uint8_t day;
+  const char *type, *time, *l1, *l2;
+};
+
+// Horloge de conf, alimentee par la plateforme (main.cpp : RTC synchronisee
+// via la webapp Draw ; emulateur : heure du navigateur ou parametre d'URL).
+// uiNowMin < 0 = heure inconnue -> aucune pastille NOW.
+static int uiNowDay = 0;  // 1 ou 2 pendant la conf, 0 sinon
+static int uiNowMin = -1; // minutes locales du jour (0..1439)
+
+static bool uiEventIsNow(const UiEvent &e)
+{
+  if (uiNowMin < 0 || uiNowDay != e.day)
+    return false;
+  int h1, m1, h2, m2;
+  if (sscanf(e.time, "%d:%d - %d:%d", &h1, &m1, &h2, &m2) != 4)
+    return false; // jalon sans plage ("18:30") : pas de NOW
+  int s = h1 * 60 + m1, en = h2 * 60 + m2;
+  if (en < s)
+    en += 24 * 60; // plage qui passe minuit
+  return uiNowMin >= s && uiNowMin < en;
+}
+// Programme officiel (slides Three.js Conf Paris, 10-11 sept. 2026) —
+// durees volontairement omises, titres coupes pour 2 lignes de Dingos 30.
+static const UiEvent UI_EVENTS[] = {
+    // ---- Day 1 · jeudi 10
+    {1, "TALK", "10:00 - 10:05", "David Ronai", "intro talk"},
+    {1, "SPEAKER", "10:05 - 10:25", "Daniel", "Beauchamp"},
+    {1, "SPEAKER", "10:30 - 10:45", "Kim Boutin", ""},
+    {1, "SPEAKER", "10:50 - 11:05", "Robin Payot", "TSL Zelda"},
+    {1, "BREAK", "11:05 - 11:45", "Break &", "exchange"},
+    {1, "PANEL", "11:10 - 11:40", "AI", "Workflow"},
+    {1, "SPEAKER", "11:40 - 11:50", "Cassie", "GSAP news"},
+    {1, "SPEAKER", "11:55 - 12:25", "Vincente", "Lucendo"},
+    {1, "LUNCH", "12:30 - 14:00", "Lunch", "book a resto"},
+    {1, "SPEAKER", "14:00 - 14:20", "Celia Lopez", "show"},
+    {1, "SPEAKER", "14:20 - 14:40", "Thomas &", "Natalia"},
+    {1, "SPEAKER", "14:40 - 15:00", "Herve", "Studio"},
+    {1, "BREAK", "15:00 - 15:40", "Breaks &", "panels"},
+    {1, "LIGHTNING", "15:40 - 16:00", "Lightning", "talks x10"},
+    {1, "SPEAKER", "16:00 - 16:30", "Mr.doob", "last talk"},
+    {1, "TALK", "16:30 - 16:40", "Closing &", "Day 2 intro"},
+    {1, "PARTY", "16:40 - 18:00", "Toast &", "networking"},
+    {1, "PANEL", "17:00 - 17:25", "Generative", "art & code"},
+    {1, "INFO", "18:30", "Venue", "closes"},
+    // ---- Day 2 · vendredi 11
+    {2, "SPEAKERS", "07:00 - 09:00", "Rehearsal", "if needed"},
+    {2, "BREAKFAST", "08:00", "With the", "Business"},
+    {2, "INFO", "09:00", "Doors &", "amphi open"},
+    {2, "SPEAKER", "09:30 - 09:55", "Ponpom", "Mania"},
+    {2, "SPEAKER", "09:55 - 10:20", "Dennis", "r3f news"},
+    {2, "SPEAKER", "10:20 - 10:30", "Miris", "3D splat"},
+    {2, "BREAK", "10:30 - 11:10", "Break &", "panels"},
+    {2, "SPEAKER", "11:10 - 11:30", "Daria", "gen. art"},
+    {2, "SPEAKER", "11:30 - 11:50", "Sunag", ""},
+    {2, "SPEAKER", "11:50 - 12:10", "Renaud", "release"},
+    {2, "LUNCH", "12:10 - 14:00", "Lunch", "not included"},
+    {2, "SPEAKER", "14:00 - 14:30", "Anderson", "Mancini"},
+    {2, "SPEAKER", "14:30 - 15:00", "Edan Kwan", "Lusion"},
+    {2, "BREAK", "15:00 - 15:40", "Break &", "panel"},
+    {2, "SPEAKER", "15:40 - 16:00", "Merci Michel", "announcement"},
+    {2, "LIGHTNING", "16:00 - 16:20", "Lightning", "talks x10"},
+    {2, "SPEAKER", "16:20 - 16:30", "Cassandre", "Leguay"},
+    {2, "KEYNOTE", "16:30 - 17:00", "Bruno Simon", "last keynote"},
+    {2, "TALK", "17:00 - 17:10", "Closing", "talk"},
+    {2, "PARTY", "18:30", "After party", "at Fluctuart"},
+};
+#define UI_NEVENTS ((int)(sizeof(UI_EVENTS) / sizeof(UI_EVENTS[0])))
+
+static bool uiDrawSchedule(int idx)
+{
+  canvas->fillScreen(RGB565_BLACK);
+  const UiEvent &e = UI_EVENTS[idx];
+
+  // pastille DAY (bleu jour 1, rose jour 2), texte navy ExtraBold
+  uint16_t dayCol = (e.day == 1) ? rgb565(0xa5, 0xc9, 0xf1) : rgb565(0xfc, 0xa3, 0xf7);
+  char dayTxt[8];
+  snprintf(dayTxt, sizeof(dayTxt), "DAY %d", e.day);
+  int dw = mfTextW(dayTxt) + 44;
+  canvas->fillRoundRect(180 - dw / 2, 26, dw, 44, 22, dayCol);
+  mfPrint(180 - mfTextW(dayTxt) / 2, 40, dayTxt, rgb565(0x1d, 0x24, 0x40));
+
+  // type (gauche) + horaire (droite) en Bebas Neue
+  bbPrint(66, 128, e.type, RGB565_WHITE);
+  bbPrint(312 - bbTextW(e.time), 128, e.time, RGB565_WHITE);
+
+  // titre sur 1-2 lignes en ExtraBold 30
+  mtPrint(66, 162, e.l1, RGB565_WHITE);
+  if (e.l2 && e.l2[0])
+    mtPrint(66, 162 + 36, e.l2, RGB565_WHITE);
+
+  // pastille NOW (uniquement si l'heure est connue et dans la plage)
+  if (uiEventIsNow(e))
+  {
+    int nw = bbTextW("NOW") + 30;
+    canvas->fillRoundRect(66, 246, nw, 32, 16, rgb565(0x9d, 0x97, 0xed));
+    bbPrint(66 + 15, 250, "NOW", RGB565_WHITE);
+  }
+
+  // fleches de navigation en bas
+  int cyb = 320;
+  canvas->fillCircle(160, cyb, 15, rgb565(45, 45, 45));
+  canvas->fillTriangle(165, cyb - 6, 165, cyb + 6, 154, cyb, rgb565(130, 130, 130));
+  canvas->fillCircle(200, cyb, 15, RGB565_WHITE);
+  canvas->fillTriangle(196, cyb - 6, 196, cyb + 6, 207, cyb, RGB565_BLACK);
+  return false; // ecran statique : l'appelant ne flush que sur changement
+}
+
+// ------------------------------------ liste par categorie (scroll anime)
+#define UI_LIST_VISIBLE 6
+
+static bool uiDrawList(int cat, int menuSel, bool autoCyc, int batPct,
+                       bool batCharging)
+{
+  canvas->fillScreen(RGB565_BLACK);
+  int count = uiListCount(cat);
+
+  static float scrollY = -1e9f, pillY = 0, pillW = 0, pcR = 0, pcG = 0, pcB = 0;
+  static uint32_t lastMs = 0;
+  static int lastCat = -1;
+  uint32_t nowMs = millis();
+  float adt = (nowMs - lastMs) / 1000.0f;
+  lastMs = nowMs;
+  int maxFirst = count - UI_LIST_VISIBLE;
+  if (maxFirst < 0)
+    maxFirst = 0;
+  int first = constrain(menuSel - 2, 0, maxFirst);
+  float targetScroll = first * 34.0f;
+  char selLabel[32];
+  uiListLabel(cat, menuSel, autoCyc, selLabel, sizeof(selLabel));
+  bool selIsBack = (menuSel == count - 1);
+  // "Back" : pilule BLANCHE (pas pastel) + place pour la fleche retour
+  float targetW = mfTextW(selLabel) + 30.0f + (selIsBack ? 18.0f : 0.0f);
+  uint16_t sc = selIsBack ? rgb565(255, 255, 255) : UI_PASTELS[menuSel % 4];
+  float scR = (float)(((sc >> 11) & 31) << 3), scG = (float)(((sc >> 5) & 63) << 2),
+        scB = (float)((sc & 31) << 3);
+  if (adt > 0.25f || scrollY < -1e8f || cat != lastCat)
+  {
+    scrollY = targetScroll;
+    pillY = 105 + menuSel * 34 - scrollY;
+    pillW = targetW;
+    pcR = scR;
+    pcG = scG;
+    pcB = scB;
+    adt = 0;
+    lastCat = cat;
+  }
+  float k = 1 - expf(-adt * 14.0f);
+  scrollY += (targetScroll - scrollY) * k;
+  float pTY = 105 + menuSel * 34 - scrollY;
+  pillY += (pTY - pillY) * k;
+  pillW += (targetW - pillW) * k;
+  pcR += (scR - pcR) * k;
+  pcG += (scG - pcG) * k;
+  pcB += (scB - pcB) * k;
+
+  canvas->fillRoundRect((int)(180 - pillW / 2 + 0.5f), (int)(pillY - 7 + 0.5f),
+                        (int)(pillW + 0.5f), 30, 8,
+                        rgb565((int)pcR, (int)pcG, (int)pcB));
+  for (int i = 0; i < count; i++)
+  {
+    float y = 105 + i * 34 - scrollY;
+    if (y < 58 || y > 336)
+      continue;
+    char label[32];
+    uiListLabel(cat, i, autoCyc, label, sizeof(label));
+    uint16_t tc = (i == menuSel) ? RGB565_BLACK : rgb565(175, 175, 175);
+    if (i == menuSel && i == count - 1)
+    {
+      // "Back" survole : petite fleche retour a gauche du mot
+      int tw = mfTextW(label);
+      int x0 = 180 - (tw + 18) / 2;
+      int yy = (int)(y + 0.5f);
+      canvas->fillTriangle(x0, yy + 8, x0 + 7, yy + 2, x0 + 7, yy + 14, tc);
+      canvas->fillRect(x0 + 7, yy + 6, 6, 4, tc);
+      mfPrint(x0 + 18, yy, label, tc);
+    }
+    else
+      mfPrint(180 - mfTextW(label) / 2, (int)(y + 0.5f), label, tc);
+  }
+
+  canvas->fillRect(0, 0, W, 96, RGB565_BLACK);
+  canvas->fillRect(0, 330, W, H - 330, RGB565_BLACK);
+  uiBatteryHeader(batPct, batCharging);
+
+  uint16_t arrow = rgb565(120, 120, 120);
+  if (first > 0)
+    canvas->fillTriangle(174, 88, 186, 88, 180, 80, arrow);
+  if (first + UI_LIST_VISIBLE < count)
+    canvas->fillTriangle(174, 314, 186, 314, 180, 322, arrow);
+
+  return (fabsf(targetScroll - scrollY) + fabsf(pTY - pillY) +
+          fabsf(targetW - pillW) + fabsf(scR - pcR) + fabsf(scG - pcG) +
+          fabsf(scB - pcB)) > 0.7f;
+}

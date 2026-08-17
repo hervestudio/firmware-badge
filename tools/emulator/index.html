@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Badge threejs.paris — émulateur</title>
+<style>
+  * { margin: 0; box-sizing: border-box; }
+  body { background: #0c140e; color: #e8ecdf; min-height: 100vh;
+         display: flex; flex-direction: column; align-items: center;
+         gap: 22px; padding: 34px 16px;
+         font-family: -apple-system, system-ui, sans-serif; }
+  h1 { font-size: 15px; letter-spacing: 3px; color: #fbd975; font-weight: 600; }
+  #badge { background: #1a2a1e; border-radius: 34px; padding: 26px 26px 18px;
+           box-shadow: 0 12px 40px rgba(0,0,0,.5); display: flex;
+           flex-direction: column; align-items: center; gap: 16px; }
+  #wrap { width: min(76vw, 46vh); position: relative; }
+  canvas { width: 100%; display: block; border-radius: 50%;
+           background: #000; border: 10px solid #10180f;
+           image-rendering: pixelated; }
+  #btns { display: flex; gap: 26px; align-items: flex-end; }
+  .btn { width: 46px; height: 46px; border-radius: 50%; border: none;
+         background: #2a3a2e; color: #cfe0cf; font-size: 17px; cursor: pointer;
+         box-shadow: 0 3px 0 #10180f; user-select: none; -webkit-user-select: none;
+         touch-action: none; }
+  .btn:active, .btn.on { background: #fbd975; color: #111; transform: translateY(2px);
+                         box-shadow: 0 1px 0 #10180f; }
+  .btn.center { margin-bottom: -12px; } /* le central est plus bas, comme sur le badge */
+  #help { color: #93a394; font-size: 12.5px; text-align: center; line-height: 1.7; max-width: 460px; }
+  kbd { background: #1a2a1e; border: 1px solid #2a3a2e; border-radius: 5px;
+        padding: 1px 6px; font-size: 11px; }
+</style>
+</head>
+<body>
+<h1>BADGE — ÉMULATEUR</h1>
+<div id="badge">
+  <div id="wrap"><canvas id="scr" width="360" height="360"></canvas></div>
+  <div id="btns">
+    <button class="btn" id="bPrev" title="Haut / précédent">&#9650;</button>
+    <button class="btn center" id="bCtr" title="Centre">&#9679;</button>
+    <button class="btn" id="bNext" title="Bas / suivant">&#9660;</button>
+  </div>
+</div>
+<p id="help">
+  <kbd>&#8592;</kbd>/<kbd>&#8593;</kbd> précédent &nbsp;·&nbsp; <kbd>&#8594;</kbd>/<kbd>&#8595;</kbd> suivant &nbsp;·&nbsp; <kbd>espace</kbd> centre (court = menu/action, <b>maintenu 2 s = extinction</b>)<br>
+  Dans les jeux d'action : centre = agir · quitter = <kbd>&#8592;</kbd>+<kbd>&#8594;</kbd> maintenus 0,8 s · game over : suivant = rejouer<br>
+  Anims &amp; jeux = les vraies sources du firmware (anims_extra.h, games.h, tama.h) compilées en WebAssembly.
+</p>
+<script src="emu.js"></script>
+<script>
+const held = { prev: false, next: false, ctr: false };
+function bindBtn(el, key) {
+  const on = e => { e.preventDefault(); held[key] = true; el.classList.add('on'); };
+  const off = e => { e.preventDefault(); held[key] = false; el.classList.remove('on'); };
+  el.addEventListener('pointerdown', on);
+  el.addEventListener('pointerup', off);
+  el.addEventListener('pointerleave', off);
+}
+bindBtn(document.getElementById('bPrev'), 'prev');
+bindBtn(document.getElementById('bNext'), 'next');
+bindBtn(document.getElementById('bCtr'), 'ctr');
+const KEYS = { ArrowLeft: 'prev', ArrowUp: 'prev', ArrowRight: 'next',
+               ArrowDown: 'next', ' ': 'ctr', Enter: 'ctr' };
+addEventListener('keydown', e => { const k = KEYS[e.key];
+  if (k) { e.preventDefault(); held[k] = true; } });
+addEventListener('keyup', e => { const k = KEYS[e.key];
+  if (k) { e.preventDefault(); held[k] = false; } });
+
+const cv = document.getElementById('scr'), ctx = cv.getContext('2d');
+const img = ctx.createImageData(360, 360);
+
+Module.onRuntimeInitialized = () => {
+  Module._emu_init();
+  // horloge de conf : ?now=1-11:15 pour forcer, sinon vraie date si 10-11 sept. 2026
+  const m = location.search.match(/now=([12])-(\d+):(\d+)/);
+  if (m) Module._emu_set_now(+m[1], +m[2] * 60 + +m[3]);
+  else {
+    const upd = () => {
+      const d = new Date();
+      const day = (d.getFullYear() === 2026 && d.getMonth() === 8)
+        ? (d.getDate() === 10 ? 1 : d.getDate() === 11 ? 2 : 0) : 0;
+      Module._emu_set_now(day, day ? d.getHours() * 60 + d.getMinutes() : -1);
+    };
+    upd(); setInterval(upd, 30000);
+  }
+  let last = performance.now();
+  function loop(now) {
+    const dt = now - last;
+    last = now;
+    const mask = (held.prev ? 1 : 0) | (held.next ? 2 : 0) | (held.ctr ? 4 : 0);
+    Module._emu_frame(dt, mask);
+    const fbPtr = Module._emu_fb(); // change quand la rotation est active
+    const fb = Module.HEAPU16.subarray(fbPtr >> 1, (fbPtr >> 1) + 360 * 360);
+    const px = img.data;
+    for (let i = 0, j = 0; i < 360 * 360; i++, j += 4) {
+      const c = fb[i];
+      px[j] = (c >> 11) << 3;
+      px[j + 1] = ((c >> 5) & 63) << 2;
+      px[j + 2] = (c & 31) << 3;
+      px[j + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+};
+</script>
+</body>
+</html>
