@@ -15,54 +15,47 @@
   * { margin: 0; box-sizing: border-box; }
   body {
     background: var(--bg);
-    background-image: radial-gradient(rgba(33,28,59,.16) 1.2px, transparent 1.3px);
-    background-size: 26px 26px;
+    background-image: radial-gradient(rgba(33,28,59,.16) 1.3px, transparent 1.4px);
+    background-size: 34px 34px;
     color: var(--ink);
     min-height: 100vh;
     font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
-    display: flex; align-items: center; justify-content: center;
-    padding: 30px; overflow-x: hidden;
+    overflow-x: hidden;
   }
   #frame {
-    position: fixed; inset: 22px;
-    border: 1.5px solid var(--frame); border-radius: 34px;
+    position: fixed; inset: 34px;
+    border: 1.5px solid var(--frame); border-radius: 44px;
     pointer-events: none; z-index: 3;
   }
 
-  /* ---- bloc texte (bas-gauche) ---- */
-  #info { max-width: 350px; position: fixed; left: 80px; bottom: 9vh; z-index: 2; }
+  /* ---- bloc texte (bas-gauche, proportions de la maquette) ---- */
+  #info { max-width: 360px; position: fixed; left: 6vw; bottom: 7vh; z-index: 2; }
   #info h1 {
     font-family: 'DingosBlack', sans-serif;
     font-size: 17px; letter-spacing: 3px; margin-bottom: 14px;
   }
-  #info p { font-size: 14.5px; line-height: 1.55; margin-bottom: 16px; }
-  #help { color: rgba(33,28,59,.75); font-size: 12.5px; text-align: left; line-height: 1.8; }
+  #info p { font-size: 14.5px; line-height: 1.55; margin-bottom: 14px; }
+  #help { color: rgba(33,28,59,.72); font-size: 12px; text-align: left; line-height: 1.75; }
   kbd {
     background: rgba(33,28,59,.10); border: 1px solid rgba(33,28,59,.25);
     border-radius: 5px; padding: 1px 6px; font-size: 11px; color: var(--ink);
   }
 
-  /* ---- badge 3D : le vrai rendu, canvas live incruste dans l'ecran ---- */
+  /* ---- badge 3D transparent, ancre en haut (sangle coupee au bord) ---- */
   #badge3d {
-    position: relative; flex: none;
-    width: min(1100px, 96vw, 132vh);
-    aspect-ratio: 1280 / 832;
+    position: fixed; top: 0; left: 50%;
+    transform: translateX(-50%);
+    height: 88vh; aspect-ratio: 732 / 760;
+    max-width: 94vw; z-index: 1;
   }
   #badge3d > img {
     width: 100%; height: 100%; display: block;
-    /* fondu des bords vers le fond de page */
-    -webkit-mask-image: linear-gradient(to right, transparent, #000 7%, #000 93%, transparent),
-                        linear-gradient(to bottom, transparent, #000 7%, #000 93%, transparent);
-    -webkit-mask-composite: source-in;
-    mask-image: linear-gradient(to right, transparent, #000 7%, #000 93%, transparent),
-                linear-gradient(to bottom, transparent, #000 7%, #000 93%, transparent);
-    mask-composite: intersect;
     user-select: none; pointer-events: none;
   }
-  /* ecran : cercle interieur mesure sur l'image (centre 641.5, 402.5 ; Ø 218) */
+  /* ecran : cercle interieur mesure sur l'asset (centre 371.5, 402.5 ; Ø 218) */
   canvas {
     position: absolute;
-    left: 41.60%; top: 35.16%; width: 17.05%;
+    left: 35.86%; top: 38.62%; width: 29.78%;
     aspect-ratio: 1; border-radius: 50%;
     background: #000;
     image-rendering: pixelated;
@@ -75,13 +68,14 @@
   }
   .hit.on, .hit:active { box-shadow: 0 0 0 3px rgba(33,28,59,.35) inset; }
   /* ∨ (gauche) = next · smiley = center · ∧ (droite) = previous */
-  #bNext { left: 40.23%; top: 63.70%; width: 5.47%; aspect-ratio: 1; }
-  #bCtr  { left: 47.19%; top: 67.79%; width: 5.86%; aspect-ratio: 1; }
-  #bPrev { left: 54.30%; top: 63.70%; width: 5.47%; aspect-ratio: 1; }
+  #bNext { left: 33.74%; top: 69.93%; width: 9.29%; aspect-ratio: 1; }
+  #bCtr  { left: 45.90%; top: 72.89%; width: 9.02%; aspect-ratio: 1; }
+  #bPrev { left: 57.92%; top: 69.87%; width: 9.29%; aspect-ratio: 1; }
 
-  @media (max-width: 980px) {
-    body { flex-direction: column; padding-bottom: 40px; }
-    #info { position: static; order: 2; margin-top: 6px; }
+  @media (max-width: 900px) {
+    #badge3d { position: relative; left: auto; transform: none;
+               margin: 0 auto; height: auto; width: min(94vw, 70vh); }
+    #info { position: static; padding: 20px 6vw 40px; max-width: none; }
   }
 </style>
 </head>
