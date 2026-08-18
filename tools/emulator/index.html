@@ -403,9 +403,11 @@ Module.onRuntimeInitialized = () => {
     const eyes = () => { ctx2.beginPath(); ctx2.arc(cx-e, ey, er, 0, 7);
                          ctx2.arc(cx+e, ey, er, 0, 7); ctx2.fill(); };
     switch (id) {
-    case 0: eyes(); ctx2.beginPath(); ctx2.ellipse(cx, s*0.60, s*0.13, s*0.10, 0, 0, 7);
-            ctx2.fill(); ctx2.beginPath(); ctx2.moveTo(cx, s*0.66); ctx2.lineTo(cx, s*0.72);
-            ctx2.stroke(); break;
+    case 0: eyes(); ctx2.beginPath(); ctx2.ellipse(cx, s*0.58, s*0.10, s*0.075, 0, 0, 7);
+          ctx2.fill(); ctx2.beginPath(); ctx2.moveTo(cx, s*0.63); ctx2.lineTo(cx, s*0.70);
+          ctx2.stroke();
+          ctx2.fillRect(cx-s*0.25, s*0.585, s*0.08, s*0.035);
+          ctx2.fillRect(cx+s*0.17, s*0.585, s*0.08, s*0.035); break;
     case 1: eyes(); ctx2.beginPath(); ctx2.ellipse(cx, s*0.60, s*0.14, s*0.11, 0, 0, 7);
             ctx2.fill(); ctx2.fillStyle = '#fff';
             ctx2.beginPath(); ctx2.ellipse(cx, s*0.65, s*0.10, s*0.05, 0, 0, 7);
@@ -416,10 +418,12 @@ Module.onRuntimeInitialized = () => {
             for (let i = 0; i <= 20; i++) { const u = i/20, x = cx - s*0.13 + u*s*0.26;
               const y = s*0.60 + Math.sin(u*9.4)*s*0.03;
               i ? ctx2.lineTo(x, y) : ctx2.moveTo(x, y); } ctx2.stroke(); break;
-    case 4: ctx2.beginPath(); ctx2.ellipse(cx-e, ey, er*0.9, er*1.6, 0, 0, 7);
-            ctx2.ellipse(cx+e, ey, er*0.9, er*1.6, 0, 0, 7); ctx2.fill();
-            ctx2.beginPath(); ctx2.arc(cx-s*0.06, s*0.58, s*0.06, 0.2, 2.9);
-            ctx2.arc(cx+s*0.06, s*0.58, s*0.06, 0.2, 2.9); ctx2.stroke(); break;
+    case 4: ctx2.beginPath(); ctx2.ellipse(cx-e, ey, er*0.85, er*1.3, 0, 0, 7);
+          ctx2.ellipse(cx+e, ey, er*0.85, er*1.3, 0, 0, 7); ctx2.fill();
+          ctx2.beginPath();
+          for (let i = 0; i <= 24; i++) { const u = i/24, x = cx - s*0.12 + u*s*0.24;
+            const y = s*0.555 + Math.abs(Math.sin(u*6.28))*s*0.05;
+            i ? ctx2.lineTo(x, y) : ctx2.moveTo(x, y); } ctx2.stroke(); break;
     case 5: ctx2.fillRect(cx-e-s*0.1, ey-s*0.05, s*0.52, s*0.05);
             ctx2.beginPath(); ctx2.ellipse(cx-e, ey+s*0.03, s*0.09, s*0.07, 0, 0, 7);
             ctx2.ellipse(cx+e, ey+s*0.03, s*0.09, s*0.07, 0, 0, 7); ctx2.fill();
