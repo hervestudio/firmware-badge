@@ -14,34 +14,72 @@
 #pragma once
 #include <WebServer.h>
 #include <WebSocketsServer.h>
-#include <DNSServer.h>
-#include <ESPmDNS.h>
+#include <WiFiUdp.h>
 #include "setup_page.h"
 
-// DNS captif partage Draw/Setup : toutes les requetes DNS repondent l'IP du
+// DNS captif partage Draw/Setup : toutes les requetes A repondent l'IP du
 // badge -> les sondes de portail captif (iOS/Android) declenchent l'ouverture
-// AUTOMATIQUE de la page a la connexion au WiFi, et une adresse memorisable
-// marche aussi a la main (http://badge.local via mDNS sur iOS/macOS).
-static DNSServer *badgeDns = nullptr;
+// AUTOMATIQUE de la page a la connexion au WiFi, et http://badge.local tape a
+// la main resout aussi (via ce DNS). Repondeur MAISON, synchrone, poll dans
+// notre boucle : le DNSServer du core 3.x est asynchrone (AsyncUDP, reponses
+// depuis la tache lwIP) et, combine a mDNS, faisait rebooter le badge a
+// l'ouverture de la fiche portail.
+static WiFiUDP *badgeDnsUdp = nullptr;
 static void badgeDnsStart()
 {
-  badgeDns = new DNSServer();
-  badgeDns->start(53, "*", WiFi.softAPIP());
-  MDNS.begin("badge"); // http://badge.local
+  badgeDnsUdp = new WiFiUDP();
+  badgeDnsUdp->begin(53);
 }
 static void badgeDnsLoop()
 {
-  if (badgeDns)
-    badgeDns->processNextRequest();
+  if (!badgeDnsUdp)
+    return;
+  for (int k = 0; k < 8; k++) // draine la rafale de sondes du portail
+  {
+    int len = badgeDnsUdp->parsePacket();
+    if (len <= 0)
+      return;
+    uint8_t buf[512];
+    len = badgeDnsUdp->read(buf, sizeof(buf));
+    if (len < 17 || (buf[2] & 0x80)) // trop court ou deja une reponse
+      continue;
+    // QTYPE de la premiere question : saute le nom (labels jusqu'au 0)
+    int q = 12;
+    while (q < len && buf[q])
+      q += buf[q] + 1;
+    if (q + 5 > len)
+      continue;
+    uint16_t qtype = (buf[q + 1] << 8) | buf[q + 2];
+    // en-tete de reponse : QR=1 AA=1 RA=1, 1 question, ANCOUNT selon le type
+    bool answerA = qtype == 1 || qtype == 255; // A ou ANY
+    buf[2] = 0x84;
+    buf[3] = 0x80;
+    buf[4] = 0;
+    buf[5] = 1; // QDCOUNT force a 1 (on ne recopie que la 1re question)
+    buf[6] = 0;
+    buf[7] = answerA ? 1 : 0; // ANCOUNT (AAAA & co : NOERROR sans reponse)
+    buf[8] = buf[9] = buf[10] = buf[11] = 0; // NSCOUNT/ARCOUNT
+    int out = q + 5; // fin de la section question
+    if (answerA)
+    {
+      const IPAddress ip = WiFi.softAPIP();
+      const uint8_t ans[] = {0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 30, 0, 4,
+                             ip[0], ip[1], ip[2], ip[3]};
+      memcpy(buf + out, ans, sizeof(ans));
+      out += sizeof(ans);
+    }
+    badgeDnsUdp->beginPacket(badgeDnsUdp->remoteIP(), badgeDnsUdp->remotePort());
+    badgeDnsUdp->write(buf, out);
+    badgeDnsUdp->endPacket();
+  }
 }
 static void badgeDnsStop()
 {
-  MDNS.end();
-  if (badgeDns)
+  if (badgeDnsUdp)
   {
-    badgeDns->stop();
-    delete badgeDns;
-    badgeDns = nullptr;
+    badgeDnsUdp->stop();
+    delete badgeDnsUdp;
+    badgeDnsUdp = nullptr;
   }
 }
 
