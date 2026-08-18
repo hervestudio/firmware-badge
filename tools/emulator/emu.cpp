@@ -78,7 +78,7 @@ static const int NACTIVE = (int)sizeof(ACTIVE);
 
 enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW,
                         UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_FLASH, UI_OFF,
-                        UI_PIN, UI_SET };
+                        UI_PIN, UI_SET, UI_SETUP, UI_QR };
 static UiMode uiMode = UI_ANIM;
 static int menuSel = 0, slot = 0, menuCat = 0, schedIdx = 0;
 
@@ -97,6 +97,7 @@ static uint32_t batMvRaw = 3780; // tension simulee
 static bool batCharging = false;
 
 #include "menu_ui.h" // menu bulles + listes (partage avec le firmware)
+#include "qr_screen.h" // ecran Meet > QR Code (partage avec le firmware)
 
 // splash de boot (copie de main.cpp)
 static void drawBootLoader(float p, float t)
@@ -169,6 +170,29 @@ static void drawFlashScreen()
   canvas->print("pio run -e ota -t upload");
   canvas->setTextColor(rgb565(130, 130, 130));
   canvas->setCursor(CX - 102, 240);
+  canvas->print("center: exit");
+}
+
+// Ecran du mode Setup — sur le vrai badge, le telephone se connecte en WiFi
+// et configure nom / buddy / URL du QR ; l'emulateur affiche les infos.
+static void drawSetupScreen()
+{
+  canvas->fillScreen(RGB565_BLACK);
+  canvas->setTextColor(rgb565(0xfb, 0xd9, 0x75));
+  canvas->setTextSize(3);
+  canvas->setCursor(CX - 90, 40);
+  canvas->print("SETUP");
+  canvas->setTextSize(2);
+  canvas->setTextColor(RGB565_WHITE);
+  canvas->setCursor(70, 120);
+  canvas->print("WiFi badge-threejs");
+  canvas->setCursor(70, 150);
+  canvas->print("Pass threejs2026");
+  canvas->setTextColor(rgb565(255, 213, 48));
+  canvas->setCursor(70, 185);
+  canvas->print("http://192.168.4.1");
+  canvas->setTextColor(rgb565(130, 130, 130));
+  canvas->setCursor(CX - 96, 250);
   canvas->print("center: exit");
 }
 
@@ -662,6 +686,13 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
         pinErrorUntil = 0;
         uiMode = UI_PIN;
         break;
+      case UIA_SETUP:
+        uiMode = UI_SETUP;
+        break;
+      case UIA_QR:
+        qrScreenPrepare();
+        uiMode = UI_QR;
+        break;
       case UIA_BACK:
         uiMode = UI_HOME;
         break;
@@ -677,17 +708,34 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
       ; // ecran de dessin deja efface par drawEmuEnter()
     else if (uiMode == UI_FLASH)
       drawFlashScreen();
+    else if (uiMode == UI_SETUP)
+      drawSetupScreen();
+    else if (uiMode == UI_QR)
+      qrScreenDraw((float)(emuNowMs / 1000.0));
     return;
   }
 
-  if (uiMode == UI_DRAW || uiMode == UI_FLASH)
+  if (uiMode == UI_DRAW || uiMode == UI_FLASH || uiMode == UI_SETUP)
   {
     if (uiMode == UI_DRAW)
       drawEmuTick();
-    else
+    else if (uiMode == UI_FLASH)
       drawFlashScreen();
+    else
+      drawSetupScreen();
     if (autoShort)
       uiMode = UI_MENU;
+    return;
+  }
+
+  if (uiMode == UI_QR)
+  {
+    qrScreenDraw((float)(emuNowMs / 1000.0));
+    if (autoShort)
+    {
+      qrScreenRelease();
+      uiMode = UI_MENU;
+    }
     return;
   }
 

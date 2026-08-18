@@ -33,8 +33,8 @@ static int uiListCount(int cat)
   {
   case UIC_PLAY: return 6;
   case UIC_WATCH: return 8;
-  case UIC_MEET: return 5; // Schedule + 3 photos + Back
-  default: return 7; // More : Draw, Auto cycle, OTA, Rotate, Settings, info tension, Back
+  case UIC_MEET: return 6; // Schedule + QR Code + 3 photos + Back
+  default: return 8; // More : Draw, Setup, Auto cycle, OTA, Rotate, Settings, info tension, Back
   }
 }
 
@@ -52,19 +52,23 @@ static void uiListLabel(int cat, int i, bool autoCyc, char *buf, size_t n)
   case UIC_MEET:
     if (i == 0)
       snprintf(buf, n, "Schedule");
+    else if (i == 1)
+      snprintf(buf, n, "QR Code");
     else
-      snprintf(buf, n, "%s", UI_MEET_IT[i - 1]);
+      snprintf(buf, n, "%s", UI_MEET_IT[i - 2]);
     break;
   default:
     if (i == 0)
       snprintf(buf, n, "Draw (WiFi)");
     else if (i == 1)
-      snprintf(buf, n, "Auto cycle: %s", autoCyc ? "ON" : "OFF");
+      snprintf(buf, n, "Setup (WiFi)");
     else if (i == 2)
-      snprintf(buf, n, "OTA flash mode");
+      snprintf(buf, n, "Auto cycle: %s", autoCyc ? "ON" : "OFF");
     else if (i == 3)
-      snprintf(buf, n, "Rotate screen");
+      snprintf(buf, n, "OTA flash mode");
     else if (i == 4)
+      snprintf(buf, n, "Rotate screen");
+    else if (i == 5)
       snprintf(buf, n, "Settings");
     else if (batMvRaw > 0) // tension ADC brute (diagnostic jauge)
       snprintf(buf, n, "Batt: %lu.%02luV", (unsigned long)(batMvRaw / 1000),
@@ -76,7 +80,8 @@ static void uiListLabel(int cat, int i, bool autoCyc, char *buf, size_t n)
 
 // resolution d'une selection -> action a executer par l'appelant
 enum UiAction : uint8_t { UIA_NONE, UIA_ANIM, UIA_GAME, UIA_DRAW, UIA_AUTO,
-                          UIA_OTA, UIA_SCHED, UIA_ROT, UIA_SETTINGS, UIA_BACK };
+                          UIA_OTA, UIA_SCHED, UIA_ROT, UIA_SETTINGS, UIA_BACK,
+                          UIA_SETUP, UIA_QR };
 static UiAction uiResolve(int cat, int sel, int *arg)
 {
   if (sel == uiListCount(cat) - 1)
@@ -88,18 +93,22 @@ static UiAction uiResolve(int cat, int sel, int *arg)
   case UIC_MEET:
     if (sel == 0)
       return UIA_SCHED;
-    *arg = 7 + (sel - 1); // slots photos 7..9
+    if (sel == 1)
+      return UIA_QR; // QR code configure via More > Setup
+    *arg = 7 + (sel - 2); // slots photos 7..9
     return UIA_ANIM;
   default:
     if (sel == 0)
       return UIA_DRAW;
     if (sel == 1)
-      return UIA_AUTO;
+      return UIA_SETUP; // parcours de config sur telephone (nom/buddy/QR)
     if (sel == 2)
-      return UIA_OTA;
+      return UIA_AUTO;
     if (sel == 3)
-      return UIA_ROT;
+      return UIA_OTA;
     if (sel == 4)
+      return UIA_ROT;
+    if (sel == 5)
       return UIA_SETTINGS; // protege par code (avatar / personne du badge)
     return UIA_NONE; // ligne info tension : non cliquable
   }

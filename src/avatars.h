@@ -94,6 +94,20 @@ static uint8_t g_avatarFaceIdx = 0; // avatar AFFICHE par le visage (= sauve,
                                     // sauf pendant la preview des Settings)
 static int irDirtyFrom = -1;        // >=0 : frames idle a regenerer (1/frame)
 
+// ---- buddy CUSTOM (parcours Setup sur telephone) : quand actif, il remplace
+// l'avatar de la table pour la couleur de la sphere ET le visage. Persiste en
+// NVS (bcust/bhue/bsat/bface) ; choisir un avatar dans Settings le desactive.
+static bool g_buddyCustom = false;
+static AvatarDef g_buddyCustomDef = {"Custom", 0, 1.00f, AF_MUSEAU, 0};
+static int g_faceForce = -1; // >=0 : force un avatar de la table (preview
+                             // Settings, meme si le custom est actif)
+static inline const AvatarDef &avatarCurrent()
+{
+  if (g_faceForce >= 0)
+    return AVATARS[g_faceForce];
+  return g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarFaceIdx];
+}
+
 // ---- rendu du visage --------------------------------------------------
 
 // contexte de projection sphere (rempli par avatarDrawFace, utilise par les
@@ -160,7 +174,7 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
                            float yShift, float cosT, float sinT,
                            float openness, uint16_t ink)
 {
-  const AvatarDef &av = AVATARS[g_avatarFaceIdx];
+  const AvatarDef &av = avatarCurrent();
   avCx = cx; avCy = cy; avFr = fr;
   avCosT = cosT; avSinT = sinT;
   avBreathe = breathe; avYShift = yShift;
@@ -345,7 +359,7 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
 // (Reutilise le contexte av* rempli par avatarDrawFace juste avant.)
 static void avatarDrawExtras(float cx, float cy, float fr, float breathe)
 {
-  const AvatarDef &av = AVATARS[g_avatarFaceIdx];
+  const AvatarDef &av = avatarCurrent();
   if (av.extra == 1) // joues roses sous les yeux
   {
     uint16_t blush = rgb565(246, 148, 168);

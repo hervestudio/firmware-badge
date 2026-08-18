@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>badge setup</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { background:#211c3b; color:#f1eefc; font-family:-apple-system,system-ui,sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center;
+         gap:16px; padding:20px 16px 30px; overscroll-behavior:none; }
+  h1 { font-size:15px; letter-spacing:3px; color:#fbd975; font-weight:600; }
+  #st { display:inline-block; width:9px; height:9px; border-radius:50%; background:#f0504d;
+        margin-right:7px; vertical-align:1px; }
+  #st.ok { background:#7cf59a; }
+  #steps { display:flex; gap:8px; align-items:center; }
+  .dot { width:30px; height:30px; border-radius:50%; background:#332c55; color:#aaa6fc;
+         display:flex; align-items:center; justify-content:center; font-size:13px;
+         font-weight:700; border:2px solid transparent; }
+  .dot.on { background:#aaa6fc; color:#211c3b; }
+  .dot.done { border-color:#7cf59a; }
+  .bar { width:26px; height:2px; background:#332c55; }
+  .card { background:#2b2450; border-radius:18px; padding:20px 18px; width:min(92vw,380px);
+          display:none; flex-direction:column; gap:14px; }
+  .card.on { display:flex; }
+  .card h2 { font-size:13px; letter-spacing:2px; color:#aaa6fc; font-weight:700; }
+  .hint { font-size:12.5px; line-height:1.5; color:#9b93c9; }
+  input[type=text], input[type=url] {
+    background:#211c3b; color:#fff; border:1.5px solid #4a4180; border-radius:10px;
+    padding:12px 13px; font-size:16px; width:100%; outline:none; }
+  input:focus { border-color:#fbd975; }
+  input[type=range] { width:100%; height:26px; appearance:none; background:transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height:14px; border-radius:7px; }
+  #hue::-webkit-slider-runnable-track { background:linear-gradient(90deg,
+    #ff5f5f,#ffd75f,#7cf59a,#46d7f5,#6a7bff,#e06af5,#ff5f5f); }
+  #sat::-webkit-slider-runnable-track { background:linear-gradient(90deg,#8a8a8a,#ff3fd4); }
+  input[type=range]::-webkit-slider-thumb { appearance:none; width:24px; height:24px;
+    border-radius:50%; background:#fff; border:3px solid #211c3b; margin-top:-5px; }
+  .lab { font-size:11px; letter-spacing:1.5px; color:#9b93c9; font-weight:700; }
+  #faces { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; }
+  #faces button { background:#211c3b; border:2px solid #4a4180; border-radius:14px;
+                  padding:6px; cursor:pointer; }
+  #faces button.sel { border-color:#fbd975; background:#332c55; }
+  #faces canvas { width:100%; display:block; }
+  #prevWrap { display:flex; justify-content:center; }
+  #prev { width:130px; height:130px; }
+  .ghost { background:none; border:none; color:#9b93c9; font-size:12px;
+           text-decoration:underline; cursor:pointer; }
+  #nav { display:flex; gap:10px; width:min(92vw,380px); }
+  #nav button { flex:1; padding:13px; border-radius:12px; font-size:15px; font-weight:700;
+                border:none; cursor:pointer; }
+  #back { background:#332c55; color:#aaa6fc; }
+  #next { background:#fbd975; color:#211c3b; }
+  #saved { font-size:12px; color:#7cf59a; height:15px; opacity:0; transition:opacity .3s; }
+  #saved.show { opacity:1; }
+</style>
+</head>
+<body>
+<h1><span id="st"></span>BADGE SETUP</h1>
+<div id="steps">
+  <div class="dot on" data-s="0">1</div><div class="bar"></div>
+  <div class="dot" data-s="1">2</div><div class="bar"></div>
+  <div class="dot" data-s="2">3</div>
+</div>
+
+<div class="card on" id="s0">
+  <h2>YOUR NAME</h2>
+  <p class="hint">Shown under your QR code and used by the social features of the badge.</p>
+  <input type="text" id="name" maxlength="20" placeholder="Ada Lovelace" autocomplete="off">
+</div>
+
+<div class="card" id="s1">
+  <h2>YOUR CONF BUDDY</h2>
+  <p class="hint">Pick a color and a face &mdash; the badge shows a live preview.</p>
+  <div id="prevWrap"><canvas id="prev" width="130" height="130"></canvas></div>
+  <span class="lab">COLOR</span>
+  <input type="range" id="hue" min="0" max="359" value="0">
+  <span class="lab">INTENSITY</span>
+  <input type="range" id="sat" min="35" max="130" value="100">
+  <span class="lab">FACE</span>
+  <div id="faces"></div>
+  <button class="ghost" id="reset">use my default badge avatar instead</button>
+</div>
+
+<div class="card" id="s2">
+  <h2>YOUR QR CODE</h2>
+  <p class="hint">Where should your QR code send people? Your website, LinkedIn, X&hellip;
+    The badge shows it in <b>Meet &gt; QR Code</b>, with your buddy animated in the middle.</p>
+  <input type="url" id="url" maxlength="90" placeholder="https://your-site.dev"
+         autocapitalize="off" autocorrect="off">
+</div>
+
+<span id="saved">saved on badge &#10003;</span>
+<div id="nav">
+  <button id="back">Back</button>
+  <button id="next">Next</button>
+</div>
+
+<script>
+const FACES = ['Snout','Laugh','Smile','Wavy','Cat','Shades','Happy','Mustache','Stars'];
+let step = 0, ws = null, hue = 0, sat = 100, face = 0, custom = 0;
+
+// ---- mini rendus des 9 visages (approximation du rendu badge) ----
+function drawFace(ctx, s, id, hu, sa) {
+  ctx.clearRect(0, 0, s, s);
+  const g = ctx.createRadialGradient(s*0.38, s*0.34, s*0.06, s*0.5, s*0.5, s*0.55);
+  const h = (n) => 'hsl(' + ((n + hu) % 360) + ',' + Math.min(95, sa*0.85) + '%,60%)';
+  g.addColorStop(0, h(45)); g.addColorStop(0.5, h(310)); g.addColorStop(1, h(260));
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(s/2, s/2, s*0.46, 0, 7); ctx.fill();
+  ctx.fillStyle = '#272727'; ctx.strokeStyle = '#272727';
+  ctx.lineWidth = Math.max(2, s*0.05); ctx.lineCap = 'round';
+  const e = s*0.16, ey = s*0.42, er = s*0.055, cx = s/2;
+  const eyes = () => { ctx.beginPath(); ctx.arc(cx-e, ey, er, 0, 7);
+                       ctx.arc(cx+e, ey, er, 0, 7); ctx.fill(); };
+  switch (id) {
+  case 0: eyes(); ctx.beginPath(); ctx.ellipse(cx, s*0.60, s*0.13, s*0.10, 0, 0, 7);
+          ctx.fill(); ctx.beginPath(); ctx.moveTo(cx, s*0.66); ctx.lineTo(cx, s*0.72);
+          ctx.stroke(); break;
+  case 1: eyes(); ctx.beginPath(); ctx.ellipse(cx, s*0.60, s*0.14, s*0.11, 0, 0, 7);
+          ctx.fill(); ctx.fillStyle = '#fff';
+          ctx.beginPath(); ctx.ellipse(cx, s*0.65, s*0.10, s*0.05, 0, 0, 7); ctx.fill(); break;
+  case 2: eyes(); ctx.beginPath(); ctx.arc(cx, s*0.52, s*0.13, 0.4, 2.7); ctx.stroke(); break;
+  case 3: eyes(); ctx.beginPath();
+          for (let i = 0; i <= 20; i++) { const u = i/20, x = cx - s*0.13 + u*s*0.26;
+            const y = s*0.60 + Math.sin(u*9.4)*s*0.03;
+            i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); break;
+  case 4: ctx.beginPath(); ctx.ellipse(cx-e, ey, er*0.9, er*1.6, 0, 0, 7);
+          ctx.ellipse(cx+e, ey, er*0.9, er*1.6, 0, 0, 7); ctx.fill();
+          ctx.beginPath(); ctx.arc(cx-s*0.06, s*0.58, s*0.06, 0.2, 2.9);
+          ctx.arc(cx+s*0.06, s*0.58, s*0.06, 0.2, 2.9); ctx.stroke(); break;
+  case 5: ctx.fillRect(cx-e-s*0.1, ey-s*0.05, s*0.52, s*0.05);
+          ctx.beginPath(); ctx.ellipse(cx-e, ey+s*0.03, s*0.09, s*0.07, 0, 0, 7);
+          ctx.ellipse(cx+e, ey+s*0.03, s*0.09, s*0.07, 0, 0, 7); ctx.fill();
+          ctx.beginPath(); ctx.moveTo(cx-s*0.08, s*0.64); ctx.lineTo(cx+s*0.09, s*0.60);
+          ctx.stroke(); break;
+  case 6: ctx.beginPath(); ctx.arc(cx-e, ey+er, er*1.8, 3.4, 6.0);
+          ctx.stroke(); ctx.beginPath(); ctx.arc(cx+e, ey+er, er*1.8, 3.4, 6.0); ctx.stroke();
+          ctx.beginPath(); ctx.arc(cx, s*0.56, s*0.09, 0.4, 2.7); ctx.stroke(); break;
+  case 7: eyes(); ctx.beginPath();
+          for (let i = 0; i <= 24; i++) { const u = i/24, x = cx - s*0.17 + u*s*0.34;
+            const y = s*0.58 + Math.sin(u*6.28)*s*0.045;
+            i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); break;
+  case 8: const st = (x) => { for (let k = 0; k < 8; k++) { const a = k*Math.PI/4;
+            ctx.beginPath(); ctx.arc(x+Math.cos(a)*er*1.3, ey+Math.sin(a)*er*1.3,
+            er*0.7, 0, 7); ctx.fill(); }
+            ctx.beginPath(); ctx.arc(x, ey, er*1.3, 0, 7); ctx.fill(); };
+          st(cx-e); st(cx+e);
+          ctx.fillRect(cx-e, ey-s*0.015, e*2, s*0.03); break;
+  }
+}
+const faces = document.getElementById('faces');
+FACES.forEach((n, i) => {
+  const b = document.createElement('button');
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  b.appendChild(c); b.title = n;
+  b.onclick = () => { face = i; custom = 1; sync(); sendBuddy(); };
+  faces.appendChild(b);
+});
+function sync() {
+  document.querySelectorAll('#faces button').forEach((b, i) =>
+    b.classList.toggle('sel', i === face));
+  document.querySelectorAll('#faces canvas').forEach((c, i) =>
+    drawFace(c.getContext('2d'), 64, i, hue, sat));
+  drawFace(document.getElementById('prev').getContext('2d'), 130, face, hue, sat);
+  document.getElementById('hue').value = hue;
+  document.getElementById('sat').value = sat;
+}
+
+// ---- navigation ----
+function showStep(n) {
+  step = Math.max(0, Math.min(2, n));
+  for (let i = 0; i < 3; i++) {
+    document.getElementById('s' + i).classList.toggle('on', i === step);
+    const d = document.querySelector('[data-s="' + i + '"]');
+    d.classList.toggle('on', i === step);
+    d.classList.toggle('done', i < step);
+  }
+  document.getElementById('back').style.visibility = step ? 'visible' : 'hidden';
+  document.getElementById('next').textContent = step === 2 ? 'Done' : 'Next';
+}
+document.getElementById('back').onclick = () => showStep(step - 1);
+document.getElementById('next').onclick = () => {
+  if (step === 2) { flashSaved(); showStep(0); } else showStep(step + 1);
+};
+document.querySelectorAll('.dot').forEach(d => d.onclick = () => showStep(+d.dataset.s));
+
+// ---- liaison badge ----
+function connect() {
+  try { ws = new WebSocket('ws://' + location.hostname + ':81/'); }
+  catch (_) { return; } // hors badge (file://...) : la page reste utilisable
+  ws.onopen = () => document.getElementById('st').classList.add('ok');
+  ws.onclose = () => { document.getElementById('st').classList.remove('ok');
+                       setTimeout(connect, 1500); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (e) => {
+    if (e.data[0] !== 'J') return;
+    try {
+      const j = JSON.parse(e.data.slice(1));
+      document.getElementById('name').value = j.name || '';
+      document.getElementById('url').value = j.url || '';
+      hue = j.hue || 0; sat = j.sat || 100; face = j.face || 0; custom = j.cust || 0;
+      sync();
+    } catch (_) {}
+  };
+}
+connect();
+let savedT = null;
+function flashSaved() {
+  const el = document.getElementById('saved');
+  el.classList.add('show');
+  clearTimeout(savedT);
+  savedT = setTimeout(() => el.classList.remove('show'), 1400);
+}
+function send(msg) {
+  if (ws && ws.readyState === 1) { ws.send(msg); flashSaved(); }
+}
+let debN = null, debU = null, debA = null;
+document.getElementById('name').oninput = (e) => {
+  clearTimeout(debN);
+  debN = setTimeout(() => send('N' + e.target.value.trim()), 350);
+};
+document.getElementById('url').oninput = (e) => {
+  clearTimeout(debU);
+  debU = setTimeout(() => send('U' + e.target.value.trim()), 500);
+};
+function sendBuddy() {
+  clearTimeout(debA);
+  debA = setTimeout(() => send('A' + hue + ',' + sat + ',' + face), 120);
+}
+document.getElementById('hue').oninput = (e) => { hue = +e.target.value; custom = 1;
+                                                  sync(); sendBuddy(); };
+document.getElementById('sat').oninput = (e) => { sat = +e.target.value; custom = 1;
+                                                  sync(); sendBuddy(); };
+document.getElementById('reset').onclick = () => { custom = 0; send('R'); };
+sync(); showStep(0);
+</script>
+</body>
+</html>

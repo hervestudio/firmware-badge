@@ -336,8 +336,9 @@ static void irGenFrame(int fi)
   const float d2toLut = 128.0f / IR_CUTOFF2;
   const float rTex = IR_SPR * 229.0f / 466.0f; // rayon boule dans la frame (ratio JS)
 
-  // couleurs de la palette transformees par l'avatar actif
-  const AvatarDef &av = AVATARS[g_avatarIdx];
+  // couleurs de la palette transformees par l'avatar actif (ou le buddy
+  // custom configure via Setup, qui prend le pas sur la table)
+  const AvatarDef &av = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
   float PC[PAL_N][3];
   for (unsigned k = 0; k < PAL_N; k++)
   {

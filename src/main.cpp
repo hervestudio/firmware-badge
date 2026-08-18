@@ -914,7 +914,7 @@ static const int NACTIVE = (int)sizeof(ACTIVE);
 RTC_NOINIT_ATTR uint32_t otaRequest;
 
 // Etat de l'interface : animations / menu / jeux
-enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET };
+enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET, UI_SETUP, UI_QR };
 static UiMode uiMode = UI_ANIM;
 
 // ---- etat des Settings (code d'acces + choix d'avatar, voir menu_ui.h) ----
@@ -1061,6 +1061,8 @@ static void badgeFlush()
 // ----------------------------------------------------------------- jeux
 #include "games.h"
 #include "draw_mode.h"
+#include "qr_screen.h"  // ecran Meet > QR Code (partage avec l'emulateur)
+#include "setup_mode.h" // parcours de config sur telephone (More > Setup)
 
 // Ecran d'attente du mode dessin : infos de connexion tant que personne
 // n'a rejoint (efface par draw_mode.h a la premiere connexion WebSocket)
@@ -1252,6 +1254,14 @@ void setup()
   uiScreenRot = (int)(int8_t)prefs.getChar("rotDeg", 0); // rotation ecran calibree
   g_avatarIdx = prefs.getUChar("avatar", 0) % AVATAR_N;  // avatar/personne du badge
   g_avatarFaceIdx = g_avatarIdx;
+  // buddy custom + nom + URL du QR (parcours More > Setup, sur telephone)
+  g_buddyCustom = prefs.getUChar("bcust", 0) != 0;
+  g_buddyCustomDef.hue = prefs.getShort("bhue", 0);
+  g_buddyCustomDef.sat = prefs.getUChar("bsat", 100) / 100.0f;
+  g_buddyCustomDef.face = prefs.getUChar("bface", 0) % 9;
+  prefs.getString("bname", qrName, sizeof(qrName));
+  if (prefs.getString("qrurl", qrUrl, sizeof(qrUrl)) == 0 || !qrUrl[0])
+    snprintf(qrUrl, sizeof(qrUrl), "https://threejs.paris");
 
   // Bouton PREV — ou BOOT, pratique tant que les boutons ne sont pas cables —
   // presse pendant l'anim de boot -> mode flash OTA (la fenetre est surveillee
@@ -1610,6 +1620,12 @@ void loop()
       prefs.putUChar("avatar", (uint8_t)setSel);
       g_avatarIdx = (uint8_t)setSel;
       g_avatarFaceIdx = g_avatarIdx;
+      g_faceForce = -1;
+      if (g_buddyCustom) // choisir un avatar de la table desactive le custom
+      {
+        g_buddyCustom = false;
+        prefs.putUChar("bcust", 0);
+      }
       irDirtyFrom = 0; // la sphere idle se regenerera progressivement
       if (setSpr)
       {
@@ -1634,6 +1650,7 @@ void loop()
       uiDrawAvatarFrame(setSel, AVATAR_N, av.name);
       dvdBlit(setSpr, CX, CY - 26, 78, 255);
       g_avatarFaceIdx = (uint8_t)setSel; // le visage suit la preview
+      g_faceForce = setSel; // ...meme si un buddy custom est actif
       drawIdleFaceLook(CX, CY - 26, 78, 0, 0, 0, 1.0f);
       badgeFlush();
       fpsCount++;
@@ -1700,6 +1717,18 @@ void loop()
         uiMode = UI_DRAW;
         fpsCount++;
         return; // sans ce return, le menu se redessine par-dessus l'ecran d'infos
+      case UIA_SETUP:
+        setupModeEnter();
+        setupDrawScreen();
+        waitTE();
+        badgeFlush();
+        uiMode = UI_SETUP;
+        fpsCount++;
+        return;
+      case UIA_QR:
+        qrScreenPrepare();
+        uiMode = UI_QR;
+        break;
       case UIA_AUTO:
         autoCycle = !autoCycle; // bascule sans sortir
         break;
@@ -1743,6 +1772,52 @@ void loop()
     listFirst = (uiMode != UI_MENU);
     listLastPct = batPct;
     listLastChg = batCharging;
+    return;
+  }
+
+  if (uiMode == UI_SETUP)
+  {
+    setupModeLoop();
+    if (autoShort) // central : retour menu, WiFi coupe
+    {
+      setupModeExit();
+      uiMode = UI_MENU;
+      uiDrawList(menuCat, menuSel, autoCycle, batPct, batCharging);
+      waitTE();
+      badgeFlush();
+      fpsCount++;
+      return;
+    }
+    if (setupRedraw)
+    {
+      setupRedraw = false;
+      setupDrawScreen();
+      waitTE();
+      badgeFlush();
+      fpsCount++;
+    }
+    else
+      delay(2); // laisse respirer le WiFi
+    return;
+  }
+
+  if (uiMode == UI_QR)
+  {
+    // QR statique + buddy anime au centre ; central = retour menu
+    if (autoShort)
+    {
+      qrScreenRelease();
+      uiMode = UI_MENU;
+      uiDrawList(menuCat, menuSel, autoCycle, batPct, batCharging);
+      waitTE();
+      badgeFlush();
+      fpsCount++;
+      return;
+    }
+    qrScreenDraw(now / 1000.0f);
+    waitTE();
+    badgeFlush();
+    fpsCount++;
     return;
   }
 
