@@ -92,6 +92,7 @@ static const AvatarDef AVATARS[] = {
 static uint8_t g_avatarIdx = 0;     // avatar SAUVE (NVS) : colore la sphere
 static uint8_t g_avatarFaceIdx = 0; // avatar AFFICHE par le visage (= sauve,
                                     // sauf pendant la preview des Settings)
+static bool g_ballDirty = false; // ballSprite (snake/DVD/jeux) a regenerer
 static uint32_t irDirtyMask = 0; // bit i = frame de rotation idle i a
                                  // regenerer (avatar/buddy change) ; les
                                  // frames AFFICHEES sont refaites en priorite

@@ -564,6 +564,7 @@ extern "C"
     }
     g_buddyCustom = custom != 0;
     irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
+      g_ballDirty = true;    // + le sprite de boule (snake/DVD/jeux)
     setupEmuQrDirty = true; // le sprite du medaillon QR aussi
     setupEmuConnected = true;
   }
@@ -730,6 +731,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
       // sur le vrai badge
       snprintf(qrName, sizeof(qrName), "%s", AVATARS[setSel].name);
       irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
+      g_ballDirty = true;    // + le sprite de boule (snake/DVD/jeux)
       if (setSpr)
       {
         free(setSpr);

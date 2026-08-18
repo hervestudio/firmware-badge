@@ -383,7 +383,31 @@ static const float PAL_RAINBOW[][5] = {
 
 static void initBallSprite()
 {
-  ballSprite = (uint16_t *)malloc(SPR * SPR * sizeof(uint16_t));
+  if (!ballSprite) // regenerable au changement d'avatar (g_ballDirty)
+    ballSprite = (uint16_t *)malloc(SPR * SPR * sizeof(uint16_t));
+  // couleurs transformees par l'avatar actif / le buddy custom (meme
+  // transformation que la sphere idle) : le snake, la palette rainbow de la
+  // DVD et Sphere Run suivent la couleur configuree du badge
+  const AvatarDef &avB = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
+  float PC[PAL_N][3];
+  for (unsigned k = 0; k < PAL_N; k++)
+  {
+    if (avB.hue != 0 || avB.sat != 1.0f)
+    {
+      float h, s, l;
+      rgb2hsl(PAL_RAINBOW[k][2], PAL_RAINBOW[k][3], PAL_RAINBOW[k][4], &h, &s, &l);
+      h = fmodf(h + avB.hue / 360.0f + 1.0f, 1.0f);
+      s = constrain(s * avB.sat, 0.0f, 1.0f);
+      hsl2rgb(h, s, l, &PC[k][0], &PC[k][1], &PC[k][2]);
+    }
+    else
+    {
+      PC[k][0] = PAL_RAINBOW[k][2];
+      PC[k][1] = PAL_RAINBOW[k][3];
+      PC[k][2] = PAL_RAINBOW[k][4];
+    }
+  }
+
   const float sigma = 0.16f, sigma2 = 2 * sigma * sigma;
   const float satBoost = 1.75f, lumBoost = 1.12f, grainAmp = 40.0f;
   const float r = SPR / 2.0f - 1;
@@ -408,9 +432,9 @@ static void initBallSprite()
         float ddx = nx - PAL_RAINBOW[k][0], ddy = ny - PAL_RAINBOW[k][1];
         float w = expf(-(ddx * ddx + ddy * ddy) / sigma2) * vis[k];
         tw += w;
-        pr += PAL_RAINBOW[k][2] * w;
-        pg += PAL_RAINBOW[k][3] * w;
-        pb += PAL_RAINBOW[k][4] * w;
+        pr += PC[k][0] * w;
+        pg += PC[k][1] * w;
+        pb += PC[k][2] * w;
       }
       if (tw < 1e-6f)
       {
@@ -730,6 +754,11 @@ static bool snakeInit = false;
 
 static void animSnake(float t, float dt)
 {
+  if (g_ballDirty) // avatar/buddy change : re-teinte le sprite de boule
+  {
+    g_ballDirty = false;
+    initBallSprite();
+  }
   const float headR = RADIUS * 0.30f;
   const float Rmax = RADIUS - headR - 4;
   const float speed = RADIUS * 0.55f;
@@ -804,7 +833,7 @@ static void animSnake(float t, float dt)
     float sr = headR * (1.0f - 0.25f * i / (SNAKE_N - 1));
     drawBallSprite((int)pts[i].x, (int)pts[i].y, sr);
   }
-  drawFace(pts[0].x, pts[0].y, headR, t);
+  drawIdleFace(pts[0].x, pts[0].y, headR, t); // visage de l'avatar
 }
 
 // ------------------------------------------------- 5. disco (boule a facettes)
@@ -1673,6 +1702,7 @@ void loop()
       snprintf(qrName, sizeof(qrName), "%s", AVATARS[setSel].name);
       prefs.putString("bname", qrName);
       irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
+      g_ballDirty = true;    // + le sprite de boule (snake/DVD/jeux)
       if (setSpr)
       {
         free(setSpr);

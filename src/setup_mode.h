@@ -273,6 +273,7 @@ static void setupWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t le
         prefs.putUChar("bsat", (uint8_t)constrain(s, 20, 150));
         prefs.putUChar("bface", g_buddyCustomDef.face);
         irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
+      g_ballDirty = true;    // + le sprite de boule (snake/DVD/jeux)
         setupQrDirty = true; // le sprite du medaillon QR aussi
       }
       break;
@@ -281,6 +282,7 @@ static void setupWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t le
       g_buddyCustom = false;
       prefs.putUChar("bcust", 0);
       irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
+      g_ballDirty = true;    // + le sprite de boule (snake/DVD/jeux)
       setupQrDirty = true; // sprite du medaillon QR a regenerer
       setupSendState(num); // resynchronise sliders/visage du telephone
       Serial0.println("setup : retour a l'avatar de la table");

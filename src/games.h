@@ -888,6 +888,11 @@ static void gameTetro(float dt)
 
 static void gameReset(int gi)
 {
+  if (g_ballDirty) // avatar/buddy change : re-teinte le sprite de boule
+  {
+    g_ballDirty = false;
+    initBallSprite();
+  }
   switch (gi)
   {
   case 0: snakeGameReset(); break;

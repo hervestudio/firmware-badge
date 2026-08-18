@@ -805,6 +805,11 @@ static struct { float x, y, life; } dvdSparks[6];
 
 static void animDvd(float t, float dt)
 {
+  if (g_ballDirty) // avatar/buddy change : re-teinte la palette rainbow (sprite [0])
+  {
+    g_ballDirty = false;
+    initBallSprite();
+  }
   const float ballR = RADIUS * 0.2f;
   const float maxR = RADIUS - ballR - 2;
   if (dt > 0.09f)
