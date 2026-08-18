@@ -561,7 +561,8 @@ extern "C"
       g_buddyCustomDef.face = (uint8_t)(face < 0 ? 0 : (face > 8 ? 8 : face));
     }
     g_buddyCustom = custom != 0;
-    irDirtyFrom = 0; // la sphere idle se regenerera progressivement
+    irDirtyFrom = 0;        // la sphere idle se regenerera progressivement
+    setupEmuQrDirty = true; // le sprite du medaillon QR aussi
     setupEmuConnected = true;
   }
 }
