@@ -5,7 +5,7 @@
 // son VISAGE parmi les 9 designs Figma (node 4195-8272).
 //
 // Fichier partage firmware / emulateur. A inclure AVANT anims_extra.h
-// (irGenFrame et animIdleRainbow lisent g_avatarIdx / irDirtyFrom) et apres
+// (irGenFrame et animIdleRainbow lisent g_avatarIdx / irDirtyMask) et apres
 // la declaration de canvas. Le museau (visage 0) est rendu par la plateforme
 // (drawMouthImg cote firmware, drawMouth cote emulateur) via le wrapper
 // avatarPlatformMouth defini dans chaque TU.
@@ -92,7 +92,9 @@ static const AvatarDef AVATARS[] = {
 static uint8_t g_avatarIdx = 0;     // avatar SAUVE (NVS) : colore la sphere
 static uint8_t g_avatarFaceIdx = 0; // avatar AFFICHE par le visage (= sauve,
                                     // sauf pendant la preview des Settings)
-static int irDirtyFrom = -1;        // >=0 : frames idle a regenerer (1/frame)
+static uint32_t irDirtyMask = 0; // bit i = frame de rotation idle i a
+                                 // regenerer (avatar/buddy change) ; les
+                                 // frames AFFICHEES sont refaites en priorite
 // pilotes par la reaction sociale (social_ui.h) pendant une rencontre :
 // gel de la rotation de la sphere (les triggers du visualiseur figent le
 // regard) et rebond vertical du blit (bounce Happy/Wow)

@@ -456,15 +456,6 @@ static void irGenFrame(int fi)
 
 static void animIdleRainbow(float t)
 {
-  // regeneration differee apres changement d'avatar : 1 frame par appel,
-  // la sphere se met a jour progressivement sans bloquer l'UI
-  if (irDirtyFrom >= 0)
-  {
-    irGenFrame(irDirtyFrom++);
-    if (irDirtyFrom >= IR_FRAMES)
-      irDirtyFrom = -1;
-  }
-
   float lookX, lookY, openness;
   getIdle(t, &lookX, &lookY, &openness);
 
@@ -480,6 +471,35 @@ static void animIdleRainbow(float t)
     lo = 0;
   if (lo > IR_FRAMES - 2)
     lo = IR_FRAMES - 2;
+  // regeneration apres changement d'avatar/buddy : les frames AFFICHEES
+  // (lo, lo+1) sont refaites immediatement — sinon on voyait l'ancienne
+  // sphere un instant — puis une frame de fond par appel pour le reste
+  if (irDirtyMask)
+  {
+    irDirtyMask &= (1u << IR_FRAMES) - 1;
+    bool shown = false;
+    if (irDirtyMask & (1u << lo))
+    {
+      irGenFrame(lo);
+      irDirtyMask &= ~(1u << lo);
+      shown = true;
+    }
+    if (irDirtyMask & (1u << (lo + 1)))
+    {
+      irGenFrame(lo + 1);
+      irDirtyMask &= ~(1u << (lo + 1));
+      shown = true;
+    }
+    if (!shown)
+      for (int i = 0; i < IR_FRAMES; i++)
+        if (irDirtyMask & (1u << i))
+        {
+          irGenFrame(i);
+          irDirtyMask &= ~(1u << i);
+          break;
+        }
+  }
+
   int alpha16 = (int)((fidx - lo) * 16);
   const uint16_t *texA = irFrames[lo], *texB = irFrames[lo + 1];
   const uint16_t *tex;

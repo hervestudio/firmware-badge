@@ -1672,7 +1672,7 @@ void loop()
       // Setup (modifiable ensuite) et SSID badge-<Nom> immediats
       snprintf(qrName, sizeof(qrName), "%s", AVATARS[setSel].name);
       prefs.putString("bname", qrName);
-      irDirtyFrom = 0; // la sphere idle se regenerera progressivement
+      irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
       if (setSpr)
       {
         free(setSpr);

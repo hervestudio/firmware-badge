@@ -563,7 +563,7 @@ extern "C"
       g_buddyCustomDef.face = (uint8_t)(face < 0 ? 0 : (face > 8 ? 8 : face));
     }
     g_buddyCustom = custom != 0;
-    irDirtyFrom = 0;        // la sphere idle se regenerera progressivement
+    irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
     setupEmuQrDirty = true; // le sprite du medaillon QR aussi
     setupEmuConnected = true;
   }
@@ -729,7 +729,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
       // l'avatar choisi devient l'identite du badge (nom + SSID), comme
       // sur le vrai badge
       snprintf(qrName, sizeof(qrName), "%s", AVATARS[setSel].name);
-      irDirtyFrom = 0;
+      irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
       if (setSpr)
       {
         free(setSpr);

@@ -10,7 +10,7 @@
 // Suppose definis avant inclusion : canvas, W/H/CX/CY, rgb565, Serial0,
 // OTA_SSID/OTA_PASS, prefs, qrUrl/qrName (qr_screen.h), dvdGenSprite/dvdBlit,
 // avatarDrawFace/avatarDrawExtras, g_buddyCustom/g_buddyCustomDef,
-// irDirtyFrom, mdPrint/mdTextW.
+// irDirtyMask, mdPrint/mdTextW.
 #pragma once
 #include <WebServer.h>
 #include <WebSocketsServer.h>
@@ -272,7 +272,7 @@ static void setupWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t le
         prefs.putShort("bhue", g_buddyCustomDef.hue);
         prefs.putUChar("bsat", (uint8_t)constrain(s, 20, 150));
         prefs.putUChar("bface", g_buddyCustomDef.face);
-        irDirtyFrom = 0;    // la sphere idle se regenerera progressivement
+        irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
         setupQrDirty = true; // le sprite du medaillon QR aussi
       }
       break;
@@ -280,7 +280,7 @@ static void setupWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t le
     case 'R': // retour a l'avatar de la table (Settings)
       g_buddyCustom = false;
       prefs.putUChar("bcust", 0);
-      irDirtyFrom = 0;
+      irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
       setupQrDirty = true; // sprite du medaillon QR a regenerer
       setupSendState(num); // resynchronise sliders/visage du telephone
       Serial0.println("setup : retour a l'avatar de la table");
