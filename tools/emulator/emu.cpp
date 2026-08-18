@@ -142,7 +142,7 @@ static void drawDrawWait()
   canvas->setTextSize(2);
   canvas->setTextColor(RGB565_WHITE);
   canvas->setCursor(70, 135);
-  canvas->print("WiFi badge-threejs");
+  canvas->printf("WiFi %s", badgeSsid());
   canvas->setCursor(70, 160);
   canvas->print("Pass threejs2026");
   canvas->setTextColor(rgb565(255, 213, 48));
@@ -163,7 +163,7 @@ static void drawFlashScreen()
   canvas->setTextSize(2);
   canvas->setTextColor(RGB565_WHITE);
   canvas->setCursor(70, 140);
-  canvas->print("WiFi badge-threejs");
+  canvas->printf("WiFi %s", badgeSsid());
   canvas->setCursor(70, 165);
   canvas->print("Pass threejs2026");
   canvas->setCursor(70, 190);
@@ -193,7 +193,7 @@ static void drawSetupScreen(float t)
     canvas->setTextSize(2);
     canvas->setTextColor(RGB565_WHITE);
     canvas->setCursor(70, 120);
-    canvas->print("WiFi badge-threejs");
+    canvas->printf("WiFi %s", badgeSsid());
     canvas->setCursor(70, 150);
     canvas->print("Pass threejs2026");
     canvas->setTextColor(rgb565(255, 213, 48));

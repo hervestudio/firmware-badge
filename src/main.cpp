@@ -1060,8 +1060,9 @@ static void badgeFlush()
 
 // ----------------------------------------------------------------- jeux
 #include "games.h"
+#include "qr_screen.h"  // ecran Meet > QR Code (partage avec l'emulateur) —
+                        // fournit badgeSsid(), utilise par draw/setup/OTA
 #include "draw_mode.h"
-#include "qr_screen.h"  // ecran Meet > QR Code (partage avec l'emulateur)
 #include "setup_mode.h" // parcours de config sur telephone (More > Setup)
 
 // Ecran d'attente du mode dessin : infos de connexion tant que personne
@@ -1076,7 +1077,7 @@ static void drawDrawWait()
   canvas->setTextSize(2);
   canvas->setTextColor(RGB565_WHITE);
   canvas->setCursor(70, 135);
-  canvas->printf("WiFi %s", OTA_SSID);
+  canvas->printf("WiFi %s", badgeSsid());
   canvas->setCursor(70, 160);
   canvas->printf("Pass %s", OTA_PASS);
   canvas->setTextColor(rgb565(255, 213, 48));
@@ -1339,7 +1340,7 @@ void setup()
     // Point d'acces autonome + serveur OTA ; le reste du setup (animations)
     // est saute, loop() ne fera que ArduinoOTA.handle().
     WiFi.mode(WIFI_AP);
-    WiFi.softAP(OTA_SSID, OTA_PASS);
+    WiFi.softAP(badgeSsid(), OTA_PASS);
     ArduinoOTA.onStart([]() { Serial0.println("OTA : debut"); });
     ArduinoOTA.onProgress([](unsigned int prog, unsigned int total) {
       static int lastPct = -1;
@@ -1365,7 +1366,7 @@ void setup()
     canvas->setTextSize(2);
     canvas->setTextColor(RGB565_WHITE);
     canvas->setCursor(70, 140);
-    canvas->printf("WiFi %s", OTA_SSID);
+    canvas->printf("WiFi %s", badgeSsid());
     canvas->setCursor(70, 165);
     canvas->printf("Pass %s", OTA_PASS);
     canvas->setCursor(70, 190);
@@ -1374,7 +1375,7 @@ void setup()
     canvas->setCursor(CX - 102, 240);
     canvas->print("hold center: exit");
     badgeFlush();
-    Serial0.printf("MODE FLASH OTA : AP %s / %s, IP %s\n", OTA_SSID, OTA_PASS,
+    Serial0.printf("MODE FLASH OTA : AP %s / %s, IP %s\n", badgeSsid(), OTA_PASS,
                    WiFi.softAPIP().toString().c_str());
     return;
   }

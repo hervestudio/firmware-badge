@@ -134,6 +134,9 @@
   .plab { font-family: 'DingosBlack', sans-serif; font-size: 10px;
           letter-spacing: 1px; color: #fff; margin: 0 0 5px 3px; }
   .plab.dim { color: #8f978f; }
+  .plabrow { display: flex; justify-content: space-between;
+             align-items: baseline; margin-right: 3px; }
+  .pcnt { font-size: 9px; color: #525b52; font-variant-numeric: tabular-nums; }
   .pin { background: #161b15; color: #fff; border: 1.5px solid #262c25;
          border-radius: 14px; padding: 8px 12px; font-size: 12px; width: 100%;
          outline: none; font-family: 'Inter', sans-serif; margin-bottom: 10px;
@@ -226,8 +229,9 @@
         <span class="plab dim">COMPANY</span>
         <input class="pin" type="text" id="pcompany" maxlength="24"
                placeholder="Apple" autocomplete="off">
-        <span class="plab dim">MESSAGE</span>
-        <input class="pin" type="text" id="pmsg" maxlength="15"
+        <div class="plabrow"><span class="plab dim">MESSAGE</span>
+          <span class="pcnt" id="pmsgcnt">0/20</span></div>
+        <input class="pin" type="text" id="pmsg" maxlength="20"
                placeholder="Hi Buddy &#128075;" autocomplete="off">
       </div>
       <div class="pcard" id="ps1">
@@ -485,8 +489,14 @@ Module.onRuntimeInitialized = () => {
     sDeb('n', 300, () => sSendStr(Module._emu_setup_name, e.target.value.trim()));
   document.getElementById('pcompany').oninput = (e) =>
     sDeb('c', 300, () => sSendStr(Module._emu_setup_company, e.target.value.trim()));
-  document.getElementById('pmsg').oninput = (e) =>
+  function sUpdCnt() {
+    document.getElementById('pmsgcnt').textContent =
+      document.getElementById('pmsg').value.length + '/20';
+  }
+  document.getElementById('pmsg').oninput = (e) => {
+    sUpdCnt();
     sDeb('m', 300, () => sSendStr(Module._emu_setup_msg, e.target.value.trim()));
+  };
   document.getElementById('purl').oninput = (e) => {
     clearTimeout(sDebU);
     const v = e.target.value.trim();
@@ -509,6 +519,7 @@ Module.onRuntimeInitialized = () => {
         el.value = v || ''; el.classList.toggle('filled', !!v); };
       set('pname', j.name); set('pcompany', j.comp); set('pmsg', j.msg);
       set('purl', j.url);
+      sUpdCnt();
       sHue = j.hue || 0; sSat = j.sat || 100; sFace = j.face || 0;
       sSync();
     } catch (_) {}

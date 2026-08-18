@@ -265,7 +265,7 @@ static void drawWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t len
 static void drawModeEnter()
 {
   WiFi.mode(WIFI_AP);
-  WiFi.softAP(OTA_SSID, OTA_PASS);
+  WiFi.softAP(badgeSsid(), OTA_PASS);
   drawHttp = new WebServer(80);
   drawHttp->on("/", []() {
     drawHttp->sendHeader("Content-Encoding", "gzip");
@@ -286,7 +286,7 @@ static void drawModeEnter()
   if (!drawPts)
     drawPts = (DrawPt *)ps_malloc(DRAW_MAXPTS * sizeof(DrawPt));
   drawNPts = drawPtHead = 0;
-  Serial0.printf("MODE DRAW : AP %s / %s, http://%s\n", OTA_SSID, OTA_PASS,
+  Serial0.printf("MODE DRAW : AP %s / %s, http://%s\n", badgeSsid(), OTA_PASS,
                  WiFi.softAPIP().toString().c_str());
 }
 

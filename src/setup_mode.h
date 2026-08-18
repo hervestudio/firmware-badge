@@ -36,7 +36,7 @@ static void setupDrawScreen()
   canvas->setTextSize(2);
   canvas->setTextColor(RGB565_WHITE);
   canvas->setCursor(70, 120);
-  canvas->printf("WiFi %s", OTA_SSID);
+  canvas->printf("WiFi %s", badgeSsid());
   canvas->setCursor(70, 150);
   canvas->printf("Pass %s", OTA_PASS);
   canvas->setTextColor(rgb565(255, 213, 48));
@@ -213,7 +213,7 @@ static void setupWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t le
 static void setupModeEnter()
 {
   WiFi.mode(WIFI_AP);
-  WiFi.softAP(OTA_SSID, OTA_PASS);
+  WiFi.softAP(badgeSsid(), OTA_PASS);
   setupHttp = new WebServer(80);
   setupHttp->on("/", []() {
     setupHttp->sendHeader("Content-Encoding", "gzip");
@@ -232,7 +232,7 @@ static void setupModeEnter()
   setupStep = 0;
   setupBuilding = false;
   setupQrDirty = true;
-  Serial0.printf("MODE SETUP : AP %s / %s, http://%s\n", OTA_SSID, OTA_PASS,
+  Serial0.printf("MODE SETUP : AP %s / %s, http://%s\n", badgeSsid(), OTA_PASS,
                  WiFi.softAPIP().toString().c_str());
 }
 

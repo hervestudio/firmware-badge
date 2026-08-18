@@ -17,6 +17,29 @@ static char qrName[QR_NAME_MAX] = "";
 static char qrCompany[28] = "";
 static char qrMsg[48] = ""; // peut contenir des emojis (UTF-8, emoji_text.h)
 
+// SSID du badge : unique par personne — "badge-<Nom>" des que le nom est
+// configure via Setup (assaini pour le SSID : alphanumerique et tirets),
+// sinon le nom generique. Utilise par les AP WiFi Draw / Setup / OTA.
+static const char *badgeSsid()
+{
+  static char ssid[33];
+  char nm[21];
+  int o = 0;
+  for (int i = 0; qrName[i] && o < 20; i++)
+  {
+    char c = qrName[i];
+    if (isalnum((unsigned char)c))
+      nm[o++] = c;
+    else if (c == ' ' || c == '-' || c == '_')
+      nm[o++] = '-';
+  }
+  nm[o] = 0;
+  if (!o)
+    return "badge-threejs";
+  snprintf(ssid, sizeof(ssid), "badge-%s", nm);
+  return ssid;
+}
+
 static uint8_t qrModules[qrcodegen_BUFFER_LEN_FOR_VERSION(8)];
 static bool qrValid = false;
 static uint16_t *qrSpr = nullptr; // sprite sphere du buddy (dvdGenSprite)

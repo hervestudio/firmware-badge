@@ -25,6 +25,10 @@
   .card.on { display:flex; }
   .lab { font-size:15px; letter-spacing:1px; color:#fff; margin:0 0 10px 4px; }
   .lab.dim { color:#8f978f; }
+  .labrow { display:flex; justify-content:space-between; align-items:baseline;
+            margin-right:4px; }
+  .labrow .lab { margin-bottom:10px; }
+  .cnt { font-size:12px; color:#525b52; font-variant-numeric:tabular-nums; }
   input[type=text], input[type=url] {
     background:#161b15; color:#fff; border:1.5px solid #262c25;
     border-radius:22px; padding:15px 20px; font-size:17px; width:100%;
@@ -79,8 +83,9 @@
   <input type="text" id="name" maxlength="20" placeholder="Ada Lovelace" autocomplete="off">
   <span class="lab dingos dim">COMPANY</span>
   <input type="text" id="company" maxlength="24" placeholder="Apple" autocomplete="off">
-  <span class="lab dingos dim">MESSAGE</span>
-  <input type="text" id="msg" maxlength="15" placeholder="Hi Buddy &#128075;" autocomplete="off">
+  <div class="labrow"><span class="lab dingos dim">MESSAGE</span>
+    <span class="cnt" id="msgcnt">0/20</span></div>
+  <input type="text" id="msg" maxlength="20" placeholder="Hi Buddy &#128075;" autocomplete="off">
 </div>
 
 <div class="card" id="s1">
@@ -224,6 +229,7 @@ function connect() {
         el.value = v || ''; el.classList.toggle('filled', !!v); };
       set('name', j.name); set('company', j.comp); set('msg', j.msg);
       set('url', j.url);
+      updCnt();
       hue = j.hue || 0; sat = j.sat || 100; face = j.face || 0; custom = j.cust || 0;
       sync();
     } catch (_) {}
@@ -249,8 +255,14 @@ document.getElementById('name').oninput = (e) =>
   debounced('n', 350, () => send('N' + e.target.value.trim()));
 document.getElementById('company').oninput = (e) =>
   debounced('c', 350, () => send('C' + e.target.value.trim()));
-document.getElementById('msg').oninput = (e) =>
+function updCnt() {
+  const v = document.getElementById('msg').value;
+  document.getElementById('msgcnt').textContent = v.length + '/20';
+}
+document.getElementById('msg').oninput = (e) => {
+  updCnt();
   debounced('m', 350, () => send('M' + e.target.value.trim()));
+};
 document.getElementById('url').oninput = (e) => {
   const v = e.target.value.trim();
   // URL incomplete -> le badge montre un QR "en construction"
