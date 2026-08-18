@@ -115,7 +115,7 @@ static void badgeCardDraw(float t, const uint16_t *spr)
     for (; qrCompany[i] && i < 27; i++)
       up[i] = toupper((unsigned char)qrCompany[i]);
     up[i] = 0;
-    bbPrint(CX - bbTextW(up) / 2, 294, up, rgb565(198, 196, 214));
+    bbPrint(CX - bbTextW(up) / 2, 286, up, rgb565(198, 196, 214));
   }
 }
 
