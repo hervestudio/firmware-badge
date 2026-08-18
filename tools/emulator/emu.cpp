@@ -173,8 +173,10 @@ static void drawFlashScreen()
   canvas->print("center: exit");
 }
 
-// Ecran du mode Setup — sur le vrai badge, le telephone se connecte en WiFi
-// et configure nom / buddy / URL du QR ; l'emulateur affiche les infos.
+// Ecran du mode Setup — sur le vrai badge, le telephone se connecte en WiFi ;
+// ici c'est le telephone de la page qui pilote (emu_setup_*). Infos de
+// connexion tant que le panneau n'est pas ouvert, puis preview live du buddy.
+static bool setupEmuConnected = false; // le panneau telephone est ouvert
 static void drawSetupScreen()
 {
   canvas->fillScreen(RGB565_BLACK);
@@ -182,18 +184,55 @@ static void drawSetupScreen()
   canvas->setTextSize(3);
   canvas->setCursor(CX - 90, 40);
   canvas->print("SETUP");
-  canvas->setTextSize(2);
-  canvas->setTextColor(RGB565_WHITE);
-  canvas->setCursor(70, 120);
-  canvas->print("WiFi badge-threejs");
-  canvas->setCursor(70, 150);
-  canvas->print("Pass threejs2026");
-  canvas->setTextColor(rgb565(255, 213, 48));
-  canvas->setCursor(70, 185);
-  canvas->print("http://192.168.4.1");
+  if (!setupEmuConnected)
+  {
+    canvas->setTextSize(2);
+    canvas->setTextColor(RGB565_WHITE);
+    canvas->setCursor(70, 120);
+    canvas->print("WiFi badge-threejs");
+    canvas->setCursor(70, 150);
+    canvas->print("Pass threejs2026");
+    canvas->setTextColor(rgb565(255, 213, 48));
+    canvas->setCursor(70, 185);
+    canvas->print("http://192.168.4.1");
+    canvas->setTextColor(rgb565(130, 130, 130));
+    canvas->setCursor(CX - 96, 250);
+    canvas->print("center: exit");
+    return;
+  }
+  // preview live : buddy (custom ou avatar de la table) + nom + URL — sprite
+  // regenere seulement quand les parametres changent
+  static uint16_t *spr = nullptr;
+  static int lastHue = -1000, lastSat = -1, lastCust = -1, lastAv = -1;
+  const AvatarDef &av = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
+  int sat100 = (int)(av.sat * 100 + 0.5f);
+  if (!spr || av.hue != lastHue || sat100 != lastSat ||
+      (int)g_buddyCustom != lastCust || (int)g_avatarIdx != lastAv)
+  {
+    if (spr)
+      free(spr);
+    spr = dvdGenSprite(PAL_RAINBOW, PAL_N, av.hue, av.sat);
+    lastHue = av.hue;
+    lastSat = sat100;
+    lastCust = (int)g_buddyCustom;
+    lastAv = (int)g_avatarIdx;
+  }
+  dvdBlit(spr, CX, CY - 30, 74, 255);
+  avatarDrawFace(CX, CY - 30, 74, 0, 0, 1, 0, 1.0f, rgb565(39, 39, 39));
+  avatarDrawExtras(CX, CY - 30, 74, 0);
+  if (qrName[0])
+  {
+    int tw = mdTextW(qrName);
+    mdPrint(CX - tw / 2, 268, qrName, RGB565_WHITE);
+  }
+  char shortUrl[27];
+  snprintf(shortUrl, sizeof(shortUrl), "%s", qrUrl);
+  if (strlen(qrUrl) >= sizeof(shortUrl))
+    memcpy(shortUrl + sizeof(shortUrl) - 4, "...", 4);
+  canvas->setTextSize(1);
   canvas->setTextColor(rgb565(130, 130, 130));
-  canvas->setCursor(CX - 96, 250);
-  canvas->print("center: exit");
+  canvas->setCursor(CX - (int)strlen(shortUrl) * 3, 300);
+  canvas->print(shortUrl);
 }
 
 // Extinction CRT de main.cpp, refaite en machine a etats (pas de boucle
@@ -443,6 +482,47 @@ extern "C"
     drawNPts = 0;
     drawPtHead = 0;
     canvas->fillScreen(RGB565_BLACK);
+  }
+
+  // ---- parcours Setup depuis le telephone de la page (equivalent du WS du
+  // vrai badge) : etat courant en JSON + application live des reglages
+  EMSCRIPTEN_KEEPALIVE const char *emu_setup_json()
+  {
+    static char buf[220];
+    snprintf(buf, sizeof(buf),
+             "{\"name\":\"%s\",\"url\":\"%s\",\"hue\":%d,\"sat\":%d,"
+             "\"face\":%d,\"cust\":%d}",
+             qrName, qrUrl, (int)g_buddyCustomDef.hue,
+             (int)(g_buddyCustomDef.sat * 100 + 0.5f),
+             (int)g_buddyCustomDef.face, g_buddyCustom ? 1 : 0);
+    return buf;
+  }
+  EMSCRIPTEN_KEEPALIVE void emu_setup_conn(int on)
+  {
+    setupEmuConnected = on != 0;
+  }
+  EMSCRIPTEN_KEEPALIVE void emu_setup_name(const char *s)
+  {
+    snprintf(qrName, sizeof(qrName), "%s", s ? s : "");
+    setupEmuConnected = true;
+  }
+  EMSCRIPTEN_KEEPALIVE void emu_setup_url(const char *s)
+  {
+    snprintf(qrUrl, sizeof(qrUrl), "%s", (s && s[0]) ? s : "https://threejs.paris");
+    setupEmuConnected = true;
+  }
+  EMSCRIPTEN_KEEPALIVE void emu_setup_buddy(int hue, int sat100, int face,
+                                            int custom)
+  {
+    if (custom)
+    {
+      g_buddyCustomDef.hue = (int16_t)(((hue % 360) + 360) % 360);
+      g_buddyCustomDef.sat = (sat100 < 20 ? 20 : (sat100 > 150 ? 150 : sat100)) / 100.0f;
+      g_buddyCustomDef.face = (uint8_t)(face < 0 ? 0 : (face > 8 ? 8 : face));
+    }
+    g_buddyCustom = custom != 0;
+    irDirtyFrom = 0; // la sphere idle se regenerera progressivement
+    setupEmuConnected = true;
   }
 }
 
@@ -724,7 +804,10 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
     else
       drawSetupScreen();
     if (autoShort)
+    {
+      setupEmuConnected = false;
       uiMode = UI_MENU;
+    }
     return;
   }
 
