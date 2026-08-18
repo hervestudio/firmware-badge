@@ -20,10 +20,12 @@ static WebServer *setupHttp = nullptr;
 static WebSocketsServer *setupWs = nullptr;
 static bool setupRedraw = false; // l'etat a change -> repeindre la preview
 static uint8_t setupClients = 0;
-static uint16_t *setupSpr = nullptr; // sprite de preview du buddy
+static uint16_t *setupSpr = nullptr; // sprite de preview du buddy (cache)
+static uint8_t setupStep = 0;        // etape affichee sur le telephone (0..2)
+static bool setupBuilding = false;   // URL en cours de saisie -> QR "chantier"
+static bool setupQrDirty = true;     // l'URL a change -> re-encoder le QR
 
-// Ecran du mode Setup : infos de connexion tant que personne n'est la,
-// puis preview live du buddy + nom + URL du QR
+// Ecran d'infos de connexion (tant que le telephone n'est pas la)
 static void setupDrawScreen()
 {
   canvas->fillScreen(RGB565_BLACK);
@@ -31,30 +33,56 @@ static void setupDrawScreen()
   canvas->setTextSize(3);
   canvas->setCursor(CX - 90, 40);
   canvas->print("SETUP");
-  if (!setupClients)
+  canvas->setTextSize(2);
+  canvas->setTextColor(RGB565_WHITE);
+  canvas->setCursor(70, 120);
+  canvas->printf("WiFi %s", OTA_SSID);
+  canvas->setCursor(70, 150);
+  canvas->printf("Pass %s", OTA_PASS);
+  canvas->setTextColor(rgb565(255, 213, 48));
+  canvas->setCursor(70, 185);
+  canvas->print("http://192.168.4.1");
+  canvas->setTextColor(rgb565(130, 130, 130));
+  canvas->setCursor(CX - 96, 250);
+  canvas->print("center: exit");
+}
+
+// Preview live (telephone connecte), animee frame par frame : etapes 1-2 =
+// buddy anime + nom + URL ; etape 3 (QR) = le QR en direct sur le badge,
+// version "en construction" pendant la saisie de l'URL
+static void setupDrawLive(float t)
+{
+  if (setupStep == 2)
   {
-    canvas->setTextSize(2);
-    canvas->setTextColor(RGB565_WHITE);
-    canvas->setCursor(70, 120);
-    canvas->printf("WiFi %s", OTA_SSID);
-    canvas->setCursor(70, 150);
-    canvas->printf("Pass %s", OTA_PASS);
-    canvas->setTextColor(rgb565(255, 213, 48));
-    canvas->setCursor(70, 185);
-    canvas->print("http://192.168.4.1");
-    canvas->setTextColor(rgb565(130, 130, 130));
-    canvas->setCursor(CX - 96, 250);
-    canvas->print("center: exit");
+    if (setupQrDirty) // (re)genere aussi le sprite du buddy du medaillon
+    {
+      qrScreenPrepare();
+      setupQrDirty = false;
+    }
+    qrScreenDraw(t, setupBuilding);
     return;
   }
-  // preview live : buddy (custom ou avatar de la table) + nom + URL
-  if (setupSpr)
-    free(setupSpr);
+  canvas->fillScreen(RGB565_BLACK);
+  canvas->setTextColor(rgb565(0xfb, 0xd9, 0x75));
+  canvas->setTextSize(3);
+  canvas->setCursor(CX - 90, 40);
+  canvas->print("SETUP");
+  // sprite regenere seulement quand les parametres changent
+  static int lastHue = -1000, lastSat = -1, lastCust = -1, lastAv = -1;
   const AvatarDef &av = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
-  setupSpr = dvdGenSprite(PAL_RAINBOW, PAL_N, av.hue, av.sat);
-  dvdBlit(setupSpr, CX, CY - 30, 74, 255);
-  avatarDrawFace(CX, CY - 30, 74, 0, 0, 1, 0, 1.0f, rgb565(39, 39, 39));
-  avatarDrawExtras(CX, CY - 30, 74, 0);
+  int sat100 = (int)(av.sat * 100 + 0.5f);
+  if (!setupSpr || av.hue != lastHue || sat100 != lastSat ||
+      (int)g_buddyCustom != lastCust || (int)g_avatarIdx != lastAv)
+  {
+    if (setupSpr)
+      free(setupSpr);
+    setupSpr = dvdGenSprite(PAL_RAINBOW, PAL_N, av.hue, av.sat);
+    lastHue = av.hue;
+    lastSat = sat100;
+    lastCust = (int)g_buddyCustom;
+    lastAv = (int)g_avatarIdx;
+  }
+  qrBuddyAnim(CX, CY - 30, 74.0f, t, setupSpr);
   if (qrName[0])
   {
     int tw = mdTextW(qrName);
@@ -120,12 +148,21 @@ static void setupWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t le
       prefs.putString("bname", qrName);
       Serial0.printf("setup : nom = \"%s\"\n", qrName);
       break;
-    case 'U': // URL du QR code
+    case 'U': // URL du QR code (validee cote telephone)
       setupCopyStr(qrUrl, sizeof(qrUrl), payload + 1, len - 1);
       if (!qrUrl[0])
         snprintf(qrUrl, sizeof(qrUrl), "https://threejs.paris");
       prefs.putString("qrurl", qrUrl);
+      setupBuilding = false;
+      setupQrDirty = true;
       Serial0.printf("setup : url = \"%s\"\n", qrUrl);
+      break;
+    case 'B': // URL en cours de saisie / incomplete -> QR en construction
+      setupBuilding = true;
+      break;
+    case 'S': // etape affichee sur le telephone (0..2)
+      if (len >= 2)
+        setupStep = (uint8_t)((payload[1] - '0') % 3);
       break;
     case 'A': // buddy custom : hue,sat100,face
     {
@@ -179,6 +216,9 @@ static void setupModeEnter()
   setupWs->begin();
   setupClients = 0;
   setupRedraw = false;
+  setupStep = 0;
+  setupBuilding = false;
+  setupQrDirty = true;
   Serial0.printf("MODE SETUP : AP %s / %s, http://%s\n", OTA_SSID, OTA_PASS,
                  WiFi.softAPIP().toString().c_str());
 }

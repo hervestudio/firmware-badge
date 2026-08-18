@@ -1788,7 +1788,15 @@ void loop()
       fpsCount++;
       return;
     }
-    if (setupRedraw)
+    if (setupClients)
+    {
+      // telephone connecte : preview animee en continu (buddy ou QR live)
+      setupDrawLive(now / 1000.0f);
+      waitTE();
+      badgeFlush();
+      fpsCount++;
+    }
+    else if (setupRedraw)
     {
       setupRedraw = false;
       setupDrawScreen();

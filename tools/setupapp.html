@@ -179,6 +179,8 @@ function showStep(n) {
   }
   document.getElementById('back').style.visibility = step ? 'visible' : 'hidden';
   document.getElementById('next').textContent = step === 2 ? 'Done' : 'Next';
+  // le badge suit l'etape : a l'etape QR il affiche le QR code en direct
+  if (ws && ws.readyState === 1) ws.send('S' + step);
 }
 document.getElementById('back').onclick = () => showStep(step - 1);
 document.getElementById('next').onclick = () => {
@@ -190,7 +192,8 @@ document.querySelectorAll('.dot').forEach(d => d.onclick = () => showStep(+d.dat
 function connect() {
   try { ws = new WebSocket('ws://' + location.hostname + ':81/'); }
   catch (_) { return; } // hors badge (file://...) : la page reste utilisable
-  ws.onopen = () => document.getElementById('st').classList.add('ok');
+  ws.onopen = () => { document.getElementById('st').classList.add('ok');
+                      ws.send('S' + step); };
   ws.onclose = () => { document.getElementById('st').classList.remove('ok');
                        setTimeout(connect, 1500); };
   ws.onerror = () => ws.close();
@@ -223,7 +226,13 @@ document.getElementById('name').oninput = (e) => {
 };
 document.getElementById('url').oninput = (e) => {
   clearTimeout(debU);
-  debU = setTimeout(() => send('U' + e.target.value.trim()), 500);
+  const v = e.target.value.trim();
+  // URL incomplete -> le badge montre un QR "en construction" ; complete ->
+  // le QR se genere en direct sur le badge
+  if (v.length >= 4 && v.includes('.'))
+    debU = setTimeout(() => send('U' + v), 500);
+  else if (ws && ws.readyState === 1)
+    ws.send('B');
 };
 function sendBuddy() {
   clearTimeout(debA);

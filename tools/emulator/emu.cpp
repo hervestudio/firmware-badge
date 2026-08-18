@@ -175,9 +175,13 @@ static void drawFlashScreen()
 
 // Ecran du mode Setup — sur le vrai badge, le telephone se connecte en WiFi ;
 // ici c'est le telephone de la page qui pilote (emu_setup_*). Infos de
-// connexion tant que le panneau n'est pas ouvert, puis preview live du buddy.
+// connexion tant que le panneau n'est pas ouvert, puis preview live du buddy
+// (etape 3 = le QR en direct, "en construction" pendant la saisie de l'URL).
 static bool setupEmuConnected = false; // le panneau telephone est ouvert
-static void drawSetupScreen()
+static int setupEmuStep = 0;           // etape affichee sur le telephone
+static bool setupEmuBuilding = false;  // URL en cours de saisie
+static bool setupEmuQrDirty = true;    // l'URL a change -> re-encoder
+static void drawSetupScreen(float t)
 {
   canvas->fillScreen(RGB565_BLACK);
   canvas->setTextColor(rgb565(0xfb, 0xd9, 0x75));
@@ -200,6 +204,17 @@ static void drawSetupScreen()
     canvas->print("center: exit");
     return;
   }
+  // etape 3 : le QR en direct sur le badge pendant la config
+  if (setupEmuStep == 2)
+  {
+    if (setupEmuQrDirty) // (re)genere aussi le sprite du buddy du medaillon
+    {
+      qrScreenPrepare();
+      setupEmuQrDirty = false;
+    }
+    qrScreenDraw(t, setupEmuBuilding);
+    return;
+  }
   // preview live : buddy (custom ou avatar de la table) + nom + URL — sprite
   // regenere seulement quand les parametres changent
   static uint16_t *spr = nullptr;
@@ -217,9 +232,7 @@ static void drawSetupScreen()
     lastCust = (int)g_buddyCustom;
     lastAv = (int)g_avatarIdx;
   }
-  dvdBlit(spr, CX, CY - 30, 74, 255);
-  avatarDrawFace(CX, CY - 30, 74, 0, 0, 1, 0, 1.0f, rgb565(39, 39, 39));
-  avatarDrawExtras(CX, CY - 30, 74, 0);
+  qrBuddyAnim(CX, CY - 30, 74.0f, t, spr);
   if (qrName[0])
   {
     int tw = mdTextW(qrName);
@@ -510,6 +523,18 @@ extern "C"
   {
     snprintf(qrUrl, sizeof(qrUrl), "%s", (s && s[0]) ? s : "https://threejs.paris");
     setupEmuConnected = true;
+    setupEmuBuilding = false;
+    setupEmuQrDirty = true;
+  }
+  EMSCRIPTEN_KEEPALIVE void emu_setup_step(int s)
+  {
+    setupEmuStep = s < 0 ? 0 : (s > 2 ? 2 : s);
+    setupEmuConnected = true;
+  }
+  EMSCRIPTEN_KEEPALIVE void emu_setup_building()
+  {
+    setupEmuBuilding = true;
+    setupEmuConnected = true;
   }
   EMSCRIPTEN_KEEPALIVE void emu_setup_buddy(int hue, int sat100, int face,
                                             int custom)
@@ -789,7 +814,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
     else if (uiMode == UI_FLASH)
       drawFlashScreen();
     else if (uiMode == UI_SETUP)
-      drawSetupScreen();
+      drawSetupScreen((float)(emuNowMs / 1000.0));
     else if (uiMode == UI_QR)
       qrScreenDraw((float)(emuNowMs / 1000.0));
     return;
@@ -802,10 +827,12 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
     else if (uiMode == UI_FLASH)
       drawFlashScreen();
     else
-      drawSetupScreen();
+      drawSetupScreen((float)(emuNowMs / 1000.0));
     if (autoShort)
     {
       setupEmuConnected = false;
+      setupEmuStep = 0;
+      setupEmuBuilding = false;
       uiMode = UI_MENU;
     }
     return;

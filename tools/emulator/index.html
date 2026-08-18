@@ -442,6 +442,8 @@ Module.onRuntimeInitialized = () => {
     }
     document.getElementById('pback').style.visibility = sStep ? 'visible' : 'hidden';
     document.getElementById('pnext').textContent = sStep === 2 ? 'Done' : 'Next';
+    // le badge suit l'etape : a l'etape QR il affiche le QR code en direct
+    Module._emu_setup_step(sStep);
   }
   document.getElementById('pback').onclick = () => sShowStep(sStep - 1);
   document.getElementById('pnext').onclick = () =>
@@ -460,7 +462,12 @@ Module.onRuntimeInitialized = () => {
   };
   document.getElementById('purl').oninput = (e) => {
     clearTimeout(sDebU);
-    sDebU = setTimeout(() => sSendStr(Module._emu_setup_url, e.target.value.trim()), 400);
+    const v = e.target.value.trim();
+    // URL incomplete -> QR "en construction" sur le badge
+    if (v.length >= 4 && v.includes('.'))
+      sDebU = setTimeout(() => sSendStr(Module._emu_setup_url, v), 400);
+    else
+      Module._emu_setup_building();
   };
   function sSendBuddy() { Module._emu_setup_buddy(sHue, sSat, sFace, 1); }
   document.getElementById('phue').oninput = (e) => { sHue = +e.target.value;
