@@ -91,9 +91,9 @@ static bool socialExprFace(float cx, float cy, float fr)
 
   switch (socialReactType)
   {
-  case 0: // HAPPY — arcs ^, etoiles a cote, rebond (bounce 5,5 Hz du JS)
+  case 0: // HAPPY — arcs ^, etoiles a cote (le rebond est porte par la
+          // sphere entiere via g_sphereYOff, visage compris)
   {
-    cy += -fabsf(sinf(tA * 5.5f * (float)PI)) * fr * 0.045f;
     avStroke(3, cx - ex - er * 1.1f, er * 2.2f, cy + ey + er * 0.35f,
              er * 0.85f, er * 0.30f, ink);
     avStroke(3, cx + ex - er * 1.1f, er * 2.2f, cy + ey + er * 0.35f,
@@ -154,10 +154,26 @@ static bool socialExprFace(float cx, float cy, float fr)
   return true;
 }
 
-// Pilule "<Nom> 👋" qui glisse du haut (par-dessus l'anim idle, avant flush)
+// Pilule "<Nom> 👋" qui glisse du haut (par-dessus l'anim idle, avant flush).
+// Met aussi a jour, pour la frame SUIVANTE, le gel de rotation et le rebond
+// de la sphere (g_lookFreeze / g_sphereYOff, lus par animIdleRainbow) : la
+// sphere suit le mouvement de la reaction comme dans le visualiseur.
 static void socialReactDraw(uint32_t now)
 {
-  if (!socialReactName[0] || now >= socialReactUntil)
+  bool active = socialReactName[0] && now < socialReactUntil;
+  g_lookFreeze += ((active ? 1.0f : 0.0f) - g_lookFreeze) * 0.22f;
+  if (g_lookFreeze < 0.01f)
+    g_lookFreeze = 0;
+  g_sphereYOff = 0;
+  if (active)
+  {
+    float tA = (SOCIAL_REACT_MS - (int)(socialReactUntil - now)) / 1000.0f;
+    if (socialReactType == 0) // HAPPY : bounce 5,5 Hz (0.045 R)
+      g_sphereYOff = (int)(-fabsf(sinf(tA * 5.5f * (float)PI)) * 8.0f * g_lookFreeze);
+    else if (socialReactType == 1) // WOW : bounce leger 3 Hz (0.03 R)
+      g_sphereYOff = (int)(-fabsf(sinf(tA * 3.0f * (float)PI)) * 5.0f * g_lookFreeze);
+  }
+  if (!active)
     return;
   float tIn = (SOCIAL_REACT_MS - (int)(socialReactUntil - now)) / 1000.0f;
   float tOut = (socialReactUntil - now) / 1000.0f;

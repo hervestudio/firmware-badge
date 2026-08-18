@@ -93,6 +93,11 @@ static uint8_t g_avatarIdx = 0;     // avatar SAUVE (NVS) : colore la sphere
 static uint8_t g_avatarFaceIdx = 0; // avatar AFFICHE par le visage (= sauve,
                                     // sauf pendant la preview des Settings)
 static int irDirtyFrom = -1;        // >=0 : frames idle a regenerer (1/frame)
+// pilotes par la reaction sociale (social_ui.h) pendant une rencontre :
+// gel de la rotation de la sphere (les triggers du visualiseur figent le
+// regard) et rebond vertical du blit (bounce Happy/Wow)
+static float g_lookFreeze = 0.0f; // 0 = libre, 1 = regard gele
+static int g_sphereYOff = 0;      // decalage vertical de la sphere (px)
 
 // ---- buddy CUSTOM (parcours Setup sur telephone) : quand actif, il remplace
 // l'avatar de la table pour la couleur de la sphere ET le visage. Persiste en

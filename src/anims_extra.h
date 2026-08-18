@@ -468,6 +468,11 @@ static void animIdleRainbow(float t)
   float lookX, lookY, openness;
   getIdle(t, &lookX, &lookY, &openness);
 
+  // rencontre sociale : la sphere suit l'expression — regard gele en douceur
+  // (equivalent des lookFreeze des triggers du visualiseur)
+  lookX *= (1.0f - g_lookFreeze);
+  lookY *= (1.0f - g_lookFreeze);
+
   // choix des 2 frames de rotation + blend (comme getSphereFramesBlended)
   float fidx = (lookX * IR_MAXROT + IR_MAXROT) / (2 * IR_MAXROT / (IR_FRAMES - 1));
   int lo = (int)fidx;
@@ -496,15 +501,25 @@ static void animIdleRainbow(float t)
   }
 
   // upscale bilineaire en demi-resolution (chaque echantillon remplit un bloc
-  // 2x2) + grain discret : ~2x plus rapide, invisible sur ces degrades doux
+  // 2x2) + grain discret : ~2x plus rapide, invisible sur ces degrades doux.
+  // g_sphereYOff : rebond vertical de la sphere pendant une reaction sociale
+  // (bandes decouvertes remises a noir)
   uint16_t *fb = canvas->getFramebuffer();
+  const int yOff = g_sphereYOff;
+  if (yOff > 0)
+    memset(fb, 0, (size_t)yOff * W * sizeof(uint16_t));
+  else if (yOff < 0)
+    memset(&fb[(H + yOff) * W], 0, (size_t)(-yOff) * W * sizeof(uint16_t));
   for (int y2 = 0; y2 < H / 2; y2++)
   {
     const uint16_t *rowA = &tex[irTIdx[y2] * IR_SPR];
     const uint16_t *rowB = rowA + IR_SPR;
     int fy = irTFrac[y2];
-    uint16_t *d0 = &fb[(y2 * 2) * W];
-    uint16_t *d1 = d0 + W;
+    int dy = y2 * 2 + yOff;
+    uint16_t *d0 = (dy >= 0 && dy < H) ? &fb[dy * W] : nullptr;
+    uint16_t *d1 = (dy + 1 >= 0 && dy + 1 < H) ? &fb[(dy + 1) * W] : nullptr;
+    if (!d0 && !d1)
+      continue;
     for (int x2 = 0; x2 < W / 2; x2++)
     {
       int tx = irTIdx[x2], fx = irTFrac[x2];
@@ -520,14 +535,20 @@ static void animIdleRainbow(float t)
                               ((g < 0 ? 0 : (g > 63 ? 63 : g)) << 5) |
                               (b < 0 ? 0 : (b > 31 ? 31 : b)));
       int xx = x2 * 2;
-      d0[xx] = c;
-      d0[xx + 1] = c;
-      d1[xx] = c;
-      d1[xx + 1] = c;
+      if (d0)
+      {
+        d0[xx] = c;
+        d0[xx + 1] = c;
+      }
+      if (d1)
+      {
+        d1[xx] = c;
+        d1[xx + 1] = c;
+      }
     }
   }
 
-  drawIdleFaceLook(CX, CY, RADIUS, t, lookX, lookY, openness);
+  drawIdleFaceLook(CX, CY + yOff, RADIUS, t, lookX, lookY, openness);
 }
 
 // ------------------------------------------------------------------- dvd
