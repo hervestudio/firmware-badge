@@ -30,10 +30,7 @@
 
   /* ---- bloc texte (bas-gauche, proportions de la maquette) ---- */
   #info { max-width: 360px; position: fixed; left: 6vw; bottom: 7vh; z-index: 2; }
-  #info h1 {
-    font-family: 'DingosBlack', sans-serif;
-    font-size: 17px; letter-spacing: 3px; margin-bottom: 14px;
-  }
+  #info #logo { width: 188px; display: block; margin-bottom: 18px; }
   #info p { font-size: 14.5px; line-height: 1.55; margin-bottom: 14px; }
   #help { color: rgba(33,28,59,.72); font-size: 12px; text-align: left; line-height: 1.75; }
   kbd {
@@ -67,10 +64,10 @@
     -webkit-tap-highlight-color: transparent;
   }
   .hit.on, .hit:active { box-shadow: 0 0 0 3px rgba(33,28,59,.35) inset; }
-  /* ∨ (gauche) = next · smiley = center · ∧ (droite) = previous */
-  #bNext { left: 34.88%; top: 70.04%; width: 8.04%; aspect-ratio: 1; }
+  /* ∧ (gauche) = previous · smiley = center · ∨ (droite) = next */
+  #bPrev { left: 34.88%; top: 70.04%; width: 8.04%; aspect-ratio: 1; }
   #bCtr  { left: 45.72%; top: 72.95%; width: 7.69%; aspect-ratio: 1; }
-  #bPrev { left: 57.17%; top: 70.04%; width: 8.04%; aspect-ratio: 1; }
+  #bNext { left: 57.17%; top: 70.04%; width: 8.04%; aspect-ratio: 1; }
 
   @media (max-width: 900px) {
     #badge3d { position: relative; left: auto; transform: none;
@@ -91,7 +88,7 @@
 </div>
 
 <div id="info">
-  <h1>BADGE EMULATOR</h1>
+  <img id="logo" src="logo.svg" alt="THREE CONF .JS — Badge Emulator">
   <p>A pixel-perfect, in-browser emulator of the threejs.paris conference
      badge — the real ESP32 firmware compiled to WebAssembly.</p>
   <p id="help">
