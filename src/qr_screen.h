@@ -52,18 +52,49 @@ static void qrBuddyAnim(float cx, float cy, float fr, float t,
 static void badgeCardDraw(float t, const uint16_t *spr)
 {
   canvas->fillScreen(RGB565_BLACK);
-  qrBuddyAnim(CX, 150, 60.0f, t, spr);
+  qrBuddyAnim(CX, 150, 66.0f, t, spr);
   if (qrMsg[0])
   {
-    // pilule blanche accrochee en haut a droite de la sphere
-    int tw = mxTextW(qrMsg), ph = 30, pw = tw + 26;
-    int x0 = CX + 14, y0 = 84;
-    if (x0 + pw > 344)
-      x0 = 344 - pw;
+    // pilule blanche accrochee en haut a droite de la sphere, contour 1 px
+    // #3E3E3E (stroke = pilule grise legerement plus grande dessous).
+    // Garantie "jamais coupe par l'ecran rond" : si la pilule est trop large
+    // pour la corde du cercle a y0=84, elle descend par paliers (corde plus
+    // large vers le milieu) ; cas extreme restant -> texte elide avec "..".
+    const int ph = 30;
+    char msg[sizeof(qrMsg) + 2];
+    snprintf(msg, sizeof(msg), "%s", qrMsg);
+    int tw = mxTextW(msg), pw = tw + 26;
+    int y0 = 84;
+    int half = 0;
+    for (;;)
+    {
+      int dy = 181 - y0; // le bord haut est le plus proche du bord d'ecran
+      half = (int)sqrtf(180.0f * 180.0f - (float)dy * dy);
+      if (pw + 38 <= 2 * half || y0 >= 128)
+        break;
+      y0 += 8;
+    }
+    while (pw + 38 > 2 * half && strlen(msg) > 3)
+    {
+      msg[strlen(msg) - 3] = 0; // retire un caractere (approx UTF-8 ok :
+      strcat(msg, "..");        // on coupe large, puis re-mesure)
+      tw = mxTextW(msg);
+      pw = tw + 26;
+    }
+    int xmin = 181 - half + 19, xmax = 181 + half - 19;
+    int x0 = CX + 26;
+    if (x0 + pw > xmax)
+      x0 = xmax - pw;
+    if (x0 < xmin)
+      x0 = xmin;
+    const uint16_t stroke = rgb565(0x3E, 0x3E, 0x3E);
+    canvas->fillRect(x0 - 1, y0 - 1, pw + 2, ph + 2, stroke);
+    canvas->fillCircle(x0, y0 + ph / 2, ph / 2 + 1, stroke);
+    canvas->fillCircle(x0 + pw, y0 + ph / 2, ph / 2 + 1, stroke);
     canvas->fillRect(x0, y0, pw, ph, RGB565_WHITE);
     canvas->fillCircle(x0, y0 + ph / 2, ph / 2, RGB565_WHITE);
     canvas->fillCircle(x0 + pw, y0 + ph / 2, ph / 2, RGB565_WHITE);
-    mxPrint(x0 + 13, y0 + 8, qrMsg, rgb565(0x21, 0x1C, 0x3B));
+    mxPrint(x0 + 13, y0 + 8, msg, rgb565(0x21, 0x1C, 0x3B));
   }
   char up[28];
   if (qrName[0])
@@ -72,7 +103,7 @@ static void badgeCardDraw(float t, const uint16_t *spr)
     for (; qrName[i] && i < 27; i++)
       up[i] = toupper((unsigned char)qrName[i]);
     up[i] = 0;
-    mtPrint(CX - mtTextW(up) / 2, 238, up, RGB565_WHITE);
+    mtPrint(CX - mtTextW(up) / 2, 252, up, RGB565_WHITE);
   }
   if (qrCompany[0])
   {
@@ -80,7 +111,7 @@ static void badgeCardDraw(float t, const uint16_t *spr)
     for (; qrCompany[i] && i < 27; i++)
       up[i] = toupper((unsigned char)qrCompany[i]);
     up[i] = 0;
-    bbPrint(CX - bbTextW(up) / 2, 284, up, rgb565(198, 196, 214));
+    bbPrint(CX - bbTextW(up) / 2, 298, up, rgb565(198, 196, 214));
   }
 }
 
