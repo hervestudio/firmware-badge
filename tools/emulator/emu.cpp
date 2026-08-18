@@ -489,12 +489,14 @@ extern "C"
   EMSCRIPTEN_KEEPALIVE const char *emu_setup_json()
   {
     static char buf[220];
+    // couleur/visage effectifs : custom si actif, sinon l'avatar de la table
+    // (les sliders du panneau refletent l'avatar choisi dans Settings)
+    const AvatarDef &av = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
     snprintf(buf, sizeof(buf),
              "{\"name\":\"%s\",\"comp\":\"%s\",\"msg\":\"%s\",\"url\":\"%s\","
              "\"hue\":%d,\"sat\":%d,\"face\":%d,\"cust\":%d}",
-             qrName, qrCompany, qrMsg, qrUrl, (int)g_buddyCustomDef.hue,
-             (int)(g_buddyCustomDef.sat * 100 + 0.5f),
-             (int)g_buddyCustomDef.face, g_buddyCustom ? 1 : 0);
+             qrName, qrCompany, qrMsg, qrUrl, ((av.hue % 360) + 360) % 360,
+             (int)(av.sat * 100 + 0.5f), (int)av.face, g_buddyCustom ? 1 : 0);
     return buf;
   }
   EMSCRIPTEN_KEEPALIVE void emu_setup_conn(int on)
@@ -719,6 +721,11 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
       prefs.putUShort("avatar", (uint16_t)setSel);
       g_avatarIdx = (uint8_t)setSel;
       g_avatarFaceIdx = g_avatarIdx;
+      g_faceForce = -1;
+      g_buddyCustom = false; // l'avatar de la table remplace le custom
+      // l'avatar choisi devient l'identite du badge (nom + SSID), comme
+      // sur le vrai badge
+      snprintf(qrName, sizeof(qrName), "%s", AVATARS[setSel].name);
       irDirtyFrom = 0;
       if (setSpr)
       {
@@ -739,6 +746,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
       setSpr = dvdGenSprite(PAL_RAINBOW, PAL_N, av.hue, av.sat);
     }
     g_avatarFaceIdx = (uint8_t)setSel;
+    g_faceForce = setSel; // preview de la table meme si un custom est actif
     uiDrawAvatarFrame(setSel, AVATAR_N, AVATARS[setSel].name);
     dvdBlit(setSpr, CX, CY - 26, 78, 255);
     drawIdleFaceLook(CX, CY - 26, 78, 0, 0, 0, 1.0f);

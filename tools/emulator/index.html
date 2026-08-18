@@ -539,6 +539,7 @@ Module.onRuntimeInitialized = () => {
     sSync(); sSendBuddy(); };
   document.getElementById('preset').onclick = () => {
     Module._emu_setup_buddy(0, 0, 0, 0);
+    sPrefill(); // resynchronise sliders/visage sur l'avatar de la table
     saveSetup();
   };
   function sPrefill() {
@@ -585,6 +586,10 @@ Module.onRuntimeInitialized = () => {
     const mask = (held.prev ? 1 : 0) | (held.next ? 2 : 0) | (held.ctr ? 4 : 0);
     Module._emu_frame(dt, mask);
     const m = Module._emu_mode();
+    // sortie des Settings (choix d'avatar) : le nom/l'identite ont pu changer
+    // -> persiste comme la NVS du vrai badge
+    if (loop.lastMode === 14 && m !== 14) saveSetup();
+    loop.lastMode = m;
     if (!forcePhone) {
       const wantApp = m === UI_DRAW_MODE ? 'draw'
                     : m === UI_SETUP_MODE ? 'setup' : '';

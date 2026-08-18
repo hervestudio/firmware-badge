@@ -82,13 +82,16 @@ static void setupDrawLive(float t)
 
 static void setupSendState(uint8_t num)
 {
+  // couleur/visage effectifs : le custom s'il est actif, sinon l'avatar de
+  // la table (Settings) — les sliders du telephone refletent ainsi l'avatar
+  // choisi et le custom demarre de ces valeurs-la
+  const AvatarDef &av = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
   char msg[330];
   snprintf(msg, sizeof(msg),
            "J{\"name\":\"%s\",\"comp\":\"%s\",\"msg\":\"%s\",\"url\":\"%s\","
            "\"hue\":%d,\"sat\":%d,\"face\":%d,\"cust\":%d}",
-           qrName, qrCompany, qrMsg, qrUrl, (int)g_buddyCustomDef.hue,
-           (int)(g_buddyCustomDef.sat * 100 + 0.5f),
-           (int)g_buddyCustomDef.face, g_buddyCustom ? 1 : 0);
+           qrName, qrCompany, qrMsg, qrUrl, ((av.hue % 360) + 360) % 360,
+           (int)(av.sat * 100 + 0.5f), (int)av.face, g_buddyCustom ? 1 : 0);
   setupWs->sendTXT(num, msg);
 }
 
@@ -198,6 +201,7 @@ static void setupWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t le
       g_buddyCustom = false;
       prefs.putUChar("bcust", 0);
       irDirtyFrom = 0;
+      setupSendState(num); // resynchronise sliders/visage du telephone
       Serial0.println("setup : retour a l'avatar de la table");
       break;
     default:

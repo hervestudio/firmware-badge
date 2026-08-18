@@ -1629,6 +1629,10 @@ void loop()
         g_buddyCustom = false;
         prefs.putUChar("bcust", 0);
       }
+      // l'avatar choisi devient l'identite du badge : nom pre-rempli dans
+      // Setup (modifiable ensuite) et SSID badge-<Nom> immediats
+      snprintf(qrName, sizeof(qrName), "%s", AVATARS[setSel].name);
+      prefs.putString("bname", qrName);
       irDirtyFrom = 0; // la sphere idle se regenerera progressivement
       if (setSpr)
       {
