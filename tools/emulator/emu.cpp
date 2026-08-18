@@ -132,28 +132,37 @@ static void drawBootLoader(float p, float t)
       dimRow(yy, 40, 320);
 }
 
-static void drawDrawWait()
+static void drawWaitScreen(const char *title, uint16_t titleCol)
 {
   canvas->fillScreen(RGB565_BLACK);
-  canvas->setTextColor(rgb565(0xfc, 0xa3, 0xf7));
+  canvas->setTextColor(titleCol);
   canvas->setTextSize(3);
-  canvas->setCursor(90, 85);
-  canvas->print("DRAW MODE");
+  canvas->setCursor(CX - (int)strlen(title) * 9, 24);
+  canvas->print(title);
+  char wifiQr[80];
+  snprintf(wifiQr, sizeof(wifiQr), "WIFI:T:WPA;S:%s;P:threejs2026;;",
+           badgeSsid());
+  qrMiniDraw(CX, 148, 140, wifiQr);
   canvas->setTextSize(2);
   canvas->setTextColor(RGB565_WHITE);
-  canvas->setCursor(70, 135);
-  canvas->printf("WiFi %s", badgeSsid());
-  canvas->setCursor(70, 160);
+  char line[40];
+  snprintf(line, sizeof(line), "WiFi %s", badgeSsid());
+  canvas->setCursor(CX - (int)strlen(line) * 6, 248);
+  canvas->print(line);
+  canvas->setCursor(CX - 96, 270);
   canvas->print("Pass threejs2026");
+  canvas->setTextSize(1);
   canvas->setTextColor(rgb565(255, 213, 48));
-  canvas->setCursor(70, 190);
-  canvas->print("page opens on connect");
-  canvas->setCursor(70, 215);
-  canvas->print("or http://badge.local");
+  canvas->setCursor(CX - 87, 296);
+  canvas->print("scan or join: page opens");
+  canvas->setCursor(CX - 87, 310);
+  canvas->print("or http://192.168.4.1");
   canvas->setTextColor(rgb565(130, 130, 130));
-  canvas->setCursor(CX - 96, 262);
+  canvas->setCursor(CX - 42, 326);
   canvas->print("center: exit");
 }
+
+static void drawDrawWait() { drawWaitScreen("DRAW MODE", rgb565(0xfc, 0xa3, 0xf7)); }
 
 static void drawFlashScreen()
 {
@@ -187,25 +196,7 @@ static void drawSetupScreen(float t)
 {
   if (!setupEmuConnected)
   {
-    canvas->fillScreen(RGB565_BLACK);
-    canvas->setTextColor(rgb565(0xfb, 0xd9, 0x75));
-    canvas->setTextSize(3);
-    canvas->setCursor(CX - 90, 40);
-    canvas->print("SETUP");
-    canvas->setTextSize(2);
-    canvas->setTextColor(RGB565_WHITE);
-    canvas->setCursor(70, 120);
-    canvas->printf("WiFi %s", badgeSsid());
-    canvas->setCursor(70, 150);
-    canvas->print("Pass threejs2026");
-    canvas->setTextColor(rgb565(255, 213, 48));
-    canvas->setCursor(70, 185);
-    canvas->print("page opens on connect");
-    canvas->setCursor(70, 210);
-    canvas->print("or http://badge.local");
-    canvas->setTextColor(rgb565(130, 130, 130));
-    canvas->setCursor(CX - 96, 260);
-    canvas->print("center: exit");
+    drawWaitScreen("SETUP", rgb565(0xfb, 0xd9, 0x75));
     return;
   }
   // etape 3 : le QR en direct sur le badge pendant la config

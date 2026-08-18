@@ -1073,21 +1073,29 @@ static void drawDrawWait()
   canvas->fillScreen(RGB565_BLACK);
   canvas->setTextColor(rgb565(0xfc, 0xa3, 0xf7));
   canvas->setTextSize(3);
-  canvas->setCursor(90, 85);
+  canvas->setCursor(CX - 81, 24);
   canvas->print("DRAW MODE");
+  char wifiQr[80];
+  snprintf(wifiQr, sizeof(wifiQr), "WIFI:T:WPA;S:%s;P:%s;;", badgeSsid(),
+           OTA_PASS);
+  qrMiniDraw(CX, 148, 140, wifiQr);
   canvas->setTextSize(2);
   canvas->setTextColor(RGB565_WHITE);
-  canvas->setCursor(70, 135);
-  canvas->printf("WiFi %s", badgeSsid());
-  canvas->setCursor(70, 160);
-  canvas->printf("Pass %s", OTA_PASS);
+  char line[40];
+  snprintf(line, sizeof(line), "WiFi %s", badgeSsid());
+  canvas->setCursor(CX - (int)strlen(line) * 6, 248);
+  canvas->print(line);
+  snprintf(line, sizeof(line), "Pass %s", OTA_PASS);
+  canvas->setCursor(CX - (int)strlen(line) * 6, 270);
+  canvas->print(line);
+  canvas->setTextSize(1);
   canvas->setTextColor(rgb565(255, 213, 48));
-  canvas->setCursor(70, 190);
-  canvas->print("page opens on connect");
-  canvas->setCursor(70, 215);
-  canvas->print("or http://badge.local");
+  canvas->setCursor(CX - 87, 296);
+  canvas->print("scan or join: page opens");
+  canvas->setCursor(CX - 87, 310);
+  canvas->print("or http://192.168.4.1");
   canvas->setTextColor(rgb565(130, 130, 130));
-  canvas->setCursor(CX - 96, 262);
+  canvas->setCursor(CX - 42, 326);
   canvas->print("center: exit");
 }
 

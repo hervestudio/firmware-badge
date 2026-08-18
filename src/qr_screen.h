@@ -40,6 +40,37 @@ static const char *badgeSsid()
   return ssid;
 }
 
+// Petit QR utilitaire sur carte blanche arrondie, centre en (cx, cy) —
+// utilise par les ecrans d'attente Setup/Draw pour le QR WiFi (scan camera
+// -> le telephone rejoint l'AP -> le portail captif ouvre la page)
+static void qrMiniDraw(int cx, int cy, int target, const char *text)
+{
+  static uint8_t mini[qrcodegen_BUFFER_LEN_FOR_VERSION(6)];
+  uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(6)];
+  if (!qrcodegen_encodeText(text, tmp, mini, qrcodegen_Ecc_MEDIUM, 1, 6,
+                            qrcodegen_Mask_AUTO, true))
+    return;
+  int size = qrcodegen_getSize(mini);
+  int scale = target / size;
+  if (scale < 1)
+    scale = 1;
+  int px = size * scale, x0 = cx - px / 2, y0 = cy - px / 2;
+  const int m = 8, rr = 8; // zone calme + coins arrondis
+  canvas->fillRect(x0 - m, y0 - m - rr, px + 2 * m, px + 2 * m + 2 * rr,
+                   RGB565_WHITE);
+  canvas->fillRect(x0 - m - rr, y0 - m, px + 2 * m + 2 * rr, px + 2 * m,
+                   RGB565_WHITE);
+  canvas->fillCircle(x0 - m, y0 - m, rr, RGB565_WHITE);
+  canvas->fillCircle(x0 + px + m, y0 - m, rr, RGB565_WHITE);
+  canvas->fillCircle(x0 - m, y0 + px + m, rr, RGB565_WHITE);
+  canvas->fillCircle(x0 + px + m, y0 + px + m, rr, RGB565_WHITE);
+  const uint16_t ink = rgb565(0x21, 0x1C, 0x3B);
+  for (int y = 0; y < size; y++)
+    for (int x = 0; x < size; x++)
+      if (qrcodegen_getModule(mini, x, y))
+        canvas->fillRect(x0 + x * scale, y0 + y * scale, scale, scale, ink);
+}
+
 static uint8_t qrModules[qrcodegen_BUFFER_LEN_FOR_VERSION(8)];
 static bool qrValid = false;
 static uint16_t *qrSpr = nullptr; // sprite sphere du buddy (dvdGenSprite)
