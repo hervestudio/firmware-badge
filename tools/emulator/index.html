@@ -302,6 +302,7 @@ const img = ctx.createImageData(360, 360);
 
 Module.onRuntimeInitialized = () => {
   Module._emu_init();
+  restoreSetup(); // nom/buddy/QR sauves par la session precedente (~NVS)
   // horloge de conf : ?now=1-11:15 pour forcer, sinon vraie date si 10-11 sept. 2026
   const m = location.search.match(/now=([12])-(\d+):(\d+)/);
   if (m) Module._emu_set_now(+m[1], +m[2] * 60 + +m[3]);
@@ -479,6 +480,26 @@ Module.onRuntimeInitialized = () => {
     fn(p);
     Module._free(p);
   }
+  // persistance facon NVS : le setup survit au rechargement de la page
+  // (sur le vrai badge c'est la NVS qui joue ce role)
+  function saveSetup() {
+    try {
+      localStorage.setItem('badgeSetup',
+        Module.UTF8ToString(Module._emu_setup_json()));
+    } catch (_) {}
+  }
+  function restoreSetup() {
+    try {
+      const j = JSON.parse(localStorage.getItem('badgeSetup') || 'null');
+      if (!j) return;
+      if (j.name) sSendStr(Module._emu_setup_name, j.name);
+      if (j.comp) sSendStr(Module._emu_setup_company, j.comp);
+      if (j.msg) sSendStr(Module._emu_setup_msg, j.msg);
+      if (j.url) sSendStr(Module._emu_setup_url, j.url);
+      if (j.cust) Module._emu_setup_buddy(j.hue || 0, j.sat || 100, j.face || 0, 1);
+      Module._emu_setup_conn(0); // restaurer ne vaut pas connexion du panneau
+    } catch (_) {}
+  }
   // bord jaune sur les champs remplis (comme la maquette)
   document.querySelectorAll('.pin').forEach(i =>
     i.addEventListener('input', () => i.classList.toggle('filled', !!i.value)));
@@ -486,32 +507,40 @@ Module.onRuntimeInitialized = () => {
   function sDeb(key, ms, fn) { clearTimeout(sDebs[key]); sDebs[key] = setTimeout(fn, ms); }
   let sDebU = null;
   document.getElementById('pname').oninput = (e) =>
-    sDeb('n', 300, () => sSendStr(Module._emu_setup_name, e.target.value.trim()));
+    sDeb('n', 300, () => { sSendStr(Module._emu_setup_name, e.target.value.trim());
+                           saveSetup(); });
   document.getElementById('pcompany').oninput = (e) =>
-    sDeb('c', 300, () => sSendStr(Module._emu_setup_company, e.target.value.trim()));
+    sDeb('c', 300, () => { sSendStr(Module._emu_setup_company, e.target.value.trim());
+                           saveSetup(); });
   function sUpdCnt() {
     document.getElementById('pmsgcnt').textContent =
       document.getElementById('pmsg').value.length + '/20';
   }
   document.getElementById('pmsg').oninput = (e) => {
     sUpdCnt();
-    sDeb('m', 300, () => sSendStr(Module._emu_setup_msg, e.target.value.trim()));
+    sDeb('m', 300, () => { sSendStr(Module._emu_setup_msg, e.target.value.trim());
+                           saveSetup(); });
   };
   document.getElementById('purl').oninput = (e) => {
     clearTimeout(sDebU);
     const v = e.target.value.trim();
     // URL incomplete -> QR "en construction" sur le badge
     if (v.length >= 4 && v.includes('.'))
-      sDebU = setTimeout(() => sSendStr(Module._emu_setup_url, v), 400);
+      sDebU = setTimeout(() => { sSendStr(Module._emu_setup_url, v);
+                                 saveSetup(); }, 400);
     else
       Module._emu_setup_building();
   };
-  function sSendBuddy() { Module._emu_setup_buddy(sHue, sSat, sFace, 1); }
+  function sSendBuddy() { Module._emu_setup_buddy(sHue, sSat, sFace, 1);
+                          saveSetup(); }
   document.getElementById('phue').oninput = (e) => { sHue = +e.target.value;
     sSync(); sSendBuddy(); };
   document.getElementById('psat').oninput = (e) => { sSat = +e.target.value;
     sSync(); sSendBuddy(); };
-  document.getElementById('preset').onclick = () => Module._emu_setup_buddy(0, 0, 0, 0);
+  document.getElementById('preset').onclick = () => {
+    Module._emu_setup_buddy(0, 0, 0, 0);
+    saveSetup();
+  };
   function sPrefill() {
     try {
       const j = JSON.parse(Module.UTF8ToString(Module._emu_setup_json()));
