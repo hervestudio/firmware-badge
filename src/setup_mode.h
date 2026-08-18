@@ -14,7 +14,36 @@
 #pragma once
 #include <WebServer.h>
 #include <WebSocketsServer.h>
+#include <DNSServer.h>
+#include <ESPmDNS.h>
 #include "setup_page.h"
+
+// DNS captif partage Draw/Setup : toutes les requetes DNS repondent l'IP du
+// badge -> les sondes de portail captif (iOS/Android) declenchent l'ouverture
+// AUTOMATIQUE de la page a la connexion au WiFi, et une adresse memorisable
+// marche aussi a la main (http://badge.local via mDNS sur iOS/macOS).
+static DNSServer *badgeDns = nullptr;
+static void badgeDnsStart()
+{
+  badgeDns = new DNSServer();
+  badgeDns->start(53, "*", WiFi.softAPIP());
+  MDNS.begin("badge"); // http://badge.local
+}
+static void badgeDnsLoop()
+{
+  if (badgeDns)
+    badgeDns->processNextRequest();
+}
+static void badgeDnsStop()
+{
+  MDNS.end();
+  if (badgeDns)
+  {
+    badgeDns->stop();
+    delete badgeDns;
+    badgeDns = nullptr;
+  }
+}
 
 static WebServer *setupHttp = nullptr;
 static WebSocketsServer *setupWs = nullptr;
@@ -41,9 +70,11 @@ static void setupDrawScreen()
   canvas->printf("Pass %s", OTA_PASS);
   canvas->setTextColor(rgb565(255, 213, 48));
   canvas->setCursor(70, 185);
-  canvas->print("http://192.168.4.1");
+  canvas->print("page opens on connect");
+  canvas->setCursor(70, 210);
+  canvas->print("or http://badge.local");
   canvas->setTextColor(rgb565(130, 130, 130));
-  canvas->setCursor(CX - 96, 250);
+  canvas->setCursor(CX - 96, 260);
   canvas->print("center: exit");
 }
 
@@ -230,6 +261,7 @@ static void setupModeEnter()
     setupHttp->send(302, "text/plain", "");
   });
   setupHttp->begin();
+  badgeDnsStart(); // portail captif : la page s'ouvre seule a la connexion
   setupWs = new WebSocketsServer(81);
   setupWs->onEvent(setupWsEvent);
   setupWs->begin();
@@ -244,12 +276,14 @@ static void setupModeEnter()
 
 static void setupModeLoop()
 {
+  badgeDnsLoop();
   setupHttp->handleClient();
   setupWs->loop();
 }
 
 static void setupModeExit()
 {
+  badgeDnsStop();
   setupWs->close();
   delete setupWs;
   setupWs = nullptr;

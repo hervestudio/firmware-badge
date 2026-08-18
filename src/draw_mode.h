@@ -277,6 +277,7 @@ static void drawModeEnter()
     drawHttp->send(302, "text/plain", "");
   });
   drawHttp->begin();
+  badgeDnsStart(); // portail captif : la page s'ouvre seule a la connexion
   drawWs = new WebSocketsServer(81);
   drawWs->onEvent(drawWsEvent);
   drawWs->begin();
@@ -292,12 +293,14 @@ static void drawModeEnter()
 
 static void drawModeLoop()
 {
+  badgeDnsLoop();
   drawHttp->handleClient();
   drawWs->loop();
 }
 
 static void drawModeExit()
 {
+  badgeDnsStop();
   drawWs->close();
   delete drawWs;
   drawWs = nullptr;

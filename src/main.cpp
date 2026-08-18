@@ -1062,8 +1062,9 @@ static void badgeFlush()
 #include "games.h"
 #include "qr_screen.h"  // ecran Meet > QR Code (partage avec l'emulateur) —
                         // fournit badgeSsid(), utilise par draw/setup/OTA
+#include "setup_mode.h" // parcours de config sur telephone (More > Setup) —
+                        // fournit le DNS captif badgeDns*, utilise par Draw
 #include "draw_mode.h"
-#include "setup_mode.h" // parcours de config sur telephone (More > Setup)
 
 // Ecran d'attente du mode dessin : infos de connexion tant que personne
 // n'a rejoint (efface par draw_mode.h a la premiere connexion WebSocket)
@@ -1082,9 +1083,11 @@ static void drawDrawWait()
   canvas->printf("Pass %s", OTA_PASS);
   canvas->setTextColor(rgb565(255, 213, 48));
   canvas->setCursor(70, 190);
-  canvas->print("http://192.168.4.1");
+  canvas->print("page opens on connect");
+  canvas->setCursor(70, 215);
+  canvas->print("or http://badge.local");
   canvas->setTextColor(rgb565(130, 130, 130));
-  canvas->setCursor(CX - 96, 240);
+  canvas->setCursor(CX - 96, 262);
   canvas->print("center: exit");
 }
 
