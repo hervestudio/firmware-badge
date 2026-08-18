@@ -52,49 +52,53 @@ static void qrBuddyAnim(float cx, float cy, float fr, float t,
 static void badgeCardDraw(float t, const uint16_t *spr)
 {
   canvas->fillScreen(RGB565_BLACK);
-  qrBuddyAnim(CX, 150, 66.0f, t, spr);
+  qrBuddyAnim(CX, 150, 72.0f, t, spr);
   if (qrMsg[0])
   {
-    // pilule blanche accrochee en haut a droite de la sphere, contour 1 px
-    // #3E3E3E (stroke = pilule grise legerement plus grande dessous).
+    // pilule blanche accrochee en haut a droite de la sphere, contour 2 px
+    // #3E3E3E (stroke = pilule grise legerement plus grande dessous),
+    // padding horizontal serre (proportions de la maquette Figma).
     // Garantie "jamais coupe par l'ecran rond" : si la pilule est trop large
     // pour la corde du cercle a y0=84, elle descend par paliers (corde plus
     // large vers le milieu) ; cas extreme restant -> texte elide avec "..".
-    const int ph = 30;
+    const int ph = 28, pad = 10;
     char msg[sizeof(qrMsg) + 2];
     snprintf(msg, sizeof(msg), "%s", qrMsg);
-    int tw = mxTextW(msg), pw = tw + 26;
-    int y0 = 84;
-    int half = 0;
+    int tw = mxTextW(msg), total = tw + 2 * pad; // largeur visuelle pilule
+    if (total < ph)
+      total = ph;
+    int y0 = 84, half = 0;
     for (;;)
     {
       int dy = 181 - y0; // le bord haut est le plus proche du bord d'ecran
       half = (int)sqrtf(180.0f * 180.0f - (float)dy * dy);
-      if (pw + 38 <= 2 * half || y0 >= 128)
+      if (total + 8 <= 2 * half || y0 >= 128)
         break;
       y0 += 8;
     }
-    while (pw + 38 > 2 * half && strlen(msg) > 3)
+    while (total + 8 > 2 * half && strlen(msg) > 3)
     {
       msg[strlen(msg) - 3] = 0; // retire un caractere (approx UTF-8 ok :
       strcat(msg, "..");        // on coupe large, puis re-mesure)
       tw = mxTextW(msg);
-      pw = tw + 26;
+      total = tw + 2 * pad;
     }
-    int xmin = 181 - half + 19, xmax = 181 + half - 19;
-    int x0 = CX + 26;
-    if (x0 + pw > xmax)
-      x0 = xmax - pw;
-    if (x0 < xmin)
-      x0 = xmin;
+    int xmin = 181 - half + 4, xmax = 181 + half - 4;
+    int L = CX + 44; // bord gauche visuel de la pilule
+    if (L + total > xmax)
+      L = xmax - total;
+    if (L < xmin)
+      L = xmin;
+    const int r = ph / 2, cy = y0 + r;
+    const int rx0 = L + r, rw = total - ph; // rect entre les deux bouts ronds
     const uint16_t stroke = rgb565(0x3E, 0x3E, 0x3E);
-    canvas->fillRect(x0 - 1, y0 - 1, pw + 2, ph + 2, stroke);
-    canvas->fillCircle(x0, y0 + ph / 2, ph / 2 + 1, stroke);
-    canvas->fillCircle(x0 + pw, y0 + ph / 2, ph / 2 + 1, stroke);
-    canvas->fillRect(x0, y0, pw, ph, RGB565_WHITE);
-    canvas->fillCircle(x0, y0 + ph / 2, ph / 2, RGB565_WHITE);
-    canvas->fillCircle(x0 + pw, y0 + ph / 2, ph / 2, RGB565_WHITE);
-    mxPrint(x0 + 13, y0 + 8, msg, rgb565(0x21, 0x1C, 0x3B));
+    canvas->fillRect(rx0, y0 - 2, rw, ph + 4, stroke);
+    canvas->fillCircle(rx0, cy, r + 2, stroke);
+    canvas->fillCircle(rx0 + rw, cy, r + 2, stroke);
+    canvas->fillRect(rx0, y0, rw, ph, RGB565_WHITE);
+    canvas->fillCircle(rx0, cy, r, RGB565_WHITE);
+    canvas->fillCircle(rx0 + rw, cy, r, RGB565_WHITE);
+    mxPrint(L + pad, y0 + 7, msg, rgb565(0x21, 0x1C, 0x3B));
   }
   char up[28];
   if (qrName[0])
@@ -111,7 +115,7 @@ static void badgeCardDraw(float t, const uint16_t *spr)
     for (; qrCompany[i] && i < 27; i++)
       up[i] = toupper((unsigned char)qrCompany[i]);
     up[i] = 0;
-    bbPrint(CX - bbTextW(up) / 2, 298, up, rgb565(198, 196, 214));
+    bbPrint(CX - bbTextW(up) / 2, 294, up, rgb565(198, 196, 214));
   }
 }
 
