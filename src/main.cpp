@@ -1215,12 +1215,38 @@ static void drawBootLoader(float p, float t)
       dimRow(yy, 40, 320);
 }
 
+// Generation des textures etalee pendant l'anim de boot : une etape par frame,
+// l'anim continue de tourner entre chaque etape au lieu de rester figee 2 s
+// sur son dernier frame. Retourne false quand tout est genere.
+static bool bootGenStep(int s)
+{
+  switch (s)
+  {
+  case 0: initPlasma(); return true;
+  case 1: initTorus(); return true;
+  case 2: initBallSprite(); return true;
+  case 3: initMouthMask(); return true;
+  case 4: initTgLogo(); return true;
+  case 5: irInit(); return true;
+  default:
+    if (s - 6 < IR_FRAMES) { irGenFrame(s - 6); return true; }
+    if (s - 6 == IR_FRAMES) { dvdInitSprites(); return true; }
+    if (s - 6 == IR_FRAMES + 1)
+    {
+      initPoints();
+      for (int i = 0; i < NSTARS; i++)
+        resetStar(stars[i]);
+      return true;
+    }
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------- boucle
 
 void setup()
 {
   Serial0.begin(115200); // UART0 -> pont CH343 : logs visibles sur /dev/cu.usbmodem*
-  delay(500);            // (USB CDC natif desactive : plus besoin des 3 s d'attente)
   Serial0.println("=== Badge threejs.paris - animations GC9B72 ===");
   prefs.begin("badge", false); // records des jeux (NVS)
   uiScreenRot = (int)(int8_t)prefs.getChar("rotDeg", 0); // rotation ecran calibree
@@ -1228,21 +1254,16 @@ void setup()
   g_avatarFaceIdx = g_avatarIdx;
 
   // Bouton PREV — ou BOOT, pratique tant que les boutons ne sont pas cables —
-  // presse dans la premiere seconde apres l'allumage -> mode flash OTA.
+  // presse pendant l'anim de boot -> mode flash OTA (la fenetre est surveillee
+  // dans la boucle d'anim, plus de temps mort avant l'allumage de l'ecran).
   // NB : BOOT maintenu PENDANT le reset = bootloader ROM (strapping GPIO 0) ;
-  // il faut donc appuyer juste APRES le reset, d'ou la fenetre d'attente.
+  // il faut donc appuyer juste APRES le reset.
   pinMode(BTN_PREV, INPUT_PULLUP);
   pinMode(BTN_BOOT, INPUT_PULLUP);
   // ...ou demande depuis l'entree "Mode Flash OTA" du menu (drapeau RTC RAM)
   if (otaRequest == OTA_MAGIC)
     otaMode = true;
   otaRequest = 0;
-  for (uint32_t t0 = millis(); millis() - t0 < 1000 && !otaMode;)
-  {
-    if (digitalRead(BTN_PREV) == LOW || digitalRead(BTN_BOOT) == LOW)
-      otaMode = true;
-    delay(10);
-  }
 
   // Retroeclairage : libere un eventuel hold du deep sleep precedent puis allume
   // (GPIO 9 = badges nappe, GPIO 4 = premiers badges — pilotes en parallele,
@@ -1274,6 +1295,32 @@ void setup()
       delay(1000);
   }
   Serial0.printf("PSRAM libre : %u octets\n", (unsigned)ESP.getFreePsram());
+
+  // Sequence de demarrage : anim "Three Conf" (logo + loader) pendant 4 s —
+  // fait aussi office de verification visuelle de la liaison SPI. La
+  // generation des textures est intercalee entre les frames (une etape par
+  // frame) pour rester invisible, et PREV/BOOT presse pendant l'anim bascule
+  // en mode flash OTA.
+  int genStep = 0;
+  uint32_t genT0 = millis();
+  if (!otaMode)
+  {
+    uint32_t t0 = millis();
+    while (millis() - t0 < 4000 && !otaMode)
+    {
+      float ts = (millis() - t0) / 1000.0f;
+      animThreeConf(ts, -20); // logo remonte pour laisser la place au loader
+      drawBootLoader(ts / 4.0f, ts);
+      waitTE();
+      badgeFlush();
+      if (bootGenStep(genStep))
+        genStep++;
+      // fenetre OTA : 1,5 s (au-dela, un appui pendant le boot est ignore)
+      if (ts < 1.5f &&
+          (digitalRead(BTN_PREV) == LOW || digitalRead(BTN_BOOT) == LOW))
+        otaMode = true;
+    }
+  }
 
   if (otaMode)
   {
@@ -1320,39 +1367,12 @@ void setup()
     return;
   }
 
-  // Sequence de demarrage : l'anim "Three Conf" (logo + intro glissee) pendant
-  // 5 s — fait aussi office de verification visuelle de la liaison SPI. Le
-  // dernier frame reste affiche pendant la generation des textures (~2 s),
-  // puis loop() demarre sur l'Idle Rainbow (slot 0).
-  {
-    uint32_t t0 = millis();
-    while (millis() - t0 < 5000)
-    {
-      float ts = (millis() - t0) / 1000.0f;
-      animThreeConf(ts, -20); // logo remonte pour laisser la place au loader
-      drawBootLoader(ts / 5.0f, ts);
-      waitTE();
-      badgeFlush();
-    }
-  }
-
-  initPlasma();
-  initTorus();
-  initBallSprite();
-  initMouthMask();
-  initTgLogo();
-
-  // Generation des frames de rotation d'Idle Rainbow (rapide grace a la LUT
-  // d'exponentielle : < 1 s, pas besoin de loader)
-  irInit();
-  uint32_t genT0 = millis();
-  for (int i = 0; i < IR_FRAMES; i++)
-    irGenFrame(i);
-  dvdInitSprites(); // les 5 palettes de la sphere DVD (reutilise la LUT d'expf)
-  initPoints();
-  Serial0.printf("generation textures : %lu ms\n", (unsigned long)(millis() - genT0));
-  for (int i = 0; i < NSTARS; i++)
-    resetStar(stars[i]);
+  // Termine les etapes de generation restantes si l'anim n'a pas suffi
+  // (en pratique tout tient largement dans les 4 s)
+  while (bootGenStep(genStep))
+    genStep++;
+  Serial0.printf("generation textures : %lu ms (etalee dans l'anim)\n",
+                 (unsigned long)(millis() - genT0));
 
   Serial0.println("setup done");
 }

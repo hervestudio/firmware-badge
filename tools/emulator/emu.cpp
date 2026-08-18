@@ -452,14 +452,14 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
   pNext = emuHeldNext;
   pCtr = emuHeldCtr;
 
-  // ---- splash de boot : Three Conf + loader pendant 5 s
+  // ---- splash de boot : Three Conf + loader pendant 4 s
   if (bootT0 < 0)
     bootT0 = emuNowMs;
-  if (emuNowMs - bootT0 < 5000)
+  if (emuNowMs - bootT0 < 4000)
   {
     float ts = (float)(emuNowMs - bootT0) / 1000.0f;
     animThreeConf(ts, -20);
-    drawBootLoader(ts / 5.0f, ts);
+    drawBootLoader(ts / 4.0f, ts);
     return;
   }
 

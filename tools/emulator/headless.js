@@ -32,7 +32,7 @@ const EmuModule = {
       console.log("snap", name);
     };
 
-    frame(0, 110); // boot splash 5 s
+    frame(0, 90);  // boot splash 4 s
     frame(0, 40);  // idle rainbow (avatar par defaut)
     snap("idle_defaut");
     press(4);      // -> home bulles
