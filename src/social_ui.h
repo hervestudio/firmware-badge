@@ -1,24 +1,160 @@
 // Reaction "un ami est la" — PARTAGE firmware / emulateur. Quand un autre
 // badge est detecte a proximite (ESP-NOW cote firmware, export de test cote
-// emulateur), une pilule glisse du haut de l'ecran par-dessus l'anim Conf
-// Buddy : "<Nom> 👋", meme style que la pilule message de la carte.
-// Depend de : canvas, rgb565, RGB565_WHITE, CX, mxPrint/mxTextW (emoji_text.h).
+// emulateur), le Conf Buddy joue une des trois expressions portees du
+// visualiseur speaker-badge-anims (triggers Happy / Wow / Love de
+// screen-anims.js), tiree au hasard, pendant qu'une pilule "<Nom> 👋"
+// glisse du haut de l'ecran.
+//   HAPPY : yeux en arcs ^ + etoiles qui tournent a cote + rebond du visage
+//   WOW   : etoiles qui tournent DANS les yeux + petite bouche en O
+//   LOVE  : yeux en coeur rouges + anneaux "battement de coeur" (lub-dub)
+//           + petits coeurs qui montent
+// (la sphere plein ecran est blittee par tables precalculees : le
+// scale/bounce du JS est traduit en mouvement du visage et en effets.)
+// Depend de : canvas, rgb565, RGB565_WHITE, CX/CY, millis, avStroke,
+// mxPrint/mxTextW (emoji_text.h), sinf/cosf/expf.
 #pragma once
 #include "emoji_text.h"
 
 static char socialReactName[24] = "";
 static uint32_t socialReactUntil = 0; // millis() de fin de la reaction
+static uint8_t socialReactType = 0;   // 0 happy, 1 wow, 2 love
 
 #define SOCIAL_REACT_MS 5000
 
 static void socialReactTrigger(const char *name, uint32_t now)
 {
+  static uint32_t seed = 0x2A5F17u;
+  seed = seed * 1103515245u + now + 12345u;
+  socialReactType = (uint8_t)((seed >> 16) % 3);
   snprintf(socialReactName, sizeof(socialReactName), "%s", name);
   socialReactUntil = now + SOCIAL_REACT_MS;
 }
 
-// Dessine la reaction par-dessus la frame courante (a appeler juste avant le
-// flush de l'anim idle). Glisse du haut a l'arrivee, remonte a la fin.
+// ---- helpers de dessin -------------------------------------------------
+
+// etoile 5 branches qui tourne (etoiles des triggers Happy/Wow)
+static void socialStar(float cx, float cy, float R, float ang, uint16_t col)
+{
+  canvas->fillCircle((int)cx, (int)cy, (int)(R * 0.45f), col);
+  for (int k = 0; k < 5; k++)
+  {
+    float a = ang + k * 2.0f * (float)PI / 5.0f;
+    canvas->fillCircle((int)(cx + cosf(a) * R * 0.62f),
+                       (int)(cy + sinf(a) * R * 0.62f), (int)(R * 0.32f), col);
+  }
+}
+
+// coeur plein (yeux Love + particules)
+static void socialHeart(float cx, float cy, float s, uint16_t col)
+{
+  canvas->fillCircle((int)(cx - s * 0.35f), (int)(cy - s * 0.22f),
+                     (int)(s * 0.42f), col);
+  canvas->fillCircle((int)(cx + s * 0.35f), (int)(cy - s * 0.22f),
+                     (int)(s * 0.42f), col);
+  canvas->fillTriangle((int)(cx - s * 0.70f), (int)(cy - s * 0.02f),
+                       (int)(cx + s * 0.70f), (int)(cy - s * 0.02f),
+                       (int)cx, (int)(cy + s * 0.80f), col);
+}
+
+// anneau "pulse ring" du mode Love : nait au bord de la sphere et s'etend en
+// palissant (ease-out), 3 cercles concentriques pour l'epaisseur
+static void socialRing(float age, float life, float fr)
+{
+  if (age <= 0 || age >= life)
+    return;
+  float p = age / life, e = 1 - (1 - p) * (1 - p);
+  int rad = (int)(fr * 0.95f + (255 - fr * 0.95f) * e);
+  float fade = 1 - p;
+  uint16_t col = rgb565((uint8_t)(255 * fade), (uint8_t)(110 * fade),
+                        (uint8_t)(175 * fade));
+  for (int k = -1; k <= 1; k++)
+    canvas->drawCircle(CX, CY, rad + k, col);
+}
+
+// Remplace le visage de l'avatar pendant la reaction (appele en tete de
+// drawIdleFaceLook). fr > 120 = seulement le buddy plein ecran, pas les
+// previews (Settings, Setup, QR). Retourne true si l'expression a dessine.
+static bool socialExprFace(float cx, float cy, float fr)
+{
+  uint32_t now = millis();
+  if (!socialReactName[0] || now >= socialReactUntil || fr < 120)
+    return false;
+  float tA = (SOCIAL_REACT_MS - (int)(socialReactUntil - now)) / 1000.0f;
+  float pop = tA < 0.3f ? tA / 0.3f : 1.0f; // pop-in des elements
+  pop = 1 - (1 - pop) * (1 - pop);
+  const uint16_t ink = rgb565(39, 39, 39);
+  const uint16_t star = rgb565(255, 224, 102);
+  const uint16_t red = rgb565(240, 50, 85);
+  float ex = fr * 0.36f, ey = -fr * 0.19f, er = fr * 0.105f;
+  float spin = tA * 3.2f;
+  float osc = 1 + 0.22f * sinf(tA * 6.0f);
+
+  switch (socialReactType)
+  {
+  case 0: // HAPPY — arcs ^, etoiles a cote, rebond (bounce 5,5 Hz du JS)
+  {
+    cy += -fabsf(sinf(tA * 5.5f * (float)PI)) * fr * 0.045f;
+    avStroke(3, cx - ex - er * 1.1f, er * 2.2f, cy + ey + er * 0.35f,
+             er * 0.85f, er * 0.30f, ink);
+    avStroke(3, cx + ex - er * 1.1f, er * 2.2f, cy + ey + er * 0.35f,
+             er * 0.85f, er * 0.30f, ink);
+    avStroke(0, cx - fr * 0.16f, fr * 0.32f, cy + fr * 0.11f, fr * 0.05f,
+             fr * 0.030f, ink);
+    float sz = er * 0.85f * pop * osc;
+    socialStar(cx - ex - er * 1.6f, cy + ey - er * 0.9f, sz, spin, star);
+    socialStar(cx + ex + er * 1.6f, cy + ey - er * 0.9f, sz, -spin, star);
+    break;
+  }
+  case 1: // WOW — etoiles qui tournent dans les yeux, petite bouche en O
+  {
+    canvas->fillCircle((int)(cx - ex), (int)(cy + ey), (int)er, ink);
+    canvas->fillCircle((int)(cx + ex), (int)(cy + ey), (int)er, ink);
+    float sz = er * 0.78f * pop * osc;
+    socialStar(cx - ex, cy + ey - er * 0.15f, sz, spin, star);
+    socialStar(cx + ex, cy + ey - er * 0.15f, sz, spin, star);
+    canvas->fillCircle((int)cx, (int)(cy + fr * 0.13f), (int)(fr * 0.070f), ink);
+    break;
+  }
+  default: // LOVE — yeux coeur, lub-dub d'anneaux, petits coeurs qui montent
+  {
+    // battement lub-dub (56 bpm comme le JS) : deux anneaux par cycle
+    const float T = 60.0f / 56.0f;
+    float base = floorf(tA / T) * T;
+    for (int b = -1; b <= 0; b++) // battement courant + precedent
+    {
+      float tb = base + b * T;
+      if (tb < 0)
+        continue;
+      socialRing(tA - tb, 1.3f, fr);          // lub
+      socialRing(tA - tb - 0.20f, 1.0f, fr);  // dub, plus court
+    }
+    socialHeart(cx - ex, cy + ey, er * 1.5f * pop, red);
+    socialHeart(cx + ex, cy + ey, er * 1.5f * pop, red);
+    avStroke(0, cx - fr * 0.14f, fr * 0.28f, cy + fr * 0.11f, fr * 0.045f,
+             fr * 0.028f, ink);
+    // petits coeurs qui montent sur les cotes (spawn regulier, vie 1,6 s)
+    for (int i = 0; i < 8; i++)
+    {
+      float born = i * 0.55f;
+      float age = tA - born;
+      if (age <= 0 || age >= 1.6f)
+        continue;
+      unsigned h = (unsigned)(i * 2654435761u);
+      float side = (i & 1) ? 1.0f : -1.0f;
+      float x = cx + side * (fr * 0.55f + (h & 31)) + sinf(age * 4 + i) * 8;
+      float y = cy + fr * 0.25f - age * 65.0f;
+      float fade = age < 1.1f ? 1.0f : (1.6f - age) / 0.5f;
+      uint16_t c = rgb565((uint8_t)(255 * fade), (uint8_t)(90 * fade),
+                          (uint8_t)(150 * fade));
+      socialHeart(x, y, 7 + (h >> 5 & 7), c);
+    }
+    break;
+  }
+  }
+  return true;
+}
+
+// Pilule "<Nom> 👋" qui glisse du haut (par-dessus l'anim idle, avant flush)
 static void socialReactDraw(uint32_t now)
 {
   if (!socialReactName[0] || now >= socialReactUntil)

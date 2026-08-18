@@ -519,11 +519,17 @@ static void getIdle(float t, float *lookX, float *lookY, float *openness)
   }
 }
 
+// reaction sociale (social_ui.h, inclus par emu.cpp) : remplace le visage
+// pendant les 5 s d'une rencontre entre badges
+static bool socialExprFace(float cx, float cy, float fr);
+
 // Visage anime projete sur une sphere de rayon fr centree (cx, cy) :
 // yeux ronds qui suivent le regard (squish lateral), clignement, bouche SVG.
 static void drawIdleFaceLook(float cx, float cy, float fr, float t,
                              float lookX, float lookY, float openness)
 {
+  if (socialExprFace(cx, cy, fr))
+    return; // expression Happy/Wow/Love a la place du visage normal
   uint16_t ink = rgb565(39, 39, 39); // #272727
   float breathe = sinf(t * 1.8f) * 0.5f;
   float theta = lookX * 30.0f * PI / 180.0f;
