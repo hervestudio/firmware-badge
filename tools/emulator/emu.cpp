@@ -98,6 +98,7 @@ static bool batCharging = false;
 
 #include "menu_ui.h" // menu bulles + listes (partage avec le firmware)
 #include "qr_screen.h" // ecran Meet > QR Code (partage avec le firmware)
+#include "social_ui.h" // reaction "un ami est la" (partage avec le firmware)
 
 // splash de boot (copie de main.cpp)
 static void drawBootLoader(float p, float t)
@@ -546,6 +547,12 @@ extern "C"
     setupEmuBuilding = true;
     setupEmuConnected = true;
   }
+  // simulateur de rencontre : un "badge ami" passe a proximite (le vrai
+  // badge detecte ca via les beacons ESP-NOW)
+  EMSCRIPTEN_KEEPALIVE void emu_social_seen(const char *name)
+  {
+    socialReactTrigger((name && name[0]) ? name : "Kim", (uint32_t)emuNowMs);
+  }
   EMSCRIPTEN_KEEPALIVE void emu_setup_buddy(int hue, int sat100, int face,
                                             int custom)
   {
@@ -950,6 +957,8 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
   case 12: animPhoto2(t); break;
   case 13: animPhoto3(t); break;
   }
+  if (anim == 8) // Conf Buddy : reaction "un ami est la" par-dessus l'anim
+    socialReactDraw((uint32_t)emuNowMs);
 }
 
 } // extern "C"

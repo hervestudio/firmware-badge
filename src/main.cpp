@@ -1065,6 +1065,7 @@ static void badgeFlush()
 #include "setup_mode.h" // parcours de config sur telephone (More > Setup) —
                         // fournit le DNS captif badgeDns*, utilise par Draw
 #include "draw_mode.h"
+#include "social.h"     // rencontres entre badges (ESP-NOW, Conf Buddy)
 
 // Ecran d'attente du mode dessin : infos de connexion tant que personne
 // n'a rejoint (efface par draw_mode.h a la premiere connexion WebSocket)
@@ -1444,6 +1445,17 @@ void loop()
   static int slot = 0;
   static uint32_t lastBtnMs = 0;
   static uint32_t slotStartMs = 0;
+
+  // Rencontres entre badges : la radio ESP-NOW n'est active que quand le
+  // Conf Buddy est a l'ecran (elle se coupe des qu'on entre dans le menu,
+  // donc toujours AVANT les AP WiFi de Draw/Setup/OTA)
+  {
+    bool wantSocial = (uiMode == UI_ANIM && ACTIVE[slot] == 8);
+    if (wantSocial != socialOn)
+      wantSocial ? socialStart() : socialStop();
+    if (socialOn)
+      socialLoop(now);
+  }
 
   // ---- boutons : gauche/droite (anti-rebond 300 ms) + central court/long ----
   bool navNext = false, navPrev = false;
@@ -2002,6 +2014,8 @@ void loop()
   case 12: animPhoto2(t); break;
   case 13: animPhoto3(t); break;
   }
+  if (anim == 8) // Conf Buddy : reaction "un ami est la" par-dessus l'anim
+    socialReactDraw(now);
   waitTE();
   badgeFlush();
 

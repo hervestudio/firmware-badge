@@ -272,6 +272,7 @@ The phone mock-up needs more room &mdash; open the emulator on a desktop to try 
   <p id="help">
     <kbd>&#8592;</kbd>/<kbd>&#8593;</kbd> previous &nbsp;·&nbsp; <kbd>&#8594;</kbd>/<kbd>&#8595;</kbd> next &nbsp;·&nbsp; <kbd>space</kbd> center button (tap = menu/select, <b>hold 2 s = power off</b>)<br>
     In action games: center = act · quit = hold <kbd>&#8592;</kbd>+<kbd>&#8594;</kbd> for 0.8 s · game over: next = play again<br>
+    <kbd>m</kbd> = simulate another badge passing by (Conf Buddy reacts)<br>
     Animations &amp; games are the real firmware sources (anims_extra.h, games.h, tama.h) compiled to WebAssembly.
   </p>
 </div>
@@ -292,6 +293,16 @@ bindBtn(document.getElementById('bCtr'), 'ctr');
 const KEYS = { ArrowLeft: 'prev', ArrowUp: 'prev', ArrowRight: 'next',
                ArrowDown: 'next', ' ': 'ctr', Enter: 'ctr' };
 const typing = e => e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
+// touche m : simule un badge ami qui passe a proximite (reaction du buddy)
+const MEET_NAMES = ['Kim', 'David', 'Mr.doob', 'Bruno', 'Cassie'];
+let meetIdx = 0;
+addEventListener('keydown', e => {
+  if (e.key === 'm' && !typing(e) && window.Module && Module._emu_social_seen) {
+    const p = Module.stringToNewUTF8(MEET_NAMES[meetIdx++ % MEET_NAMES.length]);
+    Module._emu_social_seen(p);
+    Module._free(p);
+  }
+});
 addEventListener('keydown', e => { const k = KEYS[e.key];
   if (k && !typing(e)) { e.preventDefault(); held[k] = true; } });
 addEventListener('keyup', e => { const k = KEYS[e.key];
