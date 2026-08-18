@@ -273,6 +273,155 @@ EMSCRIPTEN_KEEPALIVE void emu_init()
 
 // dtMs : temps ecoule depuis le dernier frame ; held : bit0 prev (haut),
 // bit1 next (bas), bit2 centre.
+
+// ---- Draw mode FONCTIONNEL (port de src/draw_mode.h sans le WiFi) ----
+// Le "telephone" est rendu par la page (index.html) : elle envoie les
+// segments via emu_draw_seg(), exactement comme la webapp reelle en WS.
+enum DrawBrush : uint8_t { BR_PLAIN = 0, BR_GLITTER, BR_IRIS, BR_NEON, BR_FIRE };
+struct DrawPt
+{
+  int16_t x, y;
+  uint16_t col;
+  uint8_t r, brush;
+  uint16_t seed;
+};
+#define DRAW_MAXPTS 4096
+static DrawPt *drawPts = nullptr;
+static int drawNPts = 0, drawPtHead = 0;
+
+static void drawPtPaint(const DrawPt &p, float t)
+{
+  switch (p.brush)
+  {
+  case BR_GLITTER:
+  {
+    uint16_t r5 = (p.col >> 11) & 31, g6 = (p.col >> 5) & 63, b5 = p.col & 31;
+    uint16_t base = ((r5 * 9 >> 4) << 11) | ((g6 * 9 >> 4) << 5) | (b5 * 9 >> 4);
+    canvas->fillCircle(p.x, p.y, p.r, base);
+    int n = 1 + p.r / 3;
+    for (int i = 0; i < n; i++)
+    {
+      int dx = rand() % (2 * p.r + 1) - p.r, dy = rand() % (2 * p.r + 1) - p.r;
+      if (dx * dx + dy * dy > p.r * p.r)
+        continue;
+      uint16_t sc = (rand() & 3) ? RGB565_WHITE : rgb565(255, 240, 180);
+      canvas->drawPixel(p.x + dx, p.y + dy, sc);
+      if (p.r > 4 && (rand() & 1))
+        canvas->drawPixel(p.x + dx + 1, p.y + dy, sc);
+    }
+    break;
+  }
+  case BR_IRIS:
+  {
+    uint8_t hue = (uint8_t)((int)(p.x * 0.55f + p.y * 0.35f + t * 70) & 255);
+    canvas->fillCircle(p.x, p.y, p.r, hsv2rgb565(hue, 230, 255));
+    break;
+  }
+  case BR_NEON:
+  {
+    float pulse = 0.62f + 0.38f * sinf(t * 3.2f + (p.seed & 63) * 0.1f);
+    uint16_t r5 = (p.col >> 11) & 31, g6 = (p.col >> 5) & 63, b5 = p.col & 31;
+    canvas->fillCircle(p.x, p.y, p.r,
+                       (((uint16_t)(r5 * pulse) << 11) |
+                        ((uint16_t)(g6 * pulse) << 5) | (uint16_t)(b5 * pulse)));
+    break;
+  }
+  case BR_FIRE:
+  {
+    static const uint16_t FIRE_COLS[5] = {0xF800, 0xFB20, 0xFE60, 0xFFE0, 0x9800};
+    canvas->fillCircle(p.x, p.y, p.r, FIRE_COLS[rand() % 5]);
+    if (p.r > 3)
+      canvas->fillCircle(p.x + rand() % 3 - 1, p.y + rand() % 3 - 1, p.r / 3,
+                         FIRE_COLS[1 + rand() % 3]);
+    break;
+  }
+  default:
+    canvas->fillCircle(p.x, p.y, p.r, p.col);
+  }
+}
+
+static void drawStamp(int x0, int y0, int x1, int y1, uint16_t col, int r,
+                      uint8_t brush)
+{
+  int dx = x1 - x0, dy = y1 - y0;
+  float t = millis() / 1000.0f;
+  int steps = (int)(sqrtf((float)(dx * dx + dy * dy)) / (r > 2 ? r / 2 : 1)) + 1;
+  for (int i = 0; i <= steps; i++)
+  {
+    int x = x0 + dx * i / steps, y = y0 + dy * i / steps;
+    if (brush == BR_PLAIN)
+      canvas->fillCircle(x, y, r, col);
+    else if (i % 2 == 0 || steps < 2)
+    {
+      DrawPt p = {(int16_t)x, (int16_t)y, col, (uint8_t)r, (uint8_t)brush,
+                  (uint16_t)rand()};
+      drawPtPaint(p, t);
+      drawPts[drawPtHead] = p;
+      drawPtHead = (drawPtHead + 1) % DRAW_MAXPTS;
+      if (drawNPts < DRAW_MAXPTS)
+        drawNPts++;
+    }
+  }
+  if (brush == BR_PLAIN && col == RGB565_BLACK && drawNPts)
+  {
+    int rr = r + 2;
+    for (int i = 0; i < drawNPts; i++)
+    {
+      DrawPt &p = drawPts[i];
+      if (!p.r)
+        continue;
+      int mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+      int d0x = p.x - x0, d0y = p.y - y0, d1x = p.x - x1, d1y = p.y - y1;
+      int dmx = p.x - mx, dmy = p.y - my;
+      int lim = (rr + p.r) * (rr + p.r);
+      if (d0x * d0x + d0y * d0y < lim || d1x * d1x + d1y * d1y < lim ||
+          dmx * dmx + dmy * dmy < lim)
+        p.r = 0;
+    }
+  }
+}
+
+static void drawEmuEnter()
+{
+  if (!drawPts)
+    drawPts = (DrawPt *)malloc(DRAW_MAXPTS * sizeof(DrawPt));
+  drawNPts = 0;
+  drawPtHead = 0;
+  canvas->fillScreen(RGB565_BLACK);
+}
+
+static void drawEmuTick()
+{
+  // repeint les points animes (paillettes, neon, iris, feu)
+  float t = millis() / 1000.0f;
+  for (int i = 0; i < drawNPts; i++)
+    if (drawPts[i].r)
+      drawPtPaint(drawPts[i], t);
+}
+
+extern "C"
+{
+  EMSCRIPTEN_KEEPALIVE int emu_mode() { return (int)uiMode; }
+  EMSCRIPTEN_KEEPALIVE void emu_draw_seg(int x0, int y0, int x1, int y1,
+                                         int col, int r, int brush)
+  {
+    if (uiMode != UI_DRAW || !drawPts)
+      return;
+    if (brush > BR_FIRE || brush < 0)
+      brush = BR_PLAIN;
+    drawStamp(x0, y0, x1, y1, (uint16_t)col, r < 1 ? 1 : (r > 30 ? 30 : r),
+              (uint8_t)brush);
+  }
+  EMSCRIPTEN_KEEPALIVE void emu_draw_clear()
+  {
+    if (uiMode != UI_DRAW)
+      return;
+    drawNPts = 0;
+    drawPtHead = 0;
+    canvas->fillScreen(RGB565_BLACK);
+  }
+}
+
 EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
 {
   if (dtMs > 100)
@@ -491,7 +640,8 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
         uiMode = (UiMode)(UI_SNAKE + arg);
         break;
       case UIA_DRAW:
-        uiMode = UI_DRAW; // (pas de WiFi dans le navigateur : ecran d'infos)
+        uiMode = UI_DRAW; // dessin fonctionnel : la page affiche le telephone
+        drawEmuEnter();
         break;
       case UIA_AUTO:
         autoCycle = !autoCycle;
@@ -524,7 +674,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
     else if (uiMode == UI_HOME)
       uiDrawHome(dt, batPct, batCharging);
     else if (uiMode == UI_DRAW)
-      drawDrawWait();
+      ; // ecran de dessin deja efface par drawEmuEnter()
     else if (uiMode == UI_FLASH)
       drawFlashScreen();
     return;
@@ -533,7 +683,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
   if (uiMode == UI_DRAW || uiMode == UI_FLASH)
   {
     if (uiMode == UI_DRAW)
-      drawDrawWait();
+      drawEmuTick();
     else
       drawFlashScreen();
     if (autoShort)
