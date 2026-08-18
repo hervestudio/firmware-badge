@@ -1260,6 +1260,8 @@ void setup()
   g_buddyCustomDef.sat = prefs.getUChar("bsat", 100) / 100.0f;
   g_buddyCustomDef.face = prefs.getUChar("bface", 0) % 9;
   prefs.getString("bname", qrName, sizeof(qrName));
+  prefs.getString("bcomp", qrCompany, sizeof(qrCompany));
+  prefs.getString("bmsg", qrMsg, sizeof(qrMsg));
   if (prefs.getString("qrurl", qrUrl, sizeof(qrUrl)) == 0 || !qrUrl[0])
     snprintf(qrUrl, sizeof(qrUrl), "https://threejs.paris");
 

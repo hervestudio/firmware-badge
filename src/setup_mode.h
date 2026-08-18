@@ -48,8 +48,8 @@ static void setupDrawScreen()
 }
 
 // Preview live (telephone connecte), animee frame par frame : etapes 1-2 =
-// buddy anime + nom + URL ; etape 3 (QR) = le QR en direct sur le badge,
-// version "en construction" pendant la saisie de l'URL
+// carte d'identite (buddy + message + nom + entreprise) ; etape 3 (QR) =
+// le QR en direct, version "en construction" pendant la saisie de l'URL
 static void setupDrawLive(float t)
 {
   if (setupStep == 2)
@@ -62,11 +62,6 @@ static void setupDrawLive(float t)
     qrScreenDraw(t, setupBuilding);
     return;
   }
-  canvas->fillScreen(RGB565_BLACK);
-  canvas->setTextColor(rgb565(0xfb, 0xd9, 0x75));
-  canvas->setTextSize(3);
-  canvas->setCursor(CX - 90, 40);
-  canvas->print("SETUP");
   // sprite regenere seulement quand les parametres changent
   static int lastHue = -1000, lastSat = -1, lastCust = -1, lastAv = -1;
   const AvatarDef &av = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
@@ -82,43 +77,51 @@ static void setupDrawLive(float t)
     lastCust = (int)g_buddyCustom;
     lastAv = (int)g_avatarIdx;
   }
-  qrBuddyAnim(CX, CY - 30, 74.0f, t, setupSpr);
-  if (qrName[0])
-  {
-    int tw = mdTextW(qrName);
-    mdPrint(CX - tw / 2, 268, qrName, RGB565_WHITE);
-  }
-  // URL du QR, tronquee a la largeur de l'ecran
-  char shortUrl[27];
-  snprintf(shortUrl, sizeof(shortUrl), "%s", qrUrl);
-  if (strlen(qrUrl) >= sizeof(shortUrl))
-    memcpy(shortUrl + sizeof(shortUrl) - 4, "...", 4);
-  canvas->setTextSize(1);
-  canvas->setTextColor(rgb565(130, 130, 130));
-  canvas->setCursor(CX - (int)strlen(shortUrl) * 3, 300);
-  canvas->print(shortUrl);
+  badgeCardDraw(t, setupSpr);
 }
 
 static void setupSendState(uint8_t num)
 {
-  char msg[220];
+  char msg[330];
   snprintf(msg, sizeof(msg),
-           "J{\"name\":\"%s\",\"url\":\"%s\",\"hue\":%d,\"sat\":%d,"
-           "\"face\":%d,\"cust\":%d}",
-           qrName, qrUrl, (int)g_buddyCustomDef.hue,
+           "J{\"name\":\"%s\",\"comp\":\"%s\",\"msg\":\"%s\",\"url\":\"%s\","
+           "\"hue\":%d,\"sat\":%d,\"face\":%d,\"cust\":%d}",
+           qrName, qrCompany, qrMsg, qrUrl, (int)g_buddyCustomDef.hue,
            (int)(g_buddyCustomDef.sat * 100 + 0.5f),
            (int)g_buddyCustomDef.face, g_buddyCustom ? 1 : 0);
   setupWs->sendTXT(num, msg);
 }
 
 // copie une chaine recue en filtrant les guillemets (JSON d'etat) et les
-// controles ; garde l'UTF-8 tel quel
+// controles ; garde l'UTF-8 tel quel (emojis du message)
 static void setupCopyStr(char *dst, size_t cap, const uint8_t *src, size_t len)
 {
   size_t o = 0;
   for (size_t i = 0; i < len && o + 1 < cap; i++)
     if (src[i] >= 32 && src[i] != '"' && src[i] != '\\')
       dst[o++] = (char)src[i];
+  dst[o] = 0;
+}
+
+// variante nom/entreprise : translittere les accents latins vers l'ASCII
+// (les polices Dingos/Bebas du badge couvrent 32..126)
+static void setupCopyAscii(char *dst, size_t cap, const uint8_t *src, size_t len)
+{
+  static const char *FOLD = // Latin-1 0xC0..0xFF
+      "AAAAAAECEEEEIIIIDNOOOOOxOUUUUYPsaaaaaaeceeeeiiiionooooo/ouuuuypy";
+  size_t o = 0;
+  for (size_t i = 0; i < len && o + 1 < cap; i++)
+  {
+    uint8_t c = src[i];
+    if (c >= 32 && c < 127 && c != '"' && c != '\\')
+      dst[o++] = (char)c;
+    else if (c == 0xC3 && i + 1 < len) // UTF-8 Latin-1 supplement
+    {
+      uint8_t d = 0xC0 + (src[++i] & 63);
+      if (d >= 0xC0)
+        dst[o++] = FOLD[d - 0xC0];
+    }
+  }
   dst[o] = 0;
 }
 
@@ -144,9 +147,19 @@ static void setupWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t le
     switch (payload[0])
     {
     case 'N': // nom du speaker
-      setupCopyStr(qrName, sizeof(qrName), payload + 1, len - 1);
+      setupCopyAscii(qrName, sizeof(qrName), payload + 1, len - 1);
       prefs.putString("bname", qrName);
       Serial0.printf("setup : nom = \"%s\"\n", qrName);
+      break;
+    case 'C': // entreprise
+      setupCopyAscii(qrCompany, sizeof(qrCompany), payload + 1, len - 1);
+      prefs.putString("bcomp", qrCompany);
+      Serial0.printf("setup : entreprise = \"%s\"\n", qrCompany);
+      break;
+    case 'M': // message (pilule, emojis bienvenus)
+      setupCopyStr(qrMsg, sizeof(qrMsg), payload + 1, len - 1);
+      prefs.putString("bmsg", qrMsg);
+      Serial0.printf("setup : message = \"%s\"\n", qrMsg);
       break;
     case 'U': // URL du QR code (validee cote telephone)
       setupCopyStr(qrUrl, sizeof(qrUrl), payload + 1, len - 1);

@@ -8,11 +8,14 @@
 // mdPrint/mdTextW, sinf/cosf/fmodf, free.
 #pragma once
 #include "qrcodegen.h"
+#include "emoji_text.h" // pilule message de la carte : Dingos Medium + emojis
 
 #define QR_URL_MAX 96
 #define QR_NAME_MAX 24
 static char qrUrl[QR_URL_MAX] = "https://threejs.paris";
 static char qrName[QR_NAME_MAX] = "";
+static char qrCompany[28] = "";
+static char qrMsg[48] = ""; // peut contenir des emojis (UTF-8, emoji_text.h)
 
 static uint8_t qrModules[qrcodegen_BUFFER_LEN_FOR_VERSION(8)];
 static bool qrValid = false;
@@ -37,6 +40,47 @@ static void qrScreenRelease()
   {
     free(qrSpr);
     qrSpr = nullptr;
+  }
+}
+
+// Carte d'identite du badge (design Figma) : buddy anime + pilule message
+// blanche chevauchant la sphere + NOM en Dingos titre + entreprise en Bebas.
+// Utilisee par la preview du Setup (et plus tard l'ecran social). Depend en
+// plus de mtPrint/mtTextW et bbPrint/bbTextW (a inclure avant).
+static void qrBuddyAnim(float cx, float cy, float fr, float t,
+                        const uint16_t *spr);
+static void badgeCardDraw(float t, const uint16_t *spr)
+{
+  canvas->fillScreen(RGB565_BLACK);
+  qrBuddyAnim(CX, 150, 60.0f, t, spr);
+  if (qrMsg[0])
+  {
+    // pilule blanche accrochee en haut a droite de la sphere
+    int tw = mxTextW(qrMsg), ph = 30, pw = tw + 26;
+    int x0 = CX + 14, y0 = 84;
+    if (x0 + pw > 344)
+      x0 = 344 - pw;
+    canvas->fillRect(x0, y0, pw, ph, RGB565_WHITE);
+    canvas->fillCircle(x0, y0 + ph / 2, ph / 2, RGB565_WHITE);
+    canvas->fillCircle(x0 + pw, y0 + ph / 2, ph / 2, RGB565_WHITE);
+    mxPrint(x0 + 13, y0 + 8, qrMsg, rgb565(0x21, 0x1C, 0x3B));
+  }
+  char up[28];
+  if (qrName[0])
+  {
+    int i = 0;
+    for (; qrName[i] && i < 27; i++)
+      up[i] = toupper((unsigned char)qrName[i]);
+    up[i] = 0;
+    mtPrint(CX - mtTextW(up) / 2, 238, up, RGB565_WHITE);
+  }
+  if (qrCompany[0])
+  {
+    int i = 0;
+    for (; qrCompany[i] && i < 27; i++)
+      up[i] = toupper((unsigned char)qrCompany[i]);
+    up[i] = 0;
+    bbPrint(CX - bbTextW(up) / 2, 284, up, rgb565(198, 196, 214));
   }
 }
 

@@ -183,13 +183,13 @@ static bool setupEmuBuilding = false;  // URL en cours de saisie
 static bool setupEmuQrDirty = true;    // l'URL a change -> re-encoder
 static void drawSetupScreen(float t)
 {
-  canvas->fillScreen(RGB565_BLACK);
-  canvas->setTextColor(rgb565(0xfb, 0xd9, 0x75));
-  canvas->setTextSize(3);
-  canvas->setCursor(CX - 90, 40);
-  canvas->print("SETUP");
   if (!setupEmuConnected)
   {
+    canvas->fillScreen(RGB565_BLACK);
+    canvas->setTextColor(rgb565(0xfb, 0xd9, 0x75));
+    canvas->setTextSize(3);
+    canvas->setCursor(CX - 90, 40);
+    canvas->print("SETUP");
     canvas->setTextSize(2);
     canvas->setTextColor(RGB565_WHITE);
     canvas->setCursor(70, 120);
@@ -215,8 +215,8 @@ static void drawSetupScreen(float t)
     qrScreenDraw(t, setupEmuBuilding);
     return;
   }
-  // preview live : buddy (custom ou avatar de la table) + nom + URL — sprite
-  // regenere seulement quand les parametres changent
+  // etapes 1-2 : carte d'identite (buddy + message + nom + entreprise) —
+  // sprite regenere seulement quand les parametres changent
   static uint16_t *spr = nullptr;
   static int lastHue = -1000, lastSat = -1, lastCust = -1, lastAv = -1;
   const AvatarDef &av = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
@@ -232,20 +232,7 @@ static void drawSetupScreen(float t)
     lastCust = (int)g_buddyCustom;
     lastAv = (int)g_avatarIdx;
   }
-  qrBuddyAnim(CX, CY - 30, 74.0f, t, spr);
-  if (qrName[0])
-  {
-    int tw = mdTextW(qrName);
-    mdPrint(CX - tw / 2, 268, qrName, RGB565_WHITE);
-  }
-  char shortUrl[27];
-  snprintf(shortUrl, sizeof(shortUrl), "%s", qrUrl);
-  if (strlen(qrUrl) >= sizeof(shortUrl))
-    memcpy(shortUrl + sizeof(shortUrl) - 4, "...", 4);
-  canvas->setTextSize(1);
-  canvas->setTextColor(rgb565(130, 130, 130));
-  canvas->setCursor(CX - (int)strlen(shortUrl) * 3, 300);
-  canvas->print(shortUrl);
+  badgeCardDraw(t, spr);
 }
 
 // Extinction CRT de main.cpp, refaite en machine a etats (pas de boucle
@@ -503,9 +490,9 @@ extern "C"
   {
     static char buf[220];
     snprintf(buf, sizeof(buf),
-             "{\"name\":\"%s\",\"url\":\"%s\",\"hue\":%d,\"sat\":%d,"
-             "\"face\":%d,\"cust\":%d}",
-             qrName, qrUrl, (int)g_buddyCustomDef.hue,
+             "{\"name\":\"%s\",\"comp\":\"%s\",\"msg\":\"%s\",\"url\":\"%s\","
+             "\"hue\":%d,\"sat\":%d,\"face\":%d,\"cust\":%d}",
+             qrName, qrCompany, qrMsg, qrUrl, (int)g_buddyCustomDef.hue,
              (int)(g_buddyCustomDef.sat * 100 + 0.5f),
              (int)g_buddyCustomDef.face, g_buddyCustom ? 1 : 0);
     return buf;
@@ -514,9 +501,35 @@ extern "C"
   {
     setupEmuConnected = on != 0;
   }
+  // translitteration accents latins -> ASCII (les polices badge : 32..126),
+  // meme comportement que setupCopyAscii du firmware
+  static void emuCopyAscii(char *dst, size_t cap, const char *src)
+  {
+    static const char *FOLD =
+        "AAAAAAECEEEEIIIIDNOOOOOxOUUUUYPsaaaaaaeceeeeiiiionooooo/ouuuuypy";
+    size_t o = 0;
+    for (const uint8_t *p = (const uint8_t *)(src ? src : ""); *p && o + 1 < cap; p++)
+    {
+      if (*p >= 32 && *p < 127)
+        dst[o++] = (char)*p;
+      else if (*p == 0xC3 && p[1])
+        dst[o++] = FOLD[(0xC0 + (*++p & 63)) - 0xC0];
+    }
+    dst[o] = 0;
+  }
   EMSCRIPTEN_KEEPALIVE void emu_setup_name(const char *s)
   {
-    snprintf(qrName, sizeof(qrName), "%s", s ? s : "");
+    emuCopyAscii(qrName, sizeof(qrName), s);
+    setupEmuConnected = true;
+  }
+  EMSCRIPTEN_KEEPALIVE void emu_setup_company(const char *s)
+  {
+    emuCopyAscii(qrCompany, sizeof(qrCompany), s);
+    setupEmuConnected = true;
+  }
+  EMSCRIPTEN_KEEPALIVE void emu_setup_msg(const char *s)
+  {
+    snprintf(qrMsg, sizeof(qrMsg), "%s", s ? s : "");
     setupEmuConnected = true;
   }
   EMSCRIPTEN_KEEPALIVE void emu_setup_url(const char *s)
