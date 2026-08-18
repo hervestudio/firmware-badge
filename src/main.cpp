@@ -1218,9 +1218,11 @@ static void drawBootLoader(float p, float t)
       dimRow(yy, 40, 320);
 }
 
-// Generation des textures etalee pendant l'anim de boot : une etape par frame,
-// l'anim continue de tourner entre chaque etape au lieu de rester figee 2 s
-// sur son dernier frame. Retourne false quand tout est genere.
+// Generation des textures pendant l'anim de boot. Retourne false quand tout
+// est genere. Execute sur LE COEUR 0 (bootGenTask) pendant que l'anim tourne
+// sur le coeur 1 : aucune de ces fonctions ne touche au canvas partage, et
+// une etape par frame bloquait la frame en cours (freeze visible en debut
+// de splash sur le vrai badge).
 static bool bootGenStep(int s)
 {
   switch (s)
@@ -1243,6 +1245,19 @@ static bool bootGenStep(int s)
     }
     return false;
   }
+}
+
+static volatile bool bootGenDone = false;
+static void bootGenTask(void *)
+{
+  uint32_t t0 = millis();
+  int s = 0;
+  while (bootGenStep(s))
+    s++;
+  Serial0.printf("generation textures : %lu ms (coeur 0, pendant le splash)\n",
+                 (unsigned long)(millis() - t0));
+  bootGenDone = true;
+  vTaskDelete(nullptr);
 }
 
 // ---------------------------------------------------------------- boucle
@@ -1311,11 +1326,10 @@ void setup()
 
   // Sequence de demarrage : anim "Three Conf" (logo + loader) pendant 4 s —
   // fait aussi office de verification visuelle de la liaison SPI. La
-  // generation des textures est intercalee entre les frames (une etape par
-  // frame) pour rester invisible, et PREV/BOOT presse pendant l'anim bascule
-  // en mode flash OTA.
-  int genStep = 0;
-  uint32_t genT0 = millis();
+  // generation des textures tourne EN PARALLELE sur le coeur 0 (l'anim reste
+  // fluide sur le coeur 1), et PREV/BOOT presse pendant l'anim bascule en
+  // mode flash OTA.
+  xTaskCreatePinnedToCore(bootGenTask, "bootgen", 16384, nullptr, 1, nullptr, 0);
   if (!otaMode)
   {
     uint32_t t0 = millis();
@@ -1326,8 +1340,6 @@ void setup()
       drawBootLoader(ts / 4.0f, ts);
       waitTE();
       badgeFlush();
-      if (bootGenStep(genStep))
-        genStep++;
       // fenetre OTA : 1,5 s (au-dela, un appui pendant le boot est ignore)
       if (ts < 1.5f &&
           (digitalRead(BTN_PREV) == LOW || digitalRead(BTN_BOOT) == LOW))
@@ -1380,12 +1392,10 @@ void setup()
     return;
   }
 
-  // Termine les etapes de generation restantes si l'anim n'a pas suffi
-  // (en pratique tout tient largement dans les 4 s)
-  while (bootGenStep(genStep))
-    genStep++;
-  Serial0.printf("generation textures : %lu ms (etalee dans l'anim)\n",
-                 (unsigned long)(millis() - genT0));
+  // Attend la fin de la generation (coeur 0) — en pratique elle se termine
+  // bien avant les 4 s du splash
+  while (!bootGenDone)
+    delay(5);
 
   Serial0.println("setup done");
 }
