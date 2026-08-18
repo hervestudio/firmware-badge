@@ -65,31 +65,21 @@ static void qrBuddyAnim(float cx, float cy, float fr, float t,
   avatarDrawExtras(cx, cy + bob, fr, breathe);
 }
 
-// Une frame de l'ecran QR (t en secondes) : fond sombre, QR sur carte blanche
-// arrondie (un QR inverse se scanne mal : les modules restent encre sur
-// blanc), buddy anime au centre. building = QR "en construction" (modules
-// aleatoires qui se remplissent, pendant la saisie de l'URL dans Setup).
+// Une frame de l'ecran QR (t en secondes) : QR INVERSE plein ecran — fond
+// noir, modules blancs, coeurs des mires lavande (iOS et les lecteurs
+// modernes lisent les QR inverses ; verifie au decodage sur captures).
+// building = QR "en construction" (modules aleatoires qui se remplissent,
+// pendant la saisie de l'URL dans Setup).
 static void qrScreenDraw(float t, bool building = false)
 {
-  const uint16_t ink = rgb565(0x21, 0x1C, 0x3B);
   const uint16_t lav = rgb565(0x9d, 0x97, 0xed);
   canvas->fillScreen(RGB565_BLACK);
 
-  // taille du QR (reel ou placeholder) et carte blanche arrondie autour
   int size = (!building && qrValid) ? qrcodegen_getSize(qrModules) : 25;
-  int scale = 216 / size;
+  int scale = 232 / size;
   if (scale < 1)
     scale = 1;
   int px = size * scale, x0 = CX - px / 2, y0 = CY - px / 2;
-  int m = 12, rr = 14; // marge (zone calme) et rayon de la carte
-  canvas->fillRect(x0 - m, y0 - m - rr, px + 2 * m, px + 2 * m + 2 * rr,
-                   RGB565_WHITE);
-  canvas->fillRect(x0 - m - rr, y0 - m, px + 2 * m + 2 * rr, px + 2 * m,
-                   RGB565_WHITE);
-  canvas->fillCircle(x0 - m, y0 - m, rr, RGB565_WHITE);
-  canvas->fillCircle(x0 + px + m, y0 - m, rr, RGB565_WHITE);
-  canvas->fillCircle(x0 - m, y0 + px + m, rr, RGB565_WHITE);
-  canvas->fillCircle(x0 + px + m, y0 + px + m, rr, RGB565_WHITE);
 
   if (building)
   {
@@ -105,18 +95,18 @@ static void qrScreenDraw(float t, bool building = false)
         if (finder)
         {
           int fx = x >= size - 7 ? x - (size - 7) : x, fy = y >= size - 7 ? y - (size - 7) : y;
-          bool on = (fx == 0 || fx == 6 || fy == 0 || fy == 6) ||
-                    (fx >= 2 && fx <= 4 && fy >= 2 && fy <= 4);
-          if (on)
+          bool core = fx >= 2 && fx <= 4 && fy >= 2 && fy <= 4;
+          if ((fx == 0 || fx == 6 || fy == 0 || fy == 6) || core)
             canvas->fillRect(x0 + x * scale, y0 + y * scale, scale, scale,
-                             (fx >= 2 && fx <= 4 && fy >= 2 && fy <= 4) ? lav : ink);
+                             core ? lav : RGB565_WHITE);
           continue;
         }
         unsigned h = ((unsigned)(x * 73856093) ^ (unsigned)(y * 19349663) ^ seed);
         h = (h ^ (h >> 13)) * 2246822519u;
         h ^= h >> 16;
         if ((h >> 8 & 127) / 128.0f < prog && (h & 7) < 4)
-          canvas->fillRect(x0 + x * scale, y0 + y * scale, scale, scale, ink);
+          canvas->fillRect(x0 + x * scale, y0 + y * scale, scale, scale,
+                           RGB565_WHITE);
       }
   }
   else if (qrValid)
@@ -131,22 +121,22 @@ static void qrScreenDraw(float t, bool building = false)
                     (x >= size - 5 && x <= size - 3 && y >= 2 && y <= 4) ||
                     (x >= 2 && x <= 4 && y >= size - 5 && y <= size - 3);
         canvas->fillRect(x0 + x * scale, y0 + y * scale, scale, scale,
-                         core ? lav : ink);
+                         core ? lav : RGB565_WHITE);
       }
   }
   else
   {
     canvas->setTextSize(2);
-    canvas->setTextColor(ink);
+    canvas->setTextColor(RGB565_WHITE);
     canvas->setCursor(CX - 66, CY - 8);
     canvas->print("bad URL");
   }
 
-  // medaillon blanc + buddy anime au centre
-  canvas->fillCircle(CX, CY, 40, RGB565_WHITE);
+  // medaillon noir (efface les modules) + buddy anime au centre
+  canvas->fillCircle(CX, CY, 40, RGB565_BLACK);
   qrBuddyAnim(CX, CY, 34.0f, t, qrSpr);
 
-  // nom du speaker (configure via Setup) sous la carte, en clair sur le fond
+  // nom du speaker (configure via Setup) sous le QR
   if (qrName[0])
   {
     int tw = mdTextW(qrName);
