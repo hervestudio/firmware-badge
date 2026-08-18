@@ -72,12 +72,13 @@ static void socialRing(float age, float life, float fr)
 }
 
 // Remplace le visage de l'avatar pendant la reaction (appele en tete de
-// drawIdleFaceLook). fr > 120 = seulement le buddy plein ecran, pas les
-// previews (Settings, Setup, QR). Retourne true si l'expression a dessine.
+// drawIdleFaceLook). fr > 100 = seulement le buddy plein ecran (RADIUS 180,
+// jusqu'a ~120 avec le battement Love), pas les previews a 78 et moins
+// (Settings, Setup, QR). Retourne true si l'expression a dessine.
 static bool socialExprFace(float cx, float cy, float fr)
 {
   uint32_t now = millis();
-  if (!socialReactName[0] || now >= socialReactUntil || fr < 120)
+  if (!socialReactName[0] || now >= socialReactUntil || fr < 100)
     return false;
   float tA = (SOCIAL_REACT_MS - (int)(socialReactUntil - now)) / 1000.0f;
   float pop = tA < 0.3f ? tA / 0.3f : 1.0f; // pop-in des elements
@@ -165,6 +166,7 @@ static void socialReactDraw(uint32_t now)
   if (g_lookFreeze < 0.01f)
     g_lookFreeze = 0;
   g_sphereYOff = 0;
+  g_sphereScale = 1.0f;
   if (active)
   {
     float tA = (SOCIAL_REACT_MS - (int)(socialReactUntil - now)) / 1000.0f;
@@ -172,6 +174,16 @@ static void socialReactDraw(uint32_t now)
       g_sphereYOff = (int)(-fabsf(sinf(tA * 5.5f * (float)PI)) * 8.0f * g_lookFreeze);
     else if (socialReactType == 1) // WOW : bounce leger 3 Hz (0.03 R)
       g_sphereYOff = (int)(-fabsf(sinf(tA * 3.0f * (float)PI)) * 5.0f * g_lookFreeze);
+    else // LOVE : la sphere bat au rythme du coeur (heartbeatScale du JS :
+    {    // ressorts lub-dub amortis + micro-respiration, base reduite)
+      const float T = 60.0f / 56.0f;
+      float x = fmodf(tA, T);
+      float lub = expf(-5.0f * x) * sinf(15.0f * x);
+      float dub = x > 0.17f ? expf(-6.0f * (x - 0.17f)) * sinf(16.0f * (x - 0.17f))
+                            : 0.0f;
+      float hb = 1.0f + 0.36f * lub + 0.22f * dub + 0.025f * sinf(tA * 1.5f);
+      g_sphereScale = 1.0f + (0.80f * hb - 1.0f) * g_lookFreeze;
+    }
   }
   if (!active)
     return;

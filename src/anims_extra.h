@@ -503,7 +503,35 @@ static void animIdleRainbow(float t)
   // upscale bilineaire en demi-resolution (chaque echantillon remplit un bloc
   // 2x2) + grain discret : ~2x plus rapide, invisible sur ces degrades doux.
   // g_sphereYOff : rebond vertical de la sphere pendant une reaction sociale
-  // (bandes decouvertes remises a noir)
+  // (bandes decouvertes remises a noir).
+  // g_sphereScale : battement de coeur du mode Love — tables d'echantillonnage
+  // regenerees pour la frame (180 entrees, cout negligeable), pixels hors
+  // texture -> noir (la sphere retrecit proprement sur fond noir)
+  const float ss = g_sphereScale;
+  const bool scaled = ss < 0.999f || ss > 1.001f;
+  static uint16_t sIdx[W / 2];
+  static uint8_t sFrac[W / 2];
+  static uint8_t sOut[W / 2];
+  if (scaled)
+    for (int i = 0; i < W / 2; i++)
+    {
+      float p = 180.0f + (2 * i + 0.5f - 180.0f) / ss;
+      float tf = (p + IR_SB) * IR_SPR / IR_DRAWN - 0.5f;
+      if (tf < 0 || tf > IR_SPR - 2)
+      {
+        sOut[i] = 1;
+        sIdx[i] = 0;
+        sFrac[i] = 0;
+      }
+      else
+      {
+        sOut[i] = 0;
+        sIdx[i] = (uint16_t)tf;
+        sFrac[i] = (uint8_t)((tf - (int)tf) * 16);
+      }
+    }
+  const uint16_t *TIdx = scaled ? sIdx : irTIdx;
+  const uint8_t *TFrac = scaled ? sFrac : irTFrac;
   uint16_t *fb = canvas->getFramebuffer();
   const int yOff = g_sphereYOff;
   if (yOff > 0)
@@ -512,17 +540,34 @@ static void animIdleRainbow(float t)
     memset(&fb[(H + yOff) * W], 0, (size_t)(-yOff) * W * sizeof(uint16_t));
   for (int y2 = 0; y2 < H / 2; y2++)
   {
-    const uint16_t *rowA = &tex[irTIdx[y2] * IR_SPR];
-    const uint16_t *rowB = rowA + IR_SPR;
-    int fy = irTFrac[y2];
     int dy = y2 * 2 + yOff;
     uint16_t *d0 = (dy >= 0 && dy < H) ? &fb[dy * W] : nullptr;
     uint16_t *d1 = (dy + 1 >= 0 && dy + 1 < H) ? &fb[(dy + 1) * W] : nullptr;
     if (!d0 && !d1)
       continue;
+    if (scaled && sOut[y2]) // ligne hors sphere retrecie -> noir
+    {
+      if (d0)
+        memset(d0, 0, W * sizeof(uint16_t));
+      if (d1)
+        memset(d1, 0, W * sizeof(uint16_t));
+      continue;
+    }
+    const uint16_t *rowA = &tex[TIdx[y2] * IR_SPR];
+    const uint16_t *rowB = rowA + IR_SPR;
+    int fy = TFrac[y2];
     for (int x2 = 0; x2 < W / 2; x2++)
     {
-      int tx = irTIdx[x2], fx = irTFrac[x2];
+      if (scaled && sOut[x2]) // colonne hors sphere -> noir
+      {
+        int xx = x2 * 2;
+        if (d0)
+          d0[xx] = d0[xx + 1] = 0;
+        if (d1)
+          d1[xx] = d1[xx + 1] = 0;
+        continue;
+      }
+      int tx = TIdx[x2], fx = TFrac[x2];
       uint16_t c00 = rowA[tx], c10 = rowA[tx + 1], c01 = rowB[tx], c11 = rowB[tx + 1];
       int w11 = fx * fy, w10 = fx * (16 - fy), w01 = (16 - fx) * fy, w00 = (16 - fx) * (16 - fy);
       int r = (((c00 >> 11) & 31) * w00 + ((c10 >> 11) & 31) * w10 + ((c01 >> 11) & 31) * w01 + ((c11 >> 11) & 31) * w11) >> 8;
@@ -548,7 +593,7 @@ static void animIdleRainbow(float t)
     }
   }
 
-  drawIdleFaceLook(CX, CY + yOff, RADIUS, t, lookX, lookY, openness);
+  drawIdleFaceLook(CX, CY + yOff, RADIUS * ss, t, lookX, lookY, openness);
 }
 
 // ------------------------------------------------------------------- dvd
