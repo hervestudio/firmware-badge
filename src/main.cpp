@@ -1312,7 +1312,7 @@ static void bootGenTask(void *)
   int s = 0;
   while (bootGenStep(s))
     s++;
-  Serial0.printf("generation textures : %lu ms (coeur 0, pendant le splash)\n",
+  Serial0.printf("generation textures : %lu ms (pendant le splash)\n",
                  (unsigned long)(millis() - t0));
   bootGenDone = true;
   vTaskDelete(nullptr);
@@ -1387,7 +1387,11 @@ void setup()
   // generation des textures tourne EN PARALLELE sur le coeur 0 (l'anim reste
   // fluide sur le coeur 1), et PREV/BOOT presse pendant l'anim bascule en
   // mode flash OTA.
-  xTaskCreatePinnedToCore(bootGenTask, "bootgen", 16384, nullptr, 1, nullptr, 0);
+  // NB : tache volontairement sur le COEUR 1 (celui de l'anim) — epinglee au
+  // coeur 0, la generation PSRAM concurrente du rendu provoquait des resets
+  // TG1WDT sur certaines cartes (rail d'alim marginal) ; sur le meme coeur,
+  // l'ordonnanceur entrelace (generation ~5 s, toujours pendant le splash)
+  xTaskCreatePinnedToCore(bootGenTask, "bootgen", 16384, nullptr, 1, nullptr, 1);
   if (!otaMode)
   {
     uint32_t t0 = millis();
@@ -1494,11 +1498,42 @@ void loop()
 
   // Rencontres entre badges : la radio ESP-NOW n'est active que quand le
   // Conf Buddy est a l'ecran (elle se coupe des qu'on entre dans le menu,
-  // donc toujours AVANT les AP WiFi de Draw/Setup/OTA)
+  // donc toujours AVANT les AP WiFi de Draw/Setup/OTA).
+  // Garde-fou serie (briseur de boucle de crash) : un marqueur NVS est arme
+  // juste avant d'allumer la radio et desarme apres 8 s de fonctionnement.
+  // Si un boot trouve le marqueur arme, la session precedente est morte au
+  // demarrage radio (brownout/POR sur alim marginale) -> radio sociale
+  // coupee pour CETTE session, le badge reste utilisable. Le marqueur est
+  // efface : au prochain cycle d'alimentation, on retente une fois.
+  static uint32_t socialArmMs = 0;
+  static const bool socialBlocked = [] {
+    if (esp_reset_reason() == ESP_RST_BROWNOUT || prefs.getUChar("socboot", 0))
+    {
+      prefs.putUChar("socboot", 0);
+      Serial0.println("social : desactive (crash au demarrage radio "
+                      "precedent — alimentation a verifier)");
+      return true;
+    }
+    return false;
+  }();
   {
-    bool wantSocial = (uiMode == UI_ANIM && ACTIVE[slot] == 8);
+    bool wantSocial = (uiMode == UI_ANIM && ACTIVE[slot] == 8) && !socialBlocked;
     if (wantSocial != socialOn)
-      wantSocial ? socialStart() : socialStop();
+    {
+      if (wantSocial)
+      {
+        prefs.putUChar("socboot", 1); // arme : si on meurt ici, bloque au boot
+        socialStart();
+        socialArmMs = now ? now : 1;
+      }
+      else
+        socialStop();
+    }
+    if (socialOn && socialArmMs && now - socialArmMs > 8000)
+    {
+      prefs.putUChar("socboot", 0); // 8 s stables : la radio passe sur cette carte
+      socialArmMs = 0;
+    }
     if (socialOn)
       socialLoop(now);
   }

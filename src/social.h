@@ -95,6 +95,10 @@ static void socialStart()
     return;
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
+  // puissance d'emission bridee : (1) portee courte voulue pour la detection
+  // de proximite, (2) reduit le pic de courant radio qui peut faire chuter
+  // le rail d'alim (reset POWERON observe sur certaines cartes)
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
   esp_wifi_set_channel(SOCIAL_CHANNEL, WIFI_SECOND_CHAN_NONE);
   if (esp_now_init() != ESP_OK)
   {
