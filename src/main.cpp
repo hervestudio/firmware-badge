@@ -833,7 +833,18 @@ static void animSnake(float t, float dt)
     float sr = headR * (1.0f - 0.25f * i / (SNAKE_N - 1));
     drawBallSprite((int)pts[i].x, (int)pts[i].y, sr);
   }
-  drawIdleFace(pts[0].x, pts[0].y, headR, t); // visage de l'avatar
+  // le visage regarde dans la direction du deplacement (angle lisse pour
+  // que le rebond sur les bords ne fasse pas claquer le regard) ; le
+  // clignement vient toujours de getIdle
+  {
+    static float lkx = 0, lky = 0;
+    float tx = cosf(snakeAngle), ty = sinf(snakeAngle) * 0.7f;
+    lkx += (tx - lkx) * 0.18f;
+    lky += (ty - lky) * 0.18f;
+    float ix, iy, openness;
+    getIdle(t, &ix, &iy, &openness);
+    drawIdleFaceLook(pts[0].x, pts[0].y, headR, t, lkx, lky, openness);
+  }
 }
 
 // ------------------------------------------------- 5. disco (boule a facettes)
