@@ -73,7 +73,9 @@
 #define OTA_PASS "threejs2026"
 static bool otaMode = false;
 
-#define SPI_FREQ 40000000
+#define SPI_FREQ 80000000 // 80 MHz : flush ~26 ms au lieu de ~52 (valide sur
+                          // nappe courte soudee ; repasser a 40 MHz si
+                          // artefacts sur fils volants)
 
 #define W 360
 #define H 360
