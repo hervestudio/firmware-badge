@@ -196,6 +196,13 @@ static void drawFlushDirty()
     return;
   }
   uint16_t *fb = canvas->getFramebuffer();
+  if (dmafOk)
+  {
+    // fenetre partielle via le driver DMA (bloquant : latence minimale et le
+    // framebuffer reste libre pour le trait suivant)
+    dmafFlush(x0, y0, w, h, fb + y0 * W + x0, W, true);
+    return;
+  }
   Arduino_TFT *tft = (Arduino_TFT *)panel;
   tft->startWrite();
   tft->writeAddrWindow(x0, y0, w, h);

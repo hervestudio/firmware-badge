@@ -90,6 +90,9 @@ Arduino_DataBus *bus = new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCLK, TFT_MOSI, 
 Arduino_GFX *panel = new Arduino_GC9B72(bus, TFT_RST, 0 /*rotation*/, false /*IPS*/, W, H);
 Arduino_Canvas *canvas = new Arduino_Canvas(W, H, panel);
 
+#include "dma_flush.h" // flush asynchrone SPI3+DMA (remplace canvas->flush)
+static bool dmafOk = false;
+
 // ---------------------------------------------------------------- utilitaires
 
 static uint16_t hsv2rgb565(uint8_t h, uint8_t s, uint8_t v)
@@ -1090,20 +1093,28 @@ static void updateBattery(uint32_t now)
 static uint16_t *rotBuf = nullptr;
 static void badgeFlush()
 {
-  if (uiScreenRot == 0)
+  const uint16_t *src = canvas->getFramebuffer();
+  if (uiScreenRot != 0)
   {
-    canvas->flush();
+    if (!rotBuf)
+      rotBuf = (uint16_t *)ps_malloc((size_t)W * H * 2);
+    if (rotBuf)
+    {
+      uiRotateBlit(canvas->getFramebuffer(), rotBuf, uiScreenRot);
+      src = rotBuf;
+    }
+  }
+  if (dmafOk)
+  {
+    // asynchrone : la fin du transfert part en DMA pendant le rendu suivant
+    dmafFlush(0, 0, W, H, src, W, false);
     return;
   }
-  if (!rotBuf)
-    rotBuf = (uint16_t *)ps_malloc((size_t)W * H * 2);
-  if (!rotBuf)
-  {
+  // secours : chemin Arduino_GFX bloquant d'origine
+  if (src == rotBuf)
+    panel->draw16bitRGBBitmap(0, 0, rotBuf, W, H);
+  else
     canvas->flush();
-    return;
-  }
-  uiRotateBlit(canvas->getFramebuffer(), rotBuf, uiScreenRot);
-  panel->draw16bitRGBBitmap(0, 0, rotBuf, W, H);
 }
 
 // ----------------------------------------------------------------- jeux
@@ -1214,9 +1225,18 @@ static void powerOff()
   canvas->fillScreen(RGB565_BLACK);
   badgeFlush();
 
-  bus->sendCommand(0x28); // display off
-  delay(20);
-  bus->sendCommand(0x10); // sleep in
+  if (dmafOk) // le trafic ecran passe par SPI3 depuis dmafInit()
+  {
+    dmafCmdBlocking(0x28); // display off
+    delay(20);
+    dmafCmdBlocking(0x10); // sleep in
+  }
+  else
+  {
+    bus->sendCommand(0x28);
+    delay(20);
+    bus->sendCommand(0x10);
+  }
   delay(120);
   // Coupe le retroeclairage et VERROUILLE l'etat bas pendant le deep sleep
   // (sans hold, la broche flotterait et le retroeclairage pourrait se rallumer).
@@ -1374,7 +1394,8 @@ void setup()
   attachInterrupt(digitalPinToInterrupt(BTN_AUTO), btnAutoIsr, CHANGE);
   pinMode(PIN_VBUS, INPUT_PULLDOWN); // detection de charge (LOW si non cable)
   pinMode(BTN_BOOT, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(BTN_BOOT), btnNextIsr, FALLING);
+  // (BOOT n'est plus attache a une interruption : il est scrute dans loop()
+  // avec 3 fonctions selon la duree d'appui — voir le bloc "bouton BOOT")
 
   if (!canvas->begin(SPI_FREQ))
   {
@@ -1382,6 +1403,8 @@ void setup()
     while (true)
       delay(1000);
   }
+  // bascule le trafic ecran sur SPI3+DMA (l'init du panneau reste Arduino_GFX)
+  dmafOk = dmafInit();
   Serial0.printf("PSRAM libre : %u octets\n", (unsigned)ESP.getFreePsram());
 
   // Sequence de demarrage : anim "Three Conf" (logo + loader) pendant 4 s —
@@ -1538,6 +1561,42 @@ void loop()
     }
     if (socialOn)
       socialLoop(now);
+  }
+
+  // ---- bouton BOOT seul = navigation complete (pratique au banc, sans
+  // boutons cables) : court = suivant · maintenu >= 0,5 s = bouton central
+  // (le "saut" des jeux part au franchissement du seuil, la validation menu
+  // au relachement) · maintenu >= 2 s = extinction, comme le central long.
+  // Sans effet sur les vrais boutons, qui restent prioritaires.
+  {
+    static uint32_t bootDownAt = 0;
+    static bool bootCenterFired = false, bootOffFired = false;
+    bool down = digitalRead(BTN_BOOT) == LOW;
+    if (down && !bootDownAt)
+    {
+      bootDownAt = now;
+      bootCenterFired = bootOffFired = false;
+    }
+    if (down && bootDownAt && !bootCenterFired && now - bootDownAt >= 500)
+    {
+      bootCenterFired = true;
+      autoPressMs = now; // "press central" synthetique (saut/action des jeux)
+    }
+    if (down && bootDownAt && !bootOffFired && now - bootDownAt >= 2000 &&
+        now > 4000)
+    {
+      bootOffFired = true;
+      powerOff(); // central long = extinction
+    }
+    if (!down && bootDownAt)
+    {
+      uint32_t held = now - bootDownAt;
+      bootDownAt = 0;
+      if (held < 500)
+        btnNextFlag = true; // court : suivant (comportement historique)
+      else if (held < 2000)
+        btnAutoShort = true; // long : central court (menu / valider)
+    }
   }
 
   // ---- boutons : gauche/droite (anti-rebond 300 ms) + central court/long ----
