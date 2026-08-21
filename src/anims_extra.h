@@ -289,8 +289,10 @@ static void animThreeConf(float t, int yOff = 0)
 #define IR_MAXROT 30.0f
 #define IR_SIGMA2 (2 * 0.16f * 0.16f)
 #define IR_CUTOFF2 (0.55f * 0.55f) // au-dela, poids gaussien negligeable
-static uint16_t *irFrames[IR_FRAMES];
-static uint16_t *irScratch = nullptr;
+static uint8_t *irFrames[IR_FRAMES]; // RGB888 (3 octets/px) : 8 bits/canal,
+                                     // la quantification 565 n'arrive qu'a
+                                     // la fin (dithering) -> plus de banding
+static uint8_t *irScratch = nullptr;
 // tables de reechantillonnage bilineaire demi-resolution -> texture
 static uint16_t irTIdx[W / 2];
 static uint8_t irTFrac[W / 2];
@@ -304,8 +306,8 @@ static float irExpLUT[130]; // expf(-d2/sigma2) tabule -> generation ~8x plus ra
 static void irInit()
 {
   for (int i = 0; i < IR_FRAMES; i++)
-    irFrames[i] = (uint16_t *)malloc(IR_SPR * IR_SPR * sizeof(uint16_t));
-  irScratch = (uint16_t *)malloc(IR_SPR * IR_SPR * sizeof(uint16_t));
+    irFrames[i] = (uint8_t *)malloc(IR_SPR * IR_SPR * 3);
+  irScratch = (uint8_t *)malloc(IR_SPR * IR_SPR * 3);
   // le rendu se fait en demi-resolution (blocs 2x2) : echantillon au centre
   for (int x = 0; x < W / 2; x++)
   {
@@ -318,7 +320,8 @@ static void irInit()
     irTFrac[x] = (uint8_t)((tf - (int)tf) * 16);
   }
   for (int i = 0; i < 256; i++)
-    irNoise[i] = (int8_t)frand(-1.3f, 1.3f); // grain epars : +-1 dans ~25% des cas
+    irNoise[i] = (int8_t)frand(0.0f, 8.0f); // dither ordonne 0..7 (pas de
+                                            // quantification R/B en 565)
   for (int i = 0; i < 130; i++)
     irExpLUT[i] = expf(-(i * (IR_CUTOFF2 / 128.0f)) / IR_SIGMA2);
 }
@@ -373,7 +376,7 @@ static void irGenFrame(int fi)
     rvis[k] = sqrtf(vis);
   }
 
-  uint16_t *dst = irFrames[fi];
+  uint8_t *dst = irFrames[fi];
   for (int y = 0; y < IR_SPR; y++)
     for (int x = 0; x < IR_SPR; x++)
     {
@@ -447,10 +450,10 @@ static void irGenFrame(int fi)
         pg += 220 * ha;
         pb += 230 * ha;
       }
-      int R8 = (int)max(0.0f, min(255.0f, pr));
-      int G8 = (int)max(0.0f, min(255.0f, pg));
-      int B8 = (int)max(0.0f, min(255.0f, pb));
-      dst[y * IR_SPR + x] = rgb565(R8, G8, B8);
+      uint8_t *px = &dst[(y * IR_SPR + x) * 3];
+      px[0] = (uint8_t)max(0.0f, min(255.0f, pr));
+      px[1] = (uint8_t)max(0.0f, min(255.0f, pg));
+      px[2] = (uint8_t)max(0.0f, min(255.0f, pb));
     }
 }
 
@@ -501,22 +504,18 @@ static void animIdleRainbow(float t)
   }
 
   int alpha16 = (int)((fidx - lo) * 16);
-  const uint16_t *texA = irFrames[lo], *texB = irFrames[lo + 1];
-  const uint16_t *tex;
+  const uint8_t *texA = irFrames[lo], *texB = irFrames[lo + 1];
+  const uint8_t *tex;
   if (alpha16 <= 0)
     tex = texA;
   else if (alpha16 >= 16)
     tex = texB;
   else
   {
-    for (int i = 0; i < IR_SPR * IR_SPR; i++)
-    {
-      uint16_t a = texA[i], b = texB[i];
-      uint16_t r = (((a >> 11) & 31) * (16 - alpha16) + ((b >> 11) & 31) * alpha16) >> 4;
-      uint16_t g = (((a >> 5) & 63) * (16 - alpha16) + ((b >> 5) & 63) * alpha16) >> 4;
-      uint16_t bl = ((a & 31) * (16 - alpha16) + (b & 31) * alpha16) >> 4;
-      irScratch[i] = (r << 11) | (g << 5) | bl;
-    }
+    // lerp par octet, pleine precision 8 bits
+    const int inv = 16 - alpha16;
+    for (int i = 0; i < IR_SPR * IR_SPR * 3; i++)
+      irScratch[i] = (uint8_t)((texA[i] * inv + texB[i] * alpha16) >> 4);
     tex = irScratch;
   }
 
@@ -553,6 +552,11 @@ static void animIdleRainbow(float t)
   const uint16_t *TIdx = scaled ? sIdx : irTIdx;
   const uint8_t *TFrac = scaled ? sFrac : irTFrac;
   uint16_t *fb = canvas->getFramebuffer();
+  // cache de 2 lignes source en RAM interne, invalide a chaque frame (la
+  // texture change) : l'interpolation pioche en memoire rapide, la PSRAM
+  // n'est lue que sequentiellement
+  static uint8_t rowCache[2][IR_SPR * 3 + 4];
+  int rowCached = -2;
   const int yOff = g_sphereYOff;
   if (yOff > 0)
     memset(fb, 0, (size_t)yOff * W * sizeof(uint16_t));
@@ -573,8 +577,23 @@ static void animIdleRainbow(float t)
         memset(d1, 0, W * sizeof(uint16_t));
       continue;
     }
-    const uint16_t *rowA = &tex[TIdx[y2] * IR_SPR];
-    const uint16_t *rowB = rowA + IR_SPR;
+    int srcRow = TIdx[y2];
+    if (srcRow != rowCached)
+    {
+      if (srcRow == rowCached + 1) // avance d'une ligne : B devient A
+      {
+        memcpy(rowCache[0], rowCache[1], IR_SPR * 3);
+        memcpy(rowCache[1], &tex[(srcRow + 1) * IR_SPR * 3], IR_SPR * 3);
+      }
+      else
+      {
+        memcpy(rowCache[0], &tex[srcRow * IR_SPR * 3], IR_SPR * 3);
+        memcpy(rowCache[1], &tex[(srcRow + 1) * IR_SPR * 3], IR_SPR * 3);
+      }
+      rowCached = srcRow;
+    }
+    const uint8_t *rowA = rowCache[0];
+    const uint8_t *rowB = rowCache[1];
     int fy = TFrac[y2];
     for (int x2 = 0; x2 < W / 2; x2++)
     {
@@ -587,18 +606,21 @@ static void animIdleRainbow(float t)
           d1[xx] = d1[xx + 1] = 0;
         continue;
       }
-      int tx = TIdx[x2], fx = TFrac[x2];
-      uint16_t c00 = rowA[tx], c10 = rowA[tx + 1], c01 = rowB[tx], c11 = rowB[tx + 1];
+      int tx3 = TIdx[x2] * 3, fx = TFrac[x2];
+      const uint8_t *p00 = rowA + tx3, *p01 = rowB + tx3;
       int w11 = fx * fy, w10 = fx * (16 - fy), w01 = (16 - fx) * fy, w00 = (16 - fx) * (16 - fy);
-      int r = (((c00 >> 11) & 31) * w00 + ((c10 >> 11) & 31) * w10 + ((c01 >> 11) & 31) * w01 + ((c11 >> 11) & 31) * w11) >> 8;
-      int g = (((c00 >> 5) & 63) * w00 + ((c10 >> 5) & 63) * w10 + ((c01 >> 5) & 63) * w01 + ((c11 >> 5) & 63) * w11) >> 8;
-      int b = ((c00 & 31) * w00 + (c10 & 31) * w10 + (c01 & 31) * w01 + (c11 & 31) * w11) >> 8;
-      // grain tres subtil : canal vert uniquement (pas le plus fin du RGB565)
-      int gr = irNoise[(x2 * 7 + y2 * 131) & 255];
-      g += gr;
-      uint16_t c = (uint16_t)(((r < 0 ? 0 : (r > 31 ? 31 : r)) << 11) |
-                              ((g < 0 ? 0 : (g > 63 ? 63 : g)) << 5) |
-                              (b < 0 ? 0 : (b > 31 ? 31 : b)));
+      int r = (p00[0] * w00 + p00[3] * w10 + p01[0] * w01 + p01[3] * w11) >> 8;
+      int g = (p00[1] * w00 + p00[4] * w10 + p01[1] * w01 + p01[4] * w11) >> 8;
+      int b = (p00[2] * w00 + p00[5] * w10 + p01[2] * w01 + p01[5] * w11) >> 8;
+      // quantification 565 avec dither ordonne (0..7) : casse les bandes de
+      // degrade sans grain visible
+      int d8 = irNoise[(x2 * 7 + y2 * 131) & 255];
+      r += d8;
+      g += d8 >> 1;
+      b += irNoise[(x2 * 131 + y2 * 7 + 97) & 255];
+      uint16_t c = (uint16_t)(((r > 255 ? 31 : r >> 3) << 11) |
+                              ((g > 255 ? 63 : g >> 2) << 5) |
+                              (b > 255 ? 31 : b >> 3));
       int xx = x2 * 2;
       if (d0)
       {
