@@ -78,7 +78,7 @@ static const int NACTIVE = (int)sizeof(ACTIVE);
 
 enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW,
                         UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_FLASH, UI_OFF,
-                        UI_PIN, UI_SET, UI_SETUP, UI_QR };
+                        UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET };
 static UiMode uiMode = UI_ANIM;
 static int menuSel = 0, slot = 0, menuCat = 0, schedIdx = 0;
 
@@ -88,6 +88,7 @@ static int pinPos = 0;
 static bool pinRedraw = true;
 static double pinErrorUntil = 0;
 static int setSel = 0, setShown = -1;
+static int metScroll = 0; // ecran Encounters
 static uint16_t *setSpr = nullptr;
 static bool autoCycle = false;
 static uint32_t slotStartMs = 0, animStartMs = 0;
@@ -824,6 +825,10 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
         qrScreenPrepare();
         uiMode = UI_QR;
         break;
+      case UIA_MET:
+        metScroll = 0;
+        uiMode = UI_MET;
+        break;
       case UIA_BACK:
         uiMode = UI_HOME;
         break;
@@ -872,6 +877,18 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
       qrScreenRelease();
       uiMode = UI_MENU;
     }
+    return;
+  }
+
+  if (uiMode == UI_MET)
+  {
+    if (navNext && metScroll + MET_ROWS < metN)
+      metScroll++;
+    if (navPrev && metScroll > 0)
+      metScroll--;
+    uiDrawMet(metScroll);
+    if (autoShort)
+      uiMode = UI_MENU;
     return;
   }
 

@@ -965,7 +965,7 @@ static const int NACTIVE = (int)sizeof(ACTIVE);
 RTC_NOINIT_ATTR uint32_t otaRequest;
 
 // Etat de l'interface : animations / menu / jeux
-enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET, UI_SETUP, UI_QR };
+enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET };
 static UiMode uiMode = UI_ANIM;
 
 // ---- etat des Settings (code d'acces + choix d'avatar, voir menu_ui.h) ----
@@ -974,6 +974,7 @@ static int pinPos = 0;
 static bool pinError = false, pinRedraw = true;
 static int setSel = 0, setShown = -1;   // avatar en cours de choix / affiche
 static uint16_t *setSpr = nullptr;      // sprite de preview (dvdGenSprite)
+static int metScroll = 0, metShown = -1; // ecran Encounters (Meet)
 static int menuSel = 0;
 static int menuCat = 0; // categorie de la liste affichee (UIC_*)
 static int schedIdx = 0; // event affiche dans le Schedule
@@ -1356,6 +1357,7 @@ void setup()
   g_buddyCustomDef.sat = prefs.getUChar("bsat", 100) / 100.0f;
   g_buddyCustomDef.face = prefs.getUChar("bface", 0) % 9;
   prefs.getString("bname", qrName, sizeof(qrName));
+  socialMetLoad(); // compteurs de rencontres (ecran Meet > Encounters)
   prefs.getString("bcomp", qrCompany, sizeof(qrCompany));
   prefs.getString("bmsg", qrMsg, sizeof(qrMsg));
   if (prefs.getString("qrurl", qrUrl, sizeof(qrUrl)) == 0 || !qrUrl[0])
@@ -1912,6 +1914,11 @@ void loop()
         qrScreenPrepare();
         uiMode = UI_QR;
         break;
+      case UIA_MET:
+        metScroll = 0;
+        metShown = -1;
+        uiMode = UI_MET;
+        break;
       case UIA_AUTO:
         autoCycle = !autoCycle; // bascule sans sortir
         break;
@@ -1989,6 +1996,33 @@ void loop()
     }
     else
       delay(2); // laisse respirer le WiFi
+    return;
+  }
+
+  if (uiMode == UI_MET)
+  {
+    // liste des rencontres : prev/next = defilement, central = retour
+    if (navNext && metScroll + MET_ROWS < metN)
+      metScroll++;
+    if (navPrev && metScroll > 0)
+      metScroll--;
+    if (autoShort)
+    {
+      uiMode = UI_MENU;
+      uiDrawList(menuCat, menuSel, autoCycle, batPct, batCharging);
+      waitTE();
+      badgeFlush();
+      fpsCount++;
+      return;
+    }
+    if (metShown != metScroll)
+    {
+      metShown = metScroll;
+      uiDrawMet(metScroll);
+      waitTE();
+      badgeFlush();
+      fpsCount++;
+    }
     return;
   }
 

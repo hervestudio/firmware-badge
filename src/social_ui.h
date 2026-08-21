@@ -21,6 +21,24 @@ static uint8_t socialReactType = 0;   // 0 happy, 1 wow, 2 love
 
 #define SOCIAL_REACT_MS 5000
 
+// incremente le compteur de rencontres de la table partagee (menu_ui.h) —
+// la persistance NVS est geree cote firmware (social.h)
+static void socialMetAdd(const char *name)
+{
+  for (int i = 0; i < metN; i++)
+    if (strcmp(metNames[i], name) == 0)
+    {
+      metCounts[i]++;
+      return;
+    }
+  if (metN < MET_MAX)
+  {
+    snprintf(metNames[metN], sizeof(metNames[0]), "%s", name);
+    metCounts[metN] = 1;
+    metN++;
+  }
+}
+
 static void socialReactTrigger(const char *name, uint32_t now)
 {
   static uint32_t seed = 0x2A5F17u;
@@ -28,6 +46,7 @@ static void socialReactTrigger(const char *name, uint32_t now)
   socialReactType = (uint8_t)((seed >> 16) % 3);
   snprintf(socialReactName, sizeof(socialReactName), "%s", name);
   socialReactUntil = now + SOCIAL_REACT_MS;
+  socialMetAdd(name);
 }
 
 // ---- helpers de dessin -------------------------------------------------

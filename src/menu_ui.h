@@ -26,6 +26,14 @@ static const char *UI_WATCH_IT[] = {"Conf Buddy", "Snake", "Disco", "Globe",
                                     "Three Conf", "DVD", "Points"};
 static const char *UI_MEET_IT[] = {"Speaker", "Speaker 2", "Speaker 3"};
 
+// ---- rencontres (qui j'ai croise, combien de fois) : table partagee,
+// alimentee par socialReactTrigger (social_ui.h), persistee en NVS "met2"
+// cote firmware, affichee par l'ecran Meet > Encounters
+#define MET_MAX 40
+static char metNames[MET_MAX][21];
+static uint16_t metCounts[MET_MAX];
+static int metN = 0;
+
 // nombre d'entrees par categorie, "Back" compris (toujours en dernier)
 static int uiListCount(int cat)
 {
@@ -33,7 +41,7 @@ static int uiListCount(int cat)
   {
   case UIC_PLAY: return 6;
   case UIC_WATCH: return 8;
-  case UIC_MEET: return 6; // Schedule + QR Code + 3 photos + Back
+  case UIC_MEET: return 7; // Schedule + QR Code + Encounters + 3 photos + Back
   default: return 8; // More : Draw, Setup, Auto cycle, OTA, Rotate, Settings, info tension, Back
   }
 }
@@ -54,8 +62,10 @@ static void uiListLabel(int cat, int i, bool autoCyc, char *buf, size_t n)
       snprintf(buf, n, "Schedule");
     else if (i == 1)
       snprintf(buf, n, "QR Code");
+    else if (i == 2)
+      snprintf(buf, n, "Encounters");
     else
-      snprintf(buf, n, "%s", UI_MEET_IT[i - 2]);
+      snprintf(buf, n, "%s", UI_MEET_IT[i - 3]);
     break;
   default:
     if (i == 0)
@@ -81,7 +91,7 @@ static void uiListLabel(int cat, int i, bool autoCyc, char *buf, size_t n)
 // resolution d'une selection -> action a executer par l'appelant
 enum UiAction : uint8_t { UIA_NONE, UIA_ANIM, UIA_GAME, UIA_DRAW, UIA_AUTO,
                           UIA_OTA, UIA_SCHED, UIA_ROT, UIA_SETTINGS, UIA_BACK,
-                          UIA_SETUP, UIA_QR };
+                          UIA_SETUP, UIA_QR, UIA_MET };
 static UiAction uiResolve(int cat, int sel, int *arg)
 {
   if (sel == uiListCount(cat) - 1)
@@ -95,7 +105,9 @@ static UiAction uiResolve(int cat, int sel, int *arg)
       return UIA_SCHED;
     if (sel == 1)
       return UIA_QR; // QR code configure via More > Setup
-    *arg = 7 + (sel - 2); // slots photos 7..9
+    if (sel == 2)
+      return UIA_MET; // qui j'ai croise, combien de fois
+    *arg = 7 + (sel - 3); // slots photos 7..9
     return UIA_ANIM;
   default:
     if (sel == 0)
@@ -158,6 +170,57 @@ static void uiRotateBlit(const uint16_t *src, uint16_t *dst, int deg)
       drow[x] = (uint16_t)((mix | (mix >> 16)) & 0xFFFF);
     }
   }
+}
+
+// Ecran Meet > Encounters : qui j'ai croise, combien de fois (tri par
+// nombre de rencontres decroissant). prev/next = defilement, centre = retour.
+#define MET_ROWS 6
+static void uiDrawMet(int scroll)
+{
+  canvas->fillScreen(RGB565_BLACK);
+  mtPrint(CX - mtTextW("ENCOUNTERS") / 2, 26, "ENCOUNTERS",
+          rgb565(0x9d, 0x97, 0xed));
+  if (metN == 0)
+  {
+    mfPrint(CX - mfTextW("No one met yet") / 2, 160, "No one met yet",
+            RGB565_WHITE);
+    mdPrint(CX - mdTextW("badges say hi nearby") / 2, 196,
+            "badges say hi nearby", rgb565(130, 130, 130));
+    mdPrint(CX - mdTextW("center: back") / 2, 300, "center: back",
+            rgb565(130, 130, 130));
+    return;
+  }
+  // tri par compte decroissant (indices, insertion — n <= 40)
+  uint8_t ord[MET_MAX];
+  for (int i = 0; i < metN; i++)
+    ord[i] = (uint8_t)i;
+  for (int i = 1; i < metN; i++)
+  {
+    uint8_t k = ord[i];
+    int j = i - 1;
+    while (j >= 0 && metCounts[ord[j]] < metCounts[k])
+    {
+      ord[j + 1] = ord[j];
+      j--;
+    }
+    ord[j + 1] = k;
+  }
+  char buf[12];
+  for (int r = 0; r < MET_ROWS && scroll + r < metN; r++)
+  {
+    int i = ord[scroll + r];
+    int y = 78 + r * 34;
+    mfPrint(64, y, metNames[i], RGB565_WHITE);
+    snprintf(buf, sizeof(buf), "x%u", (unsigned)metCounts[i]);
+    mfPrint(296 - mfTextW(buf), y, buf, rgb565(0xfb, 0xd9, 0x75));
+  }
+  // indicateurs de defilement
+  if (scroll > 0)
+    mdPrint(CX - mdTextW("^") / 2, 58, "^", rgb565(130, 130, 130));
+  if (scroll + MET_ROWS < metN)
+    mdPrint(CX - mdTextW("v") / 2, 288, "v", rgb565(130, 130, 130));
+  mdPrint(CX - mdTextW("center: back") / 2, 314, "center: back",
+          rgb565(130, 130, 130));
 }
 
 // Ecran de calibration : aligner la barre d'horizon jaune avec l'horizontale

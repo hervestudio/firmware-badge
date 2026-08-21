@@ -18,8 +18,9 @@
 #define SOCIAL_BEACON_MS 1000
 #define SOCIAL_RSSI_NEAR (-58) // ~1-3 m (EMA, a calibrer avec 2 badges)
 #define SOCIAL_FRESH_MS 2500   // beacon "encore la"
-#define SOCIAL_COOLDOWN_MS 60000
-#define SOCIAL_MAXPEERS 12
+#define SOCIAL_COOLDOWN_MS 60000    // par badge croise
+#define SOCIAL_GLOBAL_MS 25000      // entre deux reactions, tous badges
+#define SOCIAL_MAXPEERS 40          // toute la serie sans eviction
 
 struct __attribute__((packed)) SocialBeacon
 {
@@ -125,20 +126,48 @@ static void socialStop()
   esp_now_deinit();
   WiFi.mode(WIFI_OFF);
   socialOn = false;
+  // arret PROPRE : la radio n'a pas tue le badge -> desarme le marqueur du
+  // briseur de boucle (sinon, quitter l'idle dans les 8 s laissait le
+  // marqueur arme et le boot suivant bloquait le social a tort)
+  prefs.putUChar("socboot", 0);
   Serial0.println("social : radio OFF");
 }
 
-// Journal des rencontres (NVS "met") : noms dedupliques separes par '\n'
-static void socialLogMet(const char *name)
+// Persistance des compteurs de rencontres (table partagee metNames/metCounts
+// de menu_ui.h) en NVS "met2" : lignes "nom\tcompte\n"
+static void socialMetSave()
 {
-  String met = prefs.getString("met", "");
-  String key = String(name) + "\n";
-  if (met.indexOf(key) >= 0)
-    return;
-  if (met.length() + key.length() > 900) // garde-fou NVS
-    return;
-  met += key;
-  prefs.putString("met", met);
+  String m;
+  for (int i = 0; i < metN; i++)
+  {
+    m += metNames[i];
+    m += '\t';
+    m += String(metCounts[i]);
+    m += '\n';
+  }
+  prefs.putString("met2", m);
+}
+
+static void socialMetLoad()
+{
+  String m = prefs.getString("met2", "");
+  metN = 0;
+  int pos = 0;
+  while (pos < (int)m.length() && metN < MET_MAX)
+  {
+    int nl = m.indexOf('\n', pos);
+    if (nl < 0)
+      break;
+    int tab = m.indexOf('\t', pos);
+    if (tab > pos && tab < nl)
+    {
+      snprintf(metNames[metN], sizeof(metNames[0]), "%s",
+               m.substring(pos, tab).c_str());
+      metCounts[metN] = (uint16_t)m.substring(tab + 1, nl).toInt();
+      metN++;
+    }
+    pos = nl + 1;
+  }
 }
 
 // A appeler chaque frame quand la radio est active : beacon periodique +
@@ -162,28 +191,64 @@ static void socialLoop(uint32_t now)
              qrName[0] ? qrName : AVATARS[g_avatarIdx].name);
     esp_now_send(SOCIAL_BCAST, (const uint8_t *)&b, sizeof(b));
   }
-  // rencontre : pair frais, proche, hors cooldown, pas de reaction en cours
+  // diagnostic : pairs entendus + RSSI lisse (toutes les 3 s)
+  static uint32_t socialLogMs = 0;
+  if (now - socialLogMs > 3000)
+  {
+    socialLogMs = now;
+    // copie sous verrou, impression HORS section critique (jamais d'UART
+    // avec les interruptions coupees)
+    SocialPeer snap[SOCIAL_MAXPEERS];
+    int nsnap;
+    portENTER_CRITICAL(&socialMux);
+    nsnap = socialNPeers;
+    memcpy(snap, socialPeers, sizeof(SocialPeer) * nsnap);
+    portEXIT_CRITICAL(&socialMux);
+    for (int i = 0; i < nsnap; i++)
+      if (now - snap[i].lastSeen < 5000)
+        Serial0.printf("social : \"%s\" rssi %.0f (seuil %d) vu il y a %lu ms\n",
+                       snap[i].name, snap[i].rssi, SOCIAL_RSSI_NEAR,
+                       (unsigned long)(now - snap[i].lastSeen));
+  }
+
+  // rencontre : parmi les pairs frais/proches/hors cooldown, on salue LE
+  // PLUS PROCHE (meilleur RSSI), au plus une reaction toutes les 25 s — dans
+  // une grappe de badges, le buddy salue calmement au lieu d'enchainer
   if (now < socialReactUntil)
     return;
+  static uint32_t socialLastReact = 0;
+  if (socialLastReact && now - socialLastReact < SOCIAL_GLOBAL_MS)
+    return;
   char reactName[24] = "";
+  float bestRssi = -1000;
+  int best = -1;
   portENTER_CRITICAL(&socialMux);
   for (int i = 0; i < socialNPeers; i++)
   {
     SocialPeer &p = socialPeers[i];
     if (now - p.lastSeen < SOCIAL_FRESH_MS && p.rssi > SOCIAL_RSSI_NEAR &&
-        (p.lastReact == 0 || now - p.lastReact > SOCIAL_COOLDOWN_MS))
+        (p.lastReact == 0 || now - p.lastReact > SOCIAL_COOLDOWN_MS) &&
+        p.rssi > bestRssi)
     {
-      p.lastReact = now;
-      snprintf(reactName, sizeof(reactName), "%s",
-               p.name[0] ? p.name : AVATARS[p.avatar % AVATAR_N].name);
-      break;
+      bestRssi = p.rssi;
+      best = i;
     }
+  }
+  if (best >= 0)
+  {
+    socialPeers[best].lastReact = now;
+    snprintf(reactName, sizeof(reactName), "%s",
+             socialPeers[best].name[0]
+                 ? socialPeers[best].name
+                 : AVATARS[socialPeers[best].avatar % AVATAR_N].name);
   }
   portEXIT_CRITICAL(&socialMux);
   if (reactName[0])
   {
+    socialLastReact = now;
     socialReactTrigger(reactName, now);
-    socialLogMet(reactName);
-    Serial0.printf("social : rencontre avec \"%s\"\n", reactName);
+    socialMetSave();
+    Serial0.printf("social : rencontre avec \"%s\" (rssi %.0f)\n", reactName,
+                   bestRssi);
   }
 }
