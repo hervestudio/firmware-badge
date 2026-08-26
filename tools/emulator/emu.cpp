@@ -78,7 +78,7 @@ static const int NACTIVE = (int)sizeof(ACTIVE);
 
 enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW,
                         UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_FLASH, UI_OFF,
-                        UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET };
+                        UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX };
 static UiMode uiMode = UI_ANIM;
 static int menuSel = 0, slot = 0, menuCat = 0, schedIdx = 0;
 
@@ -89,6 +89,8 @@ static bool pinRedraw = true;
 static double pinErrorUntil = 0;
 static int setSel = 0, setShown = -1;
 static int metScroll = 0; // ecran Encounters
+static int setMenuSel = 0;   // menu Settings
+static int proxLevel = 2;    // reglage proximite (pas de radio en WASM)
 static uint16_t *setSpr = nullptr;
 static bool autoCycle = false;
 static uint32_t slotStartMs = 0, animStartMs = 0;
@@ -694,7 +696,8 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
         {
           setSel = g_avatarIdx;
           setShown = -1;
-          uiMode = UI_SET;
+          setMenuSel = 0;
+          uiMode = UI_SETMENU;
           return;
         }
         pinErrorUntil = now + 900; // "wrong code" puis retour au menu
@@ -739,8 +742,8 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
         setSpr = nullptr;
       }
       setShown = -1;
-      uiMode = UI_MENU;
-      uiDrawList(menuCat, menuSel, autoCycle, batPct, batCharging);
+      uiMode = UI_SETMENU;
+      uiDrawSetMenu(setMenuSel);
       return;
     }
     if (setShown != setSel)
@@ -877,6 +880,48 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
       qrScreenRelease();
       uiMode = UI_MENU;
     }
+    return;
+  }
+
+  if (uiMode == UI_SETMENU)
+  {
+    if (navNext)
+      setMenuSel = (setMenuSel + 1) % 3;
+    if (navPrev)
+      setMenuSel = (setMenuSel + 2) % 3;
+    if (autoShort)
+    {
+      if (setMenuSel == 0)
+      {
+        setShown = -1;
+        uiMode = UI_SET;
+        return;
+      }
+      if (setMenuSel == 1)
+      {
+        uiMode = UI_PROX;
+        return;
+      }
+      uiMode = UI_MENU;
+      uiDrawList(menuCat, menuSel, autoCycle, batPct, batCharging);
+      return;
+    }
+    uiDrawSetMenu(setMenuSel);
+    return;
+  }
+
+  if (uiMode == UI_PROX)
+  {
+    if (navNext && proxLevel < 3)
+      proxLevel++;
+    if (navPrev && proxLevel > 0)
+      proxLevel--;
+    if (autoShort)
+    {
+      uiMode = UI_SETMENU;
+      return;
+    }
+    uiDrawProx(proxLevel, -100.0f); // pas de radio dans le navigateur
     return;
   }
 

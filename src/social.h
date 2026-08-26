@@ -16,7 +16,10 @@
 
 #define SOCIAL_CHANNEL 1
 #define SOCIAL_BEACON_MS 1000
-#define SOCIAL_RSSI_NEAR (-58) // ~1-3 m (EMA, a calibrer avec 2 badges)
+// Seuil de proximite REGLABLE (Settings > Proximity, NVS "prox") : 4 niveaux
+// de Touch (badges quasi colles) a Far (~5 m). -58 = ~1-3 m par defaut.
+static int8_t socialRssiNear = -58;  // valeur active (UI_PROX_LEVELS)
+static bool socialProbeOnly = false; // ecran Proximity : ecoute sans reagir
 #define SOCIAL_FRESH_MS 2500   // beacon "encore la"
 #define SOCIAL_COOLDOWN_MS 60000    // par badge croise
 #define SOCIAL_GLOBAL_MS 25000      // entre deux reactions, tous badges
@@ -170,6 +173,20 @@ static void socialMetLoad()
   }
 }
 
+// RSSI lisse du pair le plus recent/fort (jauge live de l'ecran Proximity) ;
+// retourne -100 si personne d'entendu depuis 3 s
+static float socialNearestRssi()
+{
+  float best = -100;
+  uint32_t now = millis();
+  portENTER_CRITICAL(&socialMux);
+  for (int i = 0; i < socialNPeers; i++)
+    if (now - socialPeers[i].lastSeen < 3000 && socialPeers[i].rssi > best)
+      best = socialPeers[i].rssi;
+  portEXIT_CRITICAL(&socialMux);
+  return best;
+}
+
 // A appeler chaque frame quand la radio est active : beacon periodique +
 // detection de rencontre (RSSI fort, cooldown par badge)
 static void socialLoop(uint32_t now)
@@ -207,13 +224,15 @@ static void socialLoop(uint32_t now)
     for (int i = 0; i < nsnap; i++)
       if (now - snap[i].lastSeen < 5000)
         Serial0.printf("social : \"%s\" rssi %.0f (seuil %d) vu il y a %lu ms\n",
-                       snap[i].name, snap[i].rssi, SOCIAL_RSSI_NEAR,
+                       snap[i].name, snap[i].rssi, (int)socialRssiNear,
                        (unsigned long)(now - snap[i].lastSeen));
   }
 
   // rencontre : parmi les pairs frais/proches/hors cooldown, on salue LE
   // PLUS PROCHE (meilleur RSSI), au plus une reaction toutes les 25 s — dans
   // une grappe de badges, le buddy salue calmement au lieu d'enchainer
+  if (socialProbeOnly) // ecran Proximity : ecoute/emet mais ne reagit pas
+    return;
   if (now < socialReactUntil)
     return;
   static uint32_t socialLastReact = 0;
@@ -226,7 +245,7 @@ static void socialLoop(uint32_t now)
   for (int i = 0; i < socialNPeers; i++)
   {
     SocialPeer &p = socialPeers[i];
-    if (now - p.lastSeen < SOCIAL_FRESH_MS && p.rssi > SOCIAL_RSSI_NEAR &&
+    if (now - p.lastSeen < SOCIAL_FRESH_MS && p.rssi > socialRssiNear &&
         (p.lastReact == 0 || now - p.lastReact > SOCIAL_COOLDOWN_MS) &&
         p.rssi > bestRssi)
     {

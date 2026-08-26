@@ -29,6 +29,10 @@ static const char *UI_MEET_IT[] = {"Speaker", "Speaker 2", "Speaker 3"};
 // ---- rencontres (qui j'ai croise, combien de fois) : table partagee,
 // alimentee par socialReactTrigger (social_ui.h), persistee en NVS "met2"
 // cote firmware, affichee par l'ecran Meet > Encounters
+// niveaux du reglage de proximite des rencontres (Settings > Proximity)
+static const int8_t UI_PROX_LEVELS[4] = {-30, -45, -58, -70};
+static const char *UI_PROX_NAMES[4] = {"Touch", "Close", "Normal", "Far"};
+
 #define MET_MAX 40
 static char metNames[MET_MAX][21];
 static uint16_t metCounts[MET_MAX];
@@ -170,6 +174,71 @@ static void uiRotateBlit(const uint16_t *src, uint16_t *dst, int deg)
       drow[x] = (uint16_t)((mix | (mix >> 16)) & 0xFFFF);
     }
   }
+}
+
+// Petit menu des Settings (apres le code PIN) : Avatar / Proximity / Back
+static void uiDrawSetMenu(int sel)
+{
+  canvas->fillScreen(RGB565_BLACK);
+  mtPrint(CX - mtTextW("SETTINGS") / 2, 40, "SETTINGS", rgb565(0xfb, 0xd9, 0x75));
+  static const char *IT[3] = {"Avatar", "Proximity", "Back"};
+  for (int i = 0; i < 3; i++)
+  {
+    int y = 130 + i * 44;
+    if (i == sel)
+    {
+      int w = mfTextW(IT[i]) + 36;
+      canvas->fillRect(CX - w / 2 + 12, y - 6, w - 24, 32, rgb565(0xfb, 0xd9, 0x75));
+      canvas->fillCircle(CX - w / 2 + 12, y + 10, 16, rgb565(0xfb, 0xd9, 0x75));
+      canvas->fillCircle(CX + w / 2 - 12, y + 10, 16, rgb565(0xfb, 0xd9, 0x75));
+      mfPrint(CX - mfTextW(IT[i]) / 2, y, IT[i], RGB565_BLACK);
+    }
+    else
+      mfPrint(CX - mfTextW(IT[i]) / 2, y, IT[i], RGB565_WHITE);
+  }
+}
+
+// Reglage de proximite des rencontres, avec jauge LIVE du badge le plus
+// proche (la radio ecoute en mode sonde pendant cet ecran) : la zone au-dela
+// du seuil est celle qui declenche.
+static void uiDrawProx(int level, float liveRssi)
+{
+  canvas->fillScreen(RGB565_BLACK);
+  mtPrint(CX - mtTextW("PROXIMITY") / 2, 30, "PROXIMITY", rgb565(0x9d, 0x97, 0xed));
+  mtPrint(CX - mtTextW(UI_PROX_NAMES[level]) / 2, 108, UI_PROX_NAMES[level],
+          RGB565_WHITE);
+  char db[16];
+  snprintf(db, sizeof(db), "%d dBm", (int)UI_PROX_LEVELS[level]);
+  bbPrint(CX - bbTextW(db) / 2, 150, db, rgb565(150, 160, 150));
+  // jauge : -85 (loin) a -25 (colle) ; repere = seuil ; barre = signal live
+  const int gx0 = 62, gx1 = 298, gy = 210, gh = 16;
+  auto rssiToX = [&](float r) {
+    float u = (r + 85.0f) / 60.0f;
+    u = u < 0 ? 0 : (u > 1 ? 1 : u);
+    return (int)(gx0 + u * (gx1 - gx0));
+  };
+  canvas->fillRect(gx0, gy, gx1 - gx0, gh, rgb565(34, 38, 34));
+  int tx = rssiToX(UI_PROX_LEVELS[level]);
+  // zone de declenchement (a droite du seuil) legerement teintee
+  canvas->fillRect(tx, gy, gx1 - tx, gh, rgb565(46, 58, 46));
+  if (liveRssi > -95)
+  {
+    bool trig = liveRssi > UI_PROX_LEVELS[level];
+    canvas->fillRect(gx0, gy + 3, rssiToX(liveRssi) - gx0, gh - 6,
+                     trig ? rgb565(0x7e, 0xdb, 0xb0) : rgb565(0xfb, 0xd9, 0x75));
+  }
+  canvas->fillRect(tx - 1, gy - 5, 3, gh + 10, RGB565_WHITE); // repere seuil
+  if (liveRssi > -95)
+  {
+    char rs[16];
+    snprintf(rs, sizeof(rs), "badge at %d dBm", (int)liveRssi);
+    mdPrint(CX - mdTextW(rs) / 2, 244, rs, RGB565_WHITE);
+  }
+  else
+    mdPrint(CX - mdTextW("no badge nearby") / 2, 244, "no badge nearby",
+            rgb565(130, 130, 130));
+  mdPrint(CX - mdTextW("< > adjust    center: save") / 2, 296,
+          "< > adjust    center: save", rgb565(130, 130, 130));
 }
 
 // Ecran Meet > Encounters : qui j'ai croise, combien de fois (tri par

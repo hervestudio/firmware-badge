@@ -965,7 +965,7 @@ static const int NACTIVE = (int)sizeof(ACTIVE);
 RTC_NOINIT_ATTR uint32_t otaRequest;
 
 // Etat de l'interface : animations / menu / jeux
-enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET };
+enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX };
 static UiMode uiMode = UI_ANIM;
 
 // ---- etat des Settings (code d'acces + choix d'avatar, voir menu_ui.h) ----
@@ -975,6 +975,8 @@ static bool pinError = false, pinRedraw = true;
 static int setSel = 0, setShown = -1;   // avatar en cours de choix / affiche
 static uint16_t *setSpr = nullptr;      // sprite de preview (dvdGenSprite)
 static int metScroll = 0, metShown = -1; // ecran Encounters (Meet)
+static int setMenuSel = 0, setMenuShown = -1; // menu Settings
+static int proxLevel = 2;                     // reglage proximite (Normal)
 static int menuSel = 0;
 static int menuCat = 0; // categorie de la liste affichee (UIC_*)
 static int schedIdx = 0; // event affiche dans le Schedule
@@ -1358,6 +1360,7 @@ void setup()
   g_buddyCustomDef.face = prefs.getUChar("bface", 0) % 9;
   prefs.getString("bname", qrName, sizeof(qrName));
   socialMetLoad(); // compteurs de rencontres (ecran Meet > Encounters)
+  socialRssiNear = (int8_t)prefs.getChar("prox", -58); // seuil de proximite
   prefs.getString("bcomp", qrCompany, sizeof(qrCompany));
   prefs.getString("bmsg", qrMsg, sizeof(qrMsg));
   if (prefs.getString("qrurl", qrUrl, sizeof(qrUrl)) == 0 || !qrUrl[0])
@@ -1544,7 +1547,10 @@ void loop()
     return false;
   }();
   {
-    bool wantSocial = (uiMode == UI_ANIM && ACTIVE[slot] == 8) && !socialBlocked;
+    bool wantSocial = ((uiMode == UI_ANIM && ACTIVE[slot] == 8) ||
+                       uiMode == UI_PROX) &&
+                      !socialBlocked;
+    socialProbeOnly = (uiMode == UI_PROX);
     if (wantSocial != socialOn)
     {
       if (wantSocial)
@@ -1762,7 +1768,9 @@ void loop()
         {
           setSel = g_avatarIdx;
           setShown = -1;
-          uiMode = UI_SET;
+          setMenuSel = 0;
+          setMenuShown = -1;
+          uiMode = UI_SETMENU;
         }
         else
         {
@@ -1784,6 +1792,79 @@ void loop()
       badgeFlush();
       fpsCount++;
     }
+    return;
+  }
+
+  if (uiMode == UI_SETMENU)
+  {
+    if (navNext)
+      setMenuSel = (setMenuSel + 1) % 3;
+    if (navPrev)
+      setMenuSel = (setMenuSel + 2) % 3;
+    if (autoShort)
+    {
+      if (setMenuSel == 0) // Avatar
+      {
+        setShown = -1;
+        uiMode = UI_SET;
+      }
+      else if (setMenuSel == 1) // Proximity
+      {
+        proxLevel = 2;
+        for (int i = 0; i < 4; i++)
+          if (UI_PROX_LEVELS[i] == socialRssiNear)
+            proxLevel = i;
+        uiMode = UI_PROX; // la radio passe en mode sonde (voir loop)
+      }
+      else
+      {
+        uiMode = UI_MENU;
+        uiDrawList(menuCat, menuSel, autoCycle, batPct, batCharging);
+        waitTE();
+        badgeFlush();
+        fpsCount++;
+        return;
+      }
+      setMenuShown = -1;
+      return;
+    }
+    if (setMenuShown != setMenuSel)
+    {
+      setMenuShown = setMenuSel;
+      uiDrawSetMenu(setMenuSel);
+      waitTE();
+      badgeFlush();
+      fpsCount++;
+    }
+    return;
+  }
+
+  if (uiMode == UI_PROX)
+  {
+    // reglage de proximite : jauge live du badge le plus proche (radio en
+    // mode sonde), gauche/droite = niveau, centre = sauver
+    if (navNext && proxLevel < 3)
+      proxLevel++;
+    if (navPrev && proxLevel > 0)
+      proxLevel--;
+    if (autoShort)
+    {
+      socialRssiNear = UI_PROX_LEVELS[proxLevel];
+      prefs.putChar("prox", socialRssiNear);
+      Serial0.printf("proximite sauvee : %s (%d dBm)\n",
+                     UI_PROX_NAMES[proxLevel], (int)socialRssiNear);
+      setMenuShown = -1;
+      uiMode = UI_SETMENU;
+      uiDrawSetMenu(setMenuSel);
+      waitTE();
+      badgeFlush();
+      fpsCount++;
+      return;
+    }
+    uiDrawProx(proxLevel, socialOn ? socialNearestRssi() : -100.0f);
+    waitTE();
+    badgeFlush();
+    fpsCount++;
     return;
   }
 
@@ -1819,8 +1900,9 @@ void loop()
       }
       Serial0.printf("avatar sauve : %d (%s)\n", setSel, AVATARS[setSel].name);
       setShown = -1;
-      uiMode = UI_MENU;
-      uiDrawList(menuCat, menuSel, autoCycle, batPct, batCharging);
+      setMenuShown = -1;
+      uiMode = UI_SETMENU;
+      uiDrawSetMenu(setMenuSel);
       badgeFlush();
       fpsCount++;
       return;
