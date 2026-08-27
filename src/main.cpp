@@ -1842,11 +1842,12 @@ void loop()
   if (uiMode == UI_PROX)
   {
     // reglage de proximite : jauge live du badge le plus proche (radio en
-    // mode sonde), gauche/droite = niveau, centre = sauver
-    if (navNext && proxLevel < 3)
-      proxLevel++;
-    if (navPrev && proxLevel > 0)
-      proxLevel--;
+    // mode sonde), gauche/droite = niveau, centre = sauver. BOUCLE aux
+    // extremites : indispensable avec le seul bouton BOOT (pas de "prev")
+    if (navNext)
+      proxLevel = (proxLevel + 1) % 4;
+    if (navPrev)
+      proxLevel = (proxLevel + 3) % 4;
     if (autoShort)
     {
       socialRssiNear = UI_PROX_LEVELS[proxLevel];

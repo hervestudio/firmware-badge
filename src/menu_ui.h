@@ -30,7 +30,7 @@ static const char *UI_MEET_IT[] = {"Speaker", "Speaker 2", "Speaker 3"};
 // alimentee par socialReactTrigger (social_ui.h), persistee en NVS "met2"
 // cote firmware, affichee par l'ecran Meet > Encounters
 // niveaux du reglage de proximite des rencontres (Settings > Proximity)
-static const int8_t UI_PROX_LEVELS[4] = {-30, -45, -58, -70};
+static const int8_t UI_PROX_LEVELS[4] = {-30, -55, -62, -70};
 static const char *UI_PROX_NAMES[4] = {"Touch", "Close", "Normal", "Far"};
 
 #define MET_MAX 40

@@ -17,8 +17,8 @@
 #define SOCIAL_CHANNEL 1
 #define SOCIAL_BEACON_MS 1000
 // Seuil de proximite REGLABLE (Settings > Proximity, NVS "prox") : 4 niveaux
-// de Touch (badges quasi colles) a Far (~5 m). -58 = ~1-3 m par defaut.
-static int8_t socialRssiNear = -58;  // valeur active (UI_PROX_LEVELS)
+// de Touch (badges quasi colles) a Far (~5 m). -62 = "Normal" par defaut.
+static int8_t socialRssiNear = -62;  // valeur active (UI_PROX_LEVELS)
 static bool socialProbeOnly = false; // ecran Proximity : ecoute sans reagir
 #define SOCIAL_FRESH_MS 2500   // beacon "encore la"
 #define SOCIAL_COOLDOWN_MS 60000    // par badge croise
