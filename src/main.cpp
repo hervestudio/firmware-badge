@@ -37,12 +37,21 @@
 // violet CS=10, bleu DC=11, vert RST=12, jaune MOSI=13, orange SCLK=14 ;
 // marron GND 2 lignes plus bas, rouge 3V3 remonte seul en haut du peigne).
 // Badges cables AVANT le 2026-08-14 (fils volants) : ancien mapping
-// SCLK 12 / MOSI 11 / DC 13 / RST 14 -> reprendre ces 4 fils cote ESP.
+// SCLK 12 / MOSI 11 / DC 13 / RST 14 -> reprendre ces 4 fils cote ESP,
+// OU flasher avec l'env "proto" (pio run -e proto -t upload) qui garde
+// l'ancien cablage — utilise pour le premier prototype de Romain.
+#ifdef PROTO_V1_WIRING
+#define TFT_SCLK 12
+#define TFT_MOSI 11
+#define TFT_DC 13
+#define TFT_RST 14
+#else
 #define TFT_SCLK 14 // <- SCL  (orange)
 #define TFT_MOSI 13 // <- SDA  (jaune)
 #define TFT_DC 11   // <- DC   (bleu)
-#define TFT_CS 10   // <- CS   (violet)
 #define TFT_RST 12  // <- RST  (vert)
+#endif
+#define TFT_CS 10   // <- CS   (violet)
 #define TFT_TE 3    // <- TE (impulsion a chaque debut de balayage, TEON active par le driver)
 #define TFT_BL 9        // <- BL (retroeclairage) : pilote par GPIO pour pouvoir le couper.
                         // GPIO 9 = broche VOISINE du bloc ecran 10-14 sur le peigne du
@@ -64,8 +73,13 @@
 // Jauge batterie (menu) : pont diviseur 100k/100k B+ -> GPIO5 -> GND, et
 // detection de charge par le VBUS du TP4056 via 100k/100k -> GPIO6.
 // Firmware tolerant : sans ces fils, le menu affiche "--%" sans eclair.
+#ifdef PROTO_V1_WIRING
+#define PIN_VBAT 5 // premier proto : pont batterie sur 5/6 (tolerant si absent)
+#define PIN_VBUS 6
+#else
 #define PIN_VBAT 1 // pont batterie (etait GPIO 5 — 1/2 simplifient le cablage)
 #define PIN_VBUS 2 // detection charge (etait GPIO 6)
+#endif
 
 // Mode flash OTA (bouton PREV maintenu a l'allumage) : le badge cree son
 // propre point d'acces Wi-Fi et attend le televersement (pio run -e ota -t upload).
