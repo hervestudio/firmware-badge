@@ -38,6 +38,53 @@ static char metNames[MET_MAX][21];
 static uint16_t metCounts[MET_MAX];
 static int metN = 0;
 
+// Leaderboard des jeux (Meet > Leaderboard) : meilleurs scores connus des
+// badges croises, appris passivement via les beacons ESP-NOW (social.h,
+// fusion par maximum), persistes en NVS "lb1"
+#define LB_GAMES 4 // ordre FIGE du beacon : Snake, Pong, Sphere Run, Roundtris
+static const char *LB_GAME_NAMES[LB_GAMES] = {"Snake", "Pong", "Sphere Run",
+                                              "Roundtris"};
+static char lbNames[MET_MAX][21];
+static uint16_t lbScores[MET_MAX][LB_GAMES];
+static int lbN = 0;
+static bool lbDirty = false; // scores appris non encore persistes
+
+// Fusion par MAXIMUM des scores annonces par un badge (beacon ESP-NOW cote
+// firmware, rencontre simulee cote emulateur)
+static void lbMerge(const char *name, const uint16_t *sc)
+{
+  if (!name[0])
+    return;
+  bool any = false;
+  for (int g = 0; g < LB_GAMES; g++)
+    if (sc[g])
+      any = true;
+  if (!any)
+    return; // rien a apprendre (vieux firmware ou jamais joue)
+  int idx = -1;
+  for (int i = 0; i < lbN; i++)
+    if (strncmp(lbNames[i], name, sizeof(lbNames[0]) - 1) == 0)
+    {
+      idx = i;
+      break;
+    }
+  if (idx < 0)
+  {
+    if (lbN >= MET_MAX)
+      return; // table pleine (40 = toute la serie, ne devrait pas arriver)
+    idx = lbN++;
+    snprintf(lbNames[idx], sizeof(lbNames[0]), "%s", name);
+    memset(lbScores[idx], 0, sizeof(lbScores[0]));
+  }
+  for (int g = 0; g < LB_GAMES; g++)
+    if (sc[g] > lbScores[idx][g])
+    {
+      lbScores[idx][g] = sc[g];
+      lbDirty = true;
+    }
+}
+
+
 // nombre d'entrees par categorie, "Back" compris (toujours en dernier)
 static int uiListCount(int cat)
 {
@@ -45,7 +92,7 @@ static int uiListCount(int cat)
   {
   case UIC_PLAY: return 6;
   case UIC_WATCH: return 8;
-  case UIC_MEET: return 7; // Schedule + QR Code + Encounters + 3 photos + Back
+  case UIC_MEET: return 8; // Schedule + QR Code + Encounters + Leaderboard + 3 photos + Back
   default: return 8; // More : Draw, Setup, Auto cycle, OTA, Rotate, Settings, info tension, Back
   }
 }
@@ -68,8 +115,10 @@ static void uiListLabel(int cat, int i, bool autoCyc, char *buf, size_t n)
       snprintf(buf, n, "QR Code");
     else if (i == 2)
       snprintf(buf, n, "Encounters");
+    else if (i == 3)
+      snprintf(buf, n, "Leaderboard");
     else
-      snprintf(buf, n, "%s", UI_MEET_IT[i - 3]);
+      snprintf(buf, n, "%s", UI_MEET_IT[i - 4]);
     break;
   default:
     if (i == 0)
@@ -95,7 +144,7 @@ static void uiListLabel(int cat, int i, bool autoCyc, char *buf, size_t n)
 // resolution d'une selection -> action a executer par l'appelant
 enum UiAction : uint8_t { UIA_NONE, UIA_ANIM, UIA_GAME, UIA_DRAW, UIA_AUTO,
                           UIA_OTA, UIA_SCHED, UIA_ROT, UIA_SETTINGS, UIA_BACK,
-                          UIA_SETUP, UIA_QR, UIA_MET };
+                          UIA_SETUP, UIA_QR, UIA_MET, UIA_LB };
 static UiAction uiResolve(int cat, int sel, int *arg)
 {
   if (sel == uiListCount(cat) - 1)
@@ -111,7 +160,9 @@ static UiAction uiResolve(int cat, int sel, int *arg)
       return UIA_QR; // QR code configure via More > Setup
     if (sel == 2)
       return UIA_MET; // qui j'ai croise, combien de fois
-    *arg = 7 + (sel - 3); // slots photos 7..9
+    if (sel == 3)
+      return UIA_LB; // scores des jeux, les miens + ceux des badges croises
+    *arg = 7 + (sel - 4); // slots photos 7..9
     return UIA_ANIM;
   default:
     if (sel == 0)
@@ -288,6 +339,74 @@ static void uiDrawMet(int scroll)
     mdPrint(CX - mdTextW("^") / 2, 58, "^", rgb565(130, 130, 130));
   if (scroll + MET_ROWS < metN)
     mdPrint(CX - mdTextW("v") / 2, 288, "v", rgb565(130, 130, 130));
+  mdPrint(CX - mdTextW("center: back") / 2, 314, "center: back",
+          rgb565(130, 130, 130));
+}
+
+// Ecran Meet > Leaderboard : un jeu a la fois, classement des badges croises
+// + soi ("You", surligne). prev/next = jeu suivant/precedent, centre = retour.
+// Toujours 6 lignes max ; si "You" sort du top 6, il remplace la 6e ligne
+// avec son vrai rang.
+#define LB_ROWS 6
+static void uiDrawLB(int game, const uint16_t *mine)
+{
+  canvas->fillScreen(RGB565_BLACK);
+  mtPrint(CX - mtTextW("LEADERBOARD") / 2, 26, "LEADERBOARD",
+          rgb565(0x9d, 0x97, 0xed));
+  char sub[24];
+  snprintf(sub, sizeof(sub), "< %s >", LB_GAME_NAMES[game]);
+  bbPrint(CX - bbTextW(sub) / 2, 66, sub, rgb565(0xfb, 0xd9, 0x75));
+  // participants : badges croises avec un score non nul + soi (sentinelle
+  // MET_MAX). Tri decroissant par score du jeu affiche (n <= 41, insertion).
+  auto sc = [&](uint8_t i) -> uint16_t {
+    return i == MET_MAX ? mine[game] : lbScores[i][game];
+  };
+  uint8_t ord[MET_MAX + 1];
+  int n = 0;
+  for (int i = 0; i < lbN; i++)
+    if (lbScores[i][game] > 0)
+      ord[n++] = (uint8_t)i;
+  ord[n++] = MET_MAX;
+  for (int i = 1; i < n; i++)
+  {
+    uint8_t k = ord[i];
+    int j = i - 1;
+    while (j >= 0 && (sc(ord[j]) < sc(k) ||
+                      (sc(ord[j]) == sc(k) && ord[j] == MET_MAX)))
+    {
+      ord[j + 1] = ord[j]; // a egalite, "You" passe apres (fair-play)
+      j--;
+    }
+    ord[j + 1] = k;
+  }
+  if (n == 1 && mine[game] == 0)
+  {
+    mfPrint(CX - mfTextW("No scores yet") / 2, 170, "No scores yet",
+            RGB565_WHITE);
+    mdPrint(CX - mdTextW("play & meet badges") / 2, 206,
+            "play & meet badges", rgb565(130, 130, 130));
+    mdPrint(CX - mdTextW("center: back") / 2, 300, "center: back",
+            rgb565(130, 130, 130));
+    return;
+  }
+  int selfRank = 0;
+  while (ord[selfRank] != MET_MAX)
+    selfRank++;
+  char buf[16];
+  for (int r = 0; r < LB_ROWS && r < n; r++)
+  {
+    // derniere ligne visible : "You" avec son vrai rang s'il est plus bas
+    int rank = (r == LB_ROWS - 1 && selfRank >= LB_ROWS) ? selfRank : r;
+    uint8_t i = ord[rank];
+    bool self = (i == MET_MAX);
+    int y = 104 + r * 32;
+    uint16_t col = self ? rgb565(0xfb, 0xd9, 0x75) : RGB565_WHITE;
+    snprintf(buf, sizeof(buf), "%d.", rank + 1);
+    mfPrint(52, y, buf, rgb565(130, 130, 130));
+    mfPrint(88, y, self ? "You" : lbNames[i], col);
+    snprintf(buf, sizeof(buf), "%u", (unsigned)sc(i));
+    mfPrint(308 - mfTextW(buf), y, buf, col);
+  }
   mdPrint(CX - mdTextW("center: back") / 2, 314, "center: back",
           rgb565(130, 130, 130));
 }

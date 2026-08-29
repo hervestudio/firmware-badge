@@ -979,7 +979,7 @@ static const int NACTIVE = (int)sizeof(ACTIVE);
 RTC_NOINIT_ATTR uint32_t otaRequest;
 
 // Etat de l'interface : animations / menu / jeux
-enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX };
+enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX, UI_LB };
 static UiMode uiMode = UI_ANIM;
 
 // ---- etat des Settings (code d'acces + choix d'avatar, voir menu_ui.h) ----
@@ -989,6 +989,9 @@ static bool pinError = false, pinRedraw = true;
 static int setSel = 0, setShown = -1;   // avatar en cours de choix / affiche
 static uint16_t *setSpr = nullptr;      // sprite de preview (dvdGenSprite)
 static int metScroll = 0, metShown = -1; // ecran Encounters (Meet)
+static int lbGame = 0, lbShown = -1;     // ecran Leaderboard (Meet)
+static uint16_t lbMine[4];               // mes records (LB_GAMES, declare
+                                         // plus bas dans menu_ui.h)
 static int setMenuSel = 0, setMenuShown = -1; // menu Settings
 static int proxLevel = 2;                     // reglage proximite (Normal)
 static int menuSel = 0;
@@ -1374,6 +1377,7 @@ void setup()
   g_buddyCustomDef.face = prefs.getUChar("bface", 0) % 9;
   prefs.getString("bname", qrName, sizeof(qrName));
   socialMetLoad(); // compteurs de rencontres (ecran Meet > Encounters)
+  lbLoad();        // scores appris des autres badges (Meet > Leaderboard)
   socialRssiNear = (int8_t)prefs.getChar("prox", -58); // seuil de proximite
   prefs.getString("bcomp", qrCompany, sizeof(qrCompany));
   prefs.getString("bmsg", qrMsg, sizeof(qrMsg));
@@ -2016,6 +2020,15 @@ void loop()
         metShown = -1;
         uiMode = UI_MET;
         break;
+      case UIA_LB:
+        lbGame = 0;
+        lbShown = -1;
+        lbMine[0] = prefs.getUShort("snakeBest", 0);
+        lbMine[1] = prefs.getUShort("pongBest", 0);
+        lbMine[2] = prefs.getUShort("runBest", 0);
+        lbMine[3] = prefs.getUShort("tetroBest", 0);
+        uiMode = UI_LB;
+        break;
       case UIA_AUTO:
         autoCycle = !autoCycle; // bascule sans sortir
         break;
@@ -2116,6 +2129,34 @@ void loop()
     {
       metShown = metScroll;
       uiDrawMet(metScroll);
+      waitTE();
+      badgeFlush();
+      fpsCount++;
+    }
+    return;
+  }
+
+  if (uiMode == UI_LB)
+  {
+    // leaderboard : prev/next = jeu precedent/suivant (boucle, BOOT-friendly),
+    // central = retour
+    if (navNext)
+      lbGame = (lbGame + 1) % LB_GAMES;
+    if (navPrev)
+      lbGame = (lbGame + LB_GAMES - 1) % LB_GAMES;
+    if (autoShort)
+    {
+      uiMode = UI_MENU;
+      uiDrawList(menuCat, menuSel, autoCycle, batPct, batCharging);
+      waitTE();
+      badgeFlush();
+      fpsCount++;
+      return;
+    }
+    if (lbShown != lbGame)
+    {
+      lbShown = lbGame;
+      uiDrawLB(lbGame, lbMine);
       waitTE();
       badgeFlush();
       fpsCount++;

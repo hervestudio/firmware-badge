@@ -34,8 +34,13 @@ struct __attribute__((packed)) SocialBeacon
   uint8_t sat100;
   int16_t hue;
   char name[20];
+  // meilleurs scores (Meet > Leaderboard), ordre LB_GAME_NAMES : Snake,
+  // Pong, Sphere Run, Roundtris. Champ AJOUTE en fin de paquet : les vieux
+  // firmwares (paquet court) restent acceptes, scores a 0.
+  uint16_t scores[LB_GAMES];
 };
 #define SOCIAL_MAGIC 0x314A4354u // "TCJ1" little-endian
+#define SOCIAL_BEACON_V1_LEN offsetof(SocialBeacon, scores)
 
 struct SocialPeer
 {
@@ -45,24 +50,73 @@ struct SocialPeer
   float rssi; // EMA
   uint32_t lastSeen;
   uint32_t lastReact;
+  uint16_t scores[LB_GAMES]; // derniers scores annonces (0 si vieux firmware)
 };
 
 static SocialPeer socialPeers[SOCIAL_MAXPEERS];
 static int socialNPeers = 0;
 static bool socialOn = false;
 static uint32_t socialNextBeacon = 0;
+static uint16_t socialMyBest[LB_GAMES]; // mes records, caches a socialStart
 static portMUX_TYPE socialMux = portMUX_INITIALIZER_UNLOCKED;
 static const uint8_t SOCIAL_BCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
+// ---- Leaderboard : persistance NVS des tables lb* (fusion lbMerge dans
+// menu_ui.h, partagee avec l'emulateur). "lb1" : "nom\tsnake\tpong\trun\ttetris\n".
+static void lbSave()
+{
+  String m;
+  char line[64];
+  for (int i = 0; i < lbN; i++)
+  {
+    snprintf(line, sizeof(line), "%s\t%u\t%u\t%u\t%u\n", lbNames[i],
+             lbScores[i][0], lbScores[i][1], lbScores[i][2], lbScores[i][3]);
+    m += line;
+  }
+  prefs.putString("lb1", m);
+  lbDirty = false;
+}
+
+static void lbLoad()
+{
+  String m = prefs.getString("lb1", "");
+  lbN = 0;
+  int pos = 0;
+  while (pos < (int)m.length() && lbN < MET_MAX)
+  {
+    int nl = m.indexOf('\n', pos);
+    if (nl < 0)
+      break;
+    int tab = m.indexOf('\t', pos);
+    if (tab > pos && tab < nl)
+    {
+      snprintf(lbNames[lbN], sizeof(lbNames[0]), "%s",
+               m.substring(pos, tab).c_str());
+      int p2 = tab + 1;
+      for (int g = 0; g < LB_GAMES; g++)
+      {
+        lbScores[lbN][g] = (uint16_t)m.substring(p2, nl).toInt();
+        int t2 = m.indexOf('\t', p2);
+        if (t2 < 0 || t2 > nl)
+          break;
+        p2 = t2 + 1;
+      }
+      lbN++;
+    }
+    pos = nl + 1;
+  }
+}
 
 // Callback ESP-NOW (tache WiFi) : met a jour la table sous spinlock, court.
 static void socialRecvCb(const esp_now_recv_info *info, const uint8_t *data,
                          int len)
 {
-  if (len < (int)sizeof(SocialBeacon))
+  if (len < (int)SOCIAL_BEACON_V1_LEN)
     return;
   const SocialBeacon *b = (const SocialBeacon *)data;
   if (b->magic != SOCIAL_MAGIC)
     return;
+  bool hasScores = len >= (int)sizeof(SocialBeacon);
   int8_t rssi = info->rx_ctrl ? info->rx_ctrl->rssi : -100;
   uint32_t now = millis();
   portENTER_CRITICAL(&socialMux);
@@ -90,6 +144,10 @@ static void socialRecvCb(const esp_now_recv_info *info, const uint8_t *data,
   p.avatar = b->avatar;
   memcpy(p.name, b->name, sizeof(b->name));
   p.name[sizeof(b->name)] = 0;
+  if (hasScores)
+    memcpy(p.scores, b->scores, sizeof(p.scores));
+  else
+    memset(p.scores, 0, sizeof(p.scores));
   portEXIT_CRITICAL(&socialMux);
 }
 
@@ -118,6 +176,12 @@ static void socialStart()
   esp_now_register_recv_cb(socialRecvCb);
   socialNPeers = 0;
   socialNextBeacon = 0;
+  // scores annonces dans le beacon : relus a chaque allumage de la radio
+  // (une partie jouee entre-temps est donc prise en compte au retour idle)
+  socialMyBest[0] = prefs.getUShort("snakeBest", 0);
+  socialMyBest[1] = prefs.getUShort("pongBest", 0);
+  socialMyBest[2] = prefs.getUShort("runBest", 0);
+  socialMyBest[3] = prefs.getUShort("tetroBest", 0);
   socialOn = true;
   Serial0.println("social : radio ON (Conf Buddy)");
 }
@@ -129,6 +193,8 @@ static void socialStop()
   esp_now_deinit();
   WiFi.mode(WIFI_OFF);
   socialOn = false;
+  if (lbDirty)
+    lbSave(); // derniers scores appris pendant cette session radio
   // arret PROPRE : la radio n'a pas tue le badge -> desarme le marqueur du
   // briseur de boucle (sinon, quitter l'idle dans les 8 s laissait le
   // marqueur arme et le boot suivant bloquait le social a tort)
@@ -206,6 +272,7 @@ static void socialLoop(uint32_t now)
     b.hue = av.hue;
     snprintf(b.name, sizeof(b.name), "%s",
              qrName[0] ? qrName : AVATARS[g_avatarIdx].name);
+    memcpy(b.scores, socialMyBest, sizeof(b.scores));
     esp_now_send(SOCIAL_BCAST, (const uint8_t *)&b, sizeof(b));
   }
   // diagnostic : pairs entendus + RSSI lisse (toutes les 3 s)
@@ -223,9 +290,21 @@ static void socialLoop(uint32_t now)
     portEXIT_CRITICAL(&socialMux);
     for (int i = 0; i < nsnap; i++)
       if (now - snap[i].lastSeen < 5000)
+      {
         Serial0.printf("social : \"%s\" rssi %.0f (seuil %d) vu il y a %lu ms\n",
                        snap[i].name, snap[i].rssi, (int)socialRssiNear,
                        (unsigned long)(now - snap[i].lastSeen));
+        // leaderboard : fusionne les scores annonces (tache principale,
+        // jamais dans le callback WiFi — la NVS reste hors section critique)
+        lbMerge(snap[i].name, snap[i].scores);
+      }
+    static uint32_t lbSaveMs = 0;
+    if (lbDirty && now - lbSaveMs > 30000)
+    {
+      lbSaveMs = now;
+      lbSave();
+      Serial0.println("social : leaderboard sauve (NVS)");
+    }
   }
 
   // rencontre : parmi les pairs frais/proches/hors cooldown, on salue LE

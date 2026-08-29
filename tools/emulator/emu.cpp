@@ -78,7 +78,7 @@ static const int NACTIVE = (int)sizeof(ACTIVE);
 
 enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW,
                         UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_FLASH, UI_OFF,
-                        UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX };
+                        UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX, UI_LB };
 static UiMode uiMode = UI_ANIM;
 static int menuSel = 0, slot = 0, menuCat = 0, schedIdx = 0;
 
@@ -89,6 +89,8 @@ static bool pinRedraw = true;
 static double pinErrorUntil = 0;
 static int setSel = 0, setShown = -1;
 static int metScroll = 0; // ecran Encounters
+static int lbGame = 0;    // ecran Leaderboard (jeu affiche)
+static uint16_t lbMine[4]; // mes records, relus a l'entree de l'ecran
 static int setMenuSel = 0;   // menu Settings
 static int proxLevel = 2;    // reglage proximite (pas de radio en WASM)
 static uint16_t *setSpr = nullptr;
@@ -554,7 +556,21 @@ extern "C"
   // badge detecte ca via les beacons ESP-NOW)
   EMSCRIPTEN_KEEPALIVE void emu_social_seen(const char *name)
   {
-    socialReactTrigger((name && name[0]) ? name : "Kim", (uint32_t)emuNowMs);
+    const char *who = (name && name[0]) ? name : "Kim";
+    socialReactTrigger(who, (uint32_t)emuNowMs);
+    // le badge simule annonce aussi ses records (beacon ESP-NOW du vrai
+    // firmware) : scores pseudo-aleatoires stables par nom, qui montent
+    // legerement a chaque rencontre — alimente Meet > Leaderboard
+    uint32_t h = 2166136261u;
+    for (const char *c = who; *c; c++)
+      h = (h ^ (uint8_t)*c) * 16777619u;
+    uint32_t t = (uint32_t)(emuNowMs / 8000.0);
+    uint16_t sc[LB_GAMES];
+    sc[0] = 3 + (h % 22) + (t % 5);          // Snake
+    sc[1] = 1 + ((h >> 8) % 9) + (t % 3);    // Pong
+    sc[2] = 40 + ((h >> 16) % 260) + t % 30; // Sphere Run
+    sc[3] = 200 + ((h >> 4) % 2600) + t % 90; // Roundtris
+    lbMerge(who, sc);
   }
   EMSCRIPTEN_KEEPALIVE void emu_setup_buddy(int hue, int sat100, int face,
                                             int custom)
@@ -832,6 +848,14 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
         metScroll = 0;
         uiMode = UI_MET;
         break;
+      case UIA_LB:
+        lbGame = 0;
+        lbMine[0] = prefs.getUShort("snakeBest", 0);
+        lbMine[1] = prefs.getUShort("pongBest", 0);
+        lbMine[2] = prefs.getUShort("runBest", 0);
+        lbMine[3] = prefs.getUShort("tetroBest", 0);
+        uiMode = UI_LB;
+        break;
       case UIA_BACK:
         uiMode = UI_HOME;
         break;
@@ -932,6 +956,18 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
     if (navPrev && metScroll > 0)
       metScroll--;
     uiDrawMet(metScroll);
+    if (autoShort)
+      uiMode = UI_MENU;
+    return;
+  }
+
+  if (uiMode == UI_LB)
+  {
+    if (navNext)
+      lbGame = (lbGame + 1) % LB_GAMES;
+    if (navPrev)
+      lbGame = (lbGame + LB_GAMES - 1) % LB_GAMES;
+    uiDrawLB(lbGame, lbMine);
     if (autoShort)
       uiMode = UI_MENU;
     return;
