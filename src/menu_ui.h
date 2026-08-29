@@ -20,8 +20,9 @@ static const uint16_t UI_PASTELS[UI_NCATS] = {
     rgb565(0xfb, 0xd9, 0x75), rgb565(0xfc, 0xa3, 0xf7),
     rgb565(0x9d, 0x97, 0xed), rgb565(0x7e, 0xdb, 0xb0)};
 
-static const char *UI_PLAY_IT[] = {"Snake", "Pong", "Sphere Run", "Roundtris",
-                                   "Sphere Pet"};
+static const char *UI_PLAY_IT[] = {"Snake", "Pong", "Sphere Run", "Roundtris"};
+// ("Sphere Pet" retire du menu — revue Romain 2026-08-29 ; le code du jeu
+// (tama.h, UI_PET) reste en place, re-ajouter l'entree suffit a le retablir)
 static const char *UI_WATCH_IT[] = {"Conf Buddy", "Snake", "Disco", "Globe",
                                     "Three Conf", "DVD", "Points"};
 static const char *UI_MEET_IT[] = {"Speaker", "Speaker 2", "Speaker 3"};
@@ -90,7 +91,7 @@ static int uiListCount(int cat)
 {
   switch (cat)
   {
-  case UIC_PLAY: return 6;
+  case UIC_PLAY: return 5;
   case UIC_WATCH: return 8;
   case UIC_MEET: return 8; // Schedule + QR Code + Encounters + Leaderboard + 3 photos + Back
   default: return 8; // More : Draw, Setup, Auto cycle, OTA, Rotate, Settings, info tension, Back
