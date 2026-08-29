@@ -317,7 +317,9 @@ static void uiDrawProx(int level, float liveRssi)
 static void uiDrawMet(int scroll)
 {
   canvas->fillScreen(RGB565_BLACK);
-  mtPrint(CX - mtTextW("ENCOUNTERS") / 2, 26, "ENCOUNTERS",
+  // titre en Dingos menu (plus etroit) et descendu : en mtPrint a y=26 il
+  // debordait de la zone ronde visible (revue Romain 2026-08-29)
+  mfPrint(CX - mfTextW("ENCOUNTERS") / 2, 46, "ENCOUNTERS",
           rgb565(0x9d, 0x97, 0xed));
   if (metN == 0)
   {
@@ -348,14 +350,14 @@ static void uiDrawMet(int scroll)
   for (int r = 0; r < MET_ROWS && scroll + r < metN; r++)
   {
     int i = ord[scroll + r];
-    int y = 78 + r * 34;
+    int y = 86 + r * 34;
     mfPrint(64, y, metNames[i], RGB565_WHITE);
     snprintf(buf, sizeof(buf), "x%u", (unsigned)metCounts[i]);
     mfPrint(296 - mfTextW(buf), y, buf, rgb565(0xfb, 0xd9, 0x75));
   }
   // indicateurs de defilement
   if (scroll > 0)
-    mdPrint(CX - mdTextW("^") / 2, 58, "^", rgb565(130, 130, 130));
+    mdPrint(CX - mdTextW("^") / 2, 76, "^", rgb565(130, 130, 130));
   if (scroll + MET_ROWS < metN)
     mdPrint(CX - mdTextW("v") / 2, 288, "v", rgb565(130, 130, 130));
   mdPrint(CX - mdTextW("center: back") / 2, 314, "center: back",
@@ -370,11 +372,12 @@ static void uiDrawMet(int scroll)
 static void uiDrawLB(int game, const uint16_t *mine)
 {
   canvas->fillScreen(RGB565_BLACK);
-  mtPrint(CX - mtTextW("LEADERBOARD") / 2, 26, "LEADERBOARD",
+  // titre en Dingos menu et descendu (meme raison que ENCOUNTERS)
+  mfPrint(CX - mfTextW("LEADERBOARD") / 2, 46, "LEADERBOARD",
           rgb565(0x9d, 0x97, 0xed));
   char sub[24];
   snprintf(sub, sizeof(sub), "< %s >", LB_GAME_NAMES[game]);
-  bbPrint(CX - bbTextW(sub) / 2, 66, sub, rgb565(0xfb, 0xd9, 0x75));
+  bbPrint(CX - bbTextW(sub) / 2, 82, sub, rgb565(0xfb, 0xd9, 0x75));
   // participants : badges croises avec un score non nul + soi (sentinelle
   // MET_MAX). Tri decroissant par score du jeu affiche (n <= 41, insertion).
   auto sc = [&](uint8_t i) -> uint16_t {
@@ -418,7 +421,7 @@ static void uiDrawLB(int game, const uint16_t *mine)
     int rank = (r == LB_ROWS - 1 && selfRank >= LB_ROWS) ? selfRank : r;
     uint8_t i = ord[rank];
     bool self = (i == MET_MAX);
-    int y = 104 + r * 32;
+    int y = 112 + r * 32;
     uint16_t col = self ? rgb565(0xfb, 0xd9, 0x75) : RGB565_WHITE;
     snprintf(buf, sizeof(buf), "%d.", rank + 1);
     mfPrint(52, y, buf, rgb565(130, 130, 130));

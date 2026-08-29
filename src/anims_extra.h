@@ -1119,7 +1119,8 @@ static void animWarp(float t, float dt)
   // sphere-perso au centre : elle SE RAPPROCHE pendant les pulses de warp
   // (revue Romain 2026-08-29) — l'echelle suit la poussee (surge 1..3.4 ->
   // x0.88..x1.34), + un petit battement residuel
-  float br = RADIUS * 0.2f * (0.88f + 0.19f * (surge - 1) + 0.03f * sinf(t * 3));
+  // pic a ~x2.2 (revue Romain : plus spectaculaire)
+  float br = RADIUS * 0.2f * (0.88f + 0.55f * (surge - 1) + 0.03f * sinf(t * 3));
   dvdBlit(dvdSprites[0], CX, CY, br, 255);
   drawIdleFace(CX, CY, br, t);
 }
