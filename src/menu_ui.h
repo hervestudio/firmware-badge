@@ -24,8 +24,8 @@ static const char *UI_PLAY_IT[] = {"Snake", "Pong", "Sphere Run", "Roundtris"};
 // ("Sphere Pet" retire du menu — revue Romain 2026-08-29 ; le code du jeu
 // (tama.h, UI_PET) reste en place, re-ajouter l'entree suffit a le retablir)
 static const char *UI_WATCH_IT[] = {"Conf Buddy", "Snake", "Disco", "Globe",
-                                    "Three Conf", "DVD", "Points"};
-static const char *UI_MEET_IT[] = {"Speaker", "Speaker 2", "Speaker 3"};
+                                    "Three Conf", "DVD", "Points", "Warp",
+                                    "Solar System"};
 
 // ---- rencontres (qui j'ai croise, combien de fois) : table partagee,
 // alimentee par socialReactTrigger (social_ui.h), persistee en NVS "met2"
@@ -92,8 +92,8 @@ static int uiListCount(int cat)
   switch (cat)
   {
   case UIC_PLAY: return 5;
-  case UIC_WATCH: return 8;
-  case UIC_MEET: return 8; // Schedule + QR Code + Encounters + Leaderboard + 3 photos + Back
+  case UIC_WATCH: return 10;
+  case UIC_MEET: return 5; // Schedule + QR Code + Encounters + Leaderboard + Back
   default: return 5; // More : Draw, Setup, Auto cycle, Settings, Back
                      // (OTA / Rotate / Batt deplaces dans Settings, sous PIN)
   }
@@ -117,10 +117,8 @@ static void uiListLabel(int cat, int i, bool autoCyc, char *buf, size_t n)
       snprintf(buf, n, "QR Code");
     else if (i == 2)
       snprintf(buf, n, "Encounters");
-    else if (i == 3)
-      snprintf(buf, n, "Leaderboard");
     else
-      snprintf(buf, n, "%s", UI_MEET_IT[i - 4]);
+      snprintf(buf, n, "Leaderboard");
     break;
   default:
     if (i == 0)
@@ -153,10 +151,7 @@ static UiAction uiResolve(int cat, int sel, int *arg)
       return UIA_QR; // QR code configure via More > Setup
     if (sel == 2)
       return UIA_MET; // qui j'ai croise, combien de fois
-    if (sel == 3)
-      return UIA_LB; // scores des jeux, les miens + ceux des badges croises
-    *arg = 7 + (sel - 4); // slots photos 7..9
-    return UIA_ANIM;
+    return UIA_LB; // scores des jeux, les miens + ceux des badges croises
   default:
     if (sel == 0)
       return UIA_DRAW;

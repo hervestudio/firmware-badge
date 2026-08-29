@@ -72,7 +72,7 @@ static Preferences prefs;
 
 // ---------------------------------------------- menu / UI (copie de main.cpp)
 #define ANIM_DURATION_MS 15000
-static const uint8_t ACTIVE[] = {8, 4, 5, 6, 7, 9, 10, 11, 12, 13};
+static const uint8_t ACTIVE[] = {8, 4, 5, 6, 7, 9, 10, 14, 15};
 static const int NACTIVE = (int)sizeof(ACTIVE);
 // (tables du menu : voir menu_ui.h, partage avec le firmware)
 
@@ -1088,6 +1088,8 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
   case 11: animPhoto(t); break;
   case 12: animPhoto2(t); break;
   case 13: animPhoto3(t); break;
+  case 14: animWarp(t, dt); break;
+  case 15: animSolar(t, dt); break;
   }
   if (anim == 8) // Conf Buddy : reaction "un ami est la" par-dessus l'anim
     socialReactDraw((uint32_t)emuNowMs);

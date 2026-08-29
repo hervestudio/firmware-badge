@@ -1039,3 +1039,224 @@ static void animPhoto2(float t)
   for (int y = 0; y < H; y += 3)
     dimRow(y, 0, W);
 }
+
+// ------------------------------------------------ 14. warp (hyperespace)
+// Porte de drawWarp (screen-anims.js) : etoiles filantes radiales avec
+// trainee, pulses de vitesse, sphere-perso qui bat au centre. Les couleurs
+// et constantes sont celles du JS ; l'alpha du canvas est remplace par une
+// mise a l'echelle RGB (fond quasi noir -> equivalent visuel).
+#define WARP_N 100
+static struct
+{
+  float ang, r, spd;
+  uint8_t ci;
+} warpStars[WARP_N];
+static bool warpInit = false;
+static const uint8_t WARP_COLS[8][3] = {
+    {255, 255, 255}, {255, 255, 255}, {255, 255, 255}, {0x9E, 0xC5, 0xF0},
+    {0xFF, 0xA7, 0xFE}, {0xFF, 0xCB, 0x8A}, {0x9F, 0x92, 0xF3}, {0x80, 0xDB, 0xBC}};
+
+static void warpSpawn(int i, bool anywhere)
+{
+  warpStars[i].ang = frand(0, 2 * PI);
+  warpStars[i].r = frand(0, RADIUS * (anywhere ? 1.2f : 0.2f));
+  warpStars[i].spd = 0.45f + frand(0, 1.0f);
+  warpStars[i].ci = (uint8_t)((int)frand(0, 7.99f));
+}
+
+static void animWarp(float t, float dt)
+{
+  if (g_ballDirty)
+  {
+    g_ballDirty = false;
+    initBallSprite();
+  }
+  if (!warpInit)
+  {
+    warpInit = true;
+    for (int i = 0; i < WARP_N; i++)
+      warpSpawn(i, true);
+  }
+  if (dt > 0.05f)
+    dt = 0.05f;
+  float sg = sinf(t * 0.5f);
+  float surge = 1 + 2.4f * (sg > 0 ? sg : 0); // pulses de warp
+  const float BASE = RADIUS * 1.3f;
+
+  canvas->fillScreen(rgb565(4, 3, 10)); // #04030a
+  // halo central (le gradient radial du JS, approxime en 3 disques)
+  canvas->fillCircle(CX, CY, (int)(RADIUS * 0.34f), rgb565(10, 12, 22));
+  canvas->fillCircle(CX, CY, (int)(RADIUS * 0.24f), rgb565(17, 20, 34));
+  canvas->fillCircle(CX, CY, (int)(RADIUS * 0.14f), rgb565(26, 31, 48));
+
+  for (int i = 0; i < WARP_N; i++)
+  {
+    float v = warpStars[i].spd * surge * BASE;
+    warpStars[i].r += v * dt;
+    if (warpStars[i].r > RADIUS * 1.3f)
+    {
+      warpSpawn(i, false);
+      continue;
+    }
+    float tail = warpStars[i].r - v * dt * 5;
+    if (tail < 0)
+      tail = 0;
+    float ca = cosf(warpStars[i].ang), sa = sinf(warpStars[i].ang);
+    float near = warpStars[i].r / RADIUS;
+    if (near > 1)
+      near = 1;
+    float aM = 0.25f + 0.65f * near; // ex-globalAlpha
+    const uint8_t *cc = WARP_COLS[warpStars[i].ci];
+    uint16_t col = rgb565((uint8_t)(cc[0] * aM), (uint8_t)(cc[1] * aM),
+                          (uint8_t)(cc[2] * aM));
+    int x0 = CX + (int)(ca * tail), y0 = CY + (int)(sa * tail);
+    int x1 = CX + (int)(ca * warpStars[i].r), y1 = CY + (int)(sa * warpStars[i].r);
+    canvas->drawLine(x0, y0, x1, y1, col);
+    if (near > 0.55f) // proche du bord : trait epaissi (ex-lineWidth)
+      canvas->drawLine(x0 + (sa > 0 ? 1 : -1), y0, x1 + (sa > 0 ? 1 : -1), y1, col);
+  }
+
+  // sphere-perso qui bat au centre
+  float br = RADIUS * 0.2f * (1 + 0.06f * sinf(t * 3));
+  dvdBlit(dvdSprites[0], CX, CY, br, 255);
+  drawIdleFace(CX, CY, br, t);
+}
+
+// ------------------------------------------- 15. solar system (planetes)
+// Porte de drawSolar (screen-anims.js) : soleil = sphere-perso rainbow,
+// 3 planetes (palettes sunset/acid/bubblegum des sprites DVD) sur des
+// orbites elliptiques vues de biais (SQ=0.42), etoiles scintillantes,
+// trainee de points et anneau sur la 2e planete, tri par profondeur.
+#define SOLAR_NSTARS 70
+static struct
+{
+  int16_t x, y;
+  uint8_t sz;
+  float tw;
+} solarStars[SOLAR_NSTARS];
+static bool solarInit = false;
+static const struct
+{
+  uint8_t pal;      // index dvdSprites
+  float a, spd, size, phase;
+  bool ring;
+} SOLAR_PL[3] = {
+    {1, 0.40f, 0.95f, 0.075f, 0.0f, false},  // sunset
+    {2, 0.60f, 0.62f, 0.10f, 1.8f, true},    // acid
+    {3, 0.82f, 0.42f, 0.065f, 3.6f, false}}; // bubblegum
+
+// ellipse en polyligne (la Canvas de l'emulateur n'a pas drawEllipse) ;
+// gere la rotation (l'anneau du JS est incline de 0.5 rad)
+static void solarEllipse(float cx, float cy, float rx, float ry, float rot,
+                         uint16_t col)
+{
+  const int SEG = 48;
+  float cr = cosf(rot), sr = sinf(rot);
+  float px = 0, py = 0;
+  for (int i = 0; i <= SEG; i++)
+  {
+    float a = i * (2 * PI / SEG);
+    float ex = cosf(a) * rx, ey = sinf(a) * ry;
+    float x = cx + ex * cr - ey * sr, y = cy + ex * sr + ey * cr;
+    if (i)
+      canvas->drawLine((int)px, (int)py, (int)x, (int)y, col);
+    px = x;
+    py = y;
+  }
+}
+
+static void animSolar(float t, float)
+{
+  if (g_ballDirty)
+  {
+    g_ballDirty = false;
+    initBallSprite();
+  }
+  if (!solarInit)
+  {
+    solarInit = true;
+    for (int i = 0; i < SOLAR_NSTARS; i++)
+    {
+      solarStars[i].x = (int16_t)frand(0, W - 2);
+      solarStars[i].y = (int16_t)frand(0, H - 2);
+      solarStars[i].sz = frand(0, 1) < 0.4f ? 2 : 1;
+      solarStars[i].tw = frand(0, 6);
+    }
+  }
+  const float SQ = 0.42f;
+  canvas->fillScreen(rgb565(5, 4, 14)); // #05040e
+
+  // halo du soleil (gradient radial du JS, approxime) — AVANT les orbites
+  canvas->fillCircle(CX, CY, (int)(RADIUS * 0.36f), rgb565(24, 18, 22));
+  canvas->fillCircle(CX, CY, (int)(RADIUS * 0.22f), rgb565(46, 36, 30));
+  canvas->fillCircle(CX, CY, (int)(RADIUS * 0.12f), rgb565(74, 60, 42));
+
+  // etoiles scintillantes (#cfd8ff module par un sinus)
+  for (int i = 0; i < SOLAR_NSTARS; i++)
+  {
+    float aS = 0.35f + 0.4f * sinf(t * 2 + solarStars[i].tw);
+    if (aS < 0.05f)
+      continue;
+    uint16_t c = rgb565((uint8_t)(0xcf * aS), (uint8_t)(0xd8 * aS),
+                        (uint8_t)(0xff * aS));
+    canvas->fillRect(solarStars[i].x, solarStars[i].y, solarStars[i].sz,
+                     solarStars[i].sz, c);
+  }
+
+  // orbites
+  for (int p = 0; p < 3; p++)
+    solarEllipse(CX, CY, SOLAR_PL[p].a * RADIUS, SOLAR_PL[p].a * RADIUS * SQ,
+                 0, rgb565(38, 38, 46));
+
+  // planetes + soleil, tries par profondeur (z = sin(ang), loin -> pres)
+  struct Item
+  {
+    float sx, sy, r, z, ang, a;
+    int8_t pal; // -1 = soleil
+    bool ring;
+  } items[4];
+  for (int p = 0; p < 3; p++)
+  {
+    float ang = SOLAR_PL[p].phase + t * SOLAR_PL[p].spd;
+    float z = sinf(ang);
+    items[p] = {CX + cosf(ang) * SOLAR_PL[p].a * RADIUS,
+                CY + z * SOLAR_PL[p].a * RADIUS * SQ,
+                SOLAR_PL[p].size * RADIUS * (1 + 0.18f * z),
+                z, ang, SOLAR_PL[p].a, (int8_t)SOLAR_PL[p].pal, SOLAR_PL[p].ring};
+  }
+  items[3] = {(float)CX, (float)CY, RADIUS * 0.155f, 0, 0, 0, -1, false};
+  for (int i = 0; i < 3; i++) // tri insertion (4 elements)
+    for (int j = i + 1; j < 4; j++)
+      if (items[j].z < items[i].z)
+      {
+        Item tmp = items[i];
+        items[i] = items[j];
+        items[j] = tmp;
+      }
+  for (int i = 0; i < 4; i++)
+  {
+    Item &it = items[i];
+    if (it.pal < 0) // soleil : sphere-perso rainbow avec visage
+    {
+      dvdBlit(dvdSprites[0], CX, CY, it.r, 255);
+      drawIdleFace(CX, CY, it.r, t);
+      continue;
+    }
+    for (int k = 1; k <= 6; k++) // trainee de points sur l'orbite
+    {
+      float a2 = it.ang - k * 0.12f;
+      uint8_t g = (uint8_t)(40 * (1 - k / 7.0f));
+      canvas->fillCircle((int)(CX + cosf(a2) * it.a * RADIUS),
+                         (int)(CY + sinf(a2) * it.a * RADIUS * SQ),
+                         (int)(it.r * 0.28f), rgb565(g, g, g + 4));
+    }
+    if (it.ring) // anneau incline de 0.5 rad, comme le JS
+    {
+      solarEllipse(it.sx, it.sy, it.r * 1.75f, it.r * 0.62f, 0.5f,
+                   rgb565(140, 131, 110));
+      solarEllipse(it.sx, it.sy, it.r * 1.75f, it.r * 0.62f + 1.5f, 0.5f,
+                   rgb565(94, 88, 74));
+    }
+    dvdBlit(dvdSprites[it.pal], (int)it.sx, (int)it.sy, it.r, 255);
+  }
+}

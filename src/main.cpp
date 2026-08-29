@@ -96,7 +96,7 @@ static bool otaMode = false;
 #define CX 180
 #define CY 180
 
-#define ANIM_COUNT 14
+#define ANIM_COUNT 16
 #define ANIM_DURATION_MS 15000
 #define RADIUS 180 // rayon utile de l'ecran rond
 
@@ -969,8 +969,9 @@ static void resetIdle()
 
 // ------------------------------------------------------------------- menu
 
-// Anims actives (les autres restent dispo dans le code) + noms affiches
-static const uint8_t ACTIVE[] = {8, 4, 5, 6, 7, 9, 10, 11, 12, 13};
+// Anims actives (les autres restent dispo dans le code) + noms affiches.
+// Photos speaker (11..13) retirees avec les entrees Meet (revue 2026-08-29).
+static const uint8_t ACTIVE[] = {8, 4, 5, 6, 7, 9, 10, 14, 15};
 static const int NACTIVE = (int)sizeof(ACTIVE);
 // (les tables du menu vivent dans menu_ui.h, partage avec l'emulateur)
 
@@ -2356,7 +2357,7 @@ void loop()
     static const char *names[ANIM_COUNT] = {"cube", "starfield", "plasma", "torus",
                                             "snake", "disco", "globe", "threeconf",
                                             "idlerainbow", "dvd", "points", "photo",
-                                            "photo2", "photo3"};
+                                            "photo2", "photo3", "warp", "solar"};
     Serial0.printf("animation : %s\n", names[anim]);
   }
   float t = (now - animStartMs) / 1000.0f; // temps local a l'animation
@@ -2377,6 +2378,8 @@ void loop()
   case 11: animPhoto(t); break;
   case 12: animPhoto2(t); break;
   case 13: animPhoto3(t); break;
+  case 14: animWarp(t, dt); break;
+  case 15: animSolar(t, dt); break;
   }
   if (anim == 8) // Conf Buddy : reaction "un ami est la" par-dessus l'anim
     socialReactDraw(now);
