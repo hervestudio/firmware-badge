@@ -77,7 +77,7 @@ static const int NACTIVE = (int)sizeof(ACTIVE);
 // (tables du menu : voir menu_ui.h, partage avec le firmware)
 
 enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW,
-                        UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_FLASH, UI_OFF,
+                        UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_FLASH, UI_OFF, UI_VCAL,
                         UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX, UI_LB };
 static UiMode uiMode = UI_ANIM;
 static int menuSel = 0, slot = 0, menuCat = 0, schedIdx = 0;
@@ -99,6 +99,7 @@ static uint32_t slotStartMs = 0, animStartMs = 0;
 static int lastAnim = -1;
 static int batPct = 76; // jauge simulee (pas d'ADC dans le navigateur)
 static uint32_t batMvRaw = 3780; // tension simulee
+static int16_t vbatCal = 1000;   // calibration jauge (session)
 static bool batCharging = false;
 
 #include "menu_ui.h" // menu bulles + listes (partage avec le firmware)
@@ -937,12 +938,31 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
         return;
       }
       if (setMenuSel == 4)
-        return; // ligne info tension
+      {
+        uiMode = UI_VCAL; // calibration de la jauge (simulee)
+        return;
+      }
       uiMode = UI_MENU;
       uiDrawList(menuCat, menuSel, autoCycle, batPct, batCharging);
       return;
     }
     uiDrawSetMenu(setMenuSel);
+    return;
+  }
+
+  if (uiMode == UI_VCAL)
+  {
+    if (navNext && vbatCal < 1100)
+      vbatCal += 3;
+    if (navPrev && vbatCal > 900)
+      vbatCal -= 3;
+    if (autoShort)
+    {
+      uiMode = UI_SETMENU;
+      uiDrawSetMenu(setMenuSel);
+      return;
+    }
+    uiDrawVcal(batMvRaw * (uint32_t)vbatCal / 1000, vbatCal);
     return;
   }
 

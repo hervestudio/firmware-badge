@@ -979,7 +979,7 @@ static const int NACTIVE = (int)sizeof(ACTIVE);
 RTC_NOINIT_ATTR uint32_t otaRequest;
 
 // Etat de l'interface : animations / menu / jeux
-enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX, UI_LB };
+enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX, UI_LB, UI_VCAL };
 static UiMode uiMode = UI_ANIM;
 
 // ---- etat des Settings (code d'acces + choix d'avatar, voir menu_ui.h) ----
@@ -1002,6 +1002,7 @@ static Preferences prefs; // records des jeux, persistants en flash (NVS)
 
 // Jauge batterie : lecture du pont diviseur (x2) lissee, courbe LiPo approchee.
 static int batPct = -1; // -1 : pont diviseur absent
+static int16_t vbatCal = 1000; // calibration du pont, pour-mille (NVS "vcal")
 static uint32_t batMvRaw = 0; // tension lissee (mV), pour l'info du menu More
 static bool batCharging = false;
 
@@ -1054,13 +1055,16 @@ static void updateBattery(uint32_t now)
     return;
   }
   // lissage LENT (~10 s de constante de temps a 2 lectures/s) : les creux de
-  // tension sous charge (anims, WiFi) ne doivent pas faire plonger la jauge
+  // tension sous charge (anims, WiFi) ne doivent pas faire plonger la jauge.
+  // L'EMA porte sur la tension BRUTE ; la calibration par badge (tolerance
+  // des ponts 100k, ecran Settings > Batt) s'applique apres — l'ecran de
+  // calibration repond ainsi instantanement au reglage.
   ema = (ema == 0) ? mv : ema * 0.95f + mv * 0.05f;
-  batMvRaw = (uint32_t)ema;
+  batMvRaw = (uint32_t)(ema * vbatCal / 1000.0f);
   static const struct { uint16_t mv; uint8_t pct; } C[] = {
       {3300, 0}, {3500, 10}, {3600, 20}, {3700, 40}, {3800, 60},
       {3900, 75}, {4000, 88}, {4100, 96}, {4200, 100}};
-  float v = ema;
+  float v = ema * vbatCal / 1000.0f; // courbe sur la tension CALIBREE
   int pct = 100;
   if (v <= C[0].mv)
     pct = 0;
@@ -1076,7 +1080,7 @@ static void updateBattery(uint32_t now)
   // d'une batterie a 90 % (la tension bondit a 4.2 V en phase CV bien avant
   // la fin reelle — sans mesure de courant, seule la duree discrimine).
   static uint32_t fullSince = 0;
-  if (batCharging && ema >= 4060)
+  if (batCharging && batMvRaw >= 4060)
   {
     if (!fullSince)
       fullSince = now;
@@ -1368,6 +1372,7 @@ void setup()
   Serial0.println("=== Badge threejs.paris - animations GC9B72 ===");
   prefs.begin("badge", false); // records des jeux (NVS)
   uiScreenRot = (int)(int8_t)prefs.getChar("rotDeg", 0); // rotation ecran calibree
+  vbatCal = prefs.getShort("vcal", 1000); // calibration jauge batterie par badge
   g_avatarIdx = prefs.getUChar("avatar", 0) % AVATAR_N;  // avatar/personne du badge
   g_avatarFaceIdx = g_avatarIdx;
   // buddy custom + nom + URL du QR (parcours More > Setup, sur telephone)
@@ -1847,9 +1852,9 @@ void loop()
         delay(50);
         esp_restart();
       }
-      else if (setMenuSel == 4) // ligne info tension : non cliquable
+      else if (setMenuSel == 4) // Batt : ecran de calibration de la jauge
       {
-        return;
+        uiMode = UI_VCAL;
       }
       else
       {
@@ -1898,6 +1903,33 @@ void loop()
       return;
     }
     uiDrawProx(proxLevel, socialOn ? socialNearestRssi() : -100.0f);
+    waitTE();
+    badgeFlush();
+    fpsCount++;
+    return;
+  }
+
+  if (uiMode == UI_VCAL)
+  {
+    // calibration de la jauge : gauche/droite = -/+0.3 % sur le facteur du
+    // pont, l'ecran suit en direct ; centre = sauver en NVS et retour
+    if (navNext && vbatCal < 1100)
+      vbatCal += 3;
+    if (navPrev && vbatCal > 900)
+      vbatCal -= 3;
+    if (autoShort)
+    {
+      prefs.putShort("vcal", vbatCal);
+      Serial0.printf("calibration jauge sauvee : %d/1000\n", (int)vbatCal);
+      setMenuShown = -1;
+      uiMode = UI_SETMENU;
+      uiDrawSetMenu(setMenuSel);
+      waitTE();
+      badgeFlush();
+      fpsCount++;
+      return;
+    }
+    uiDrawVcal(batMvRaw, vbatCal);
     waitTE();
     badgeFlush();
     fpsCount++;

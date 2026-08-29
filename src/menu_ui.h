@@ -247,6 +247,32 @@ static void uiDrawSetMenu(int sel)
   }
 }
 
+// Ecran Settings > Batt : CALIBRATION de la jauge par badge. Le pont
+// 100k/100k reel a une tolerance de +/-5 % (150 mV d'ecart mesures sur un
+// badge, revue Romain 2026-08-29) : gauche/droite ajustent un facteur
+// multiplicatif (NVS "vcal", pour-mille) jusqu'a ce que la tension affichee
+// = le multimetre sur B+/B-, centre = sauver.
+static void uiDrawVcal(uint32_t mv, int cal)
+{
+  canvas->fillScreen(RGB565_BLACK);
+  mtPrint(CX - mtTextW("BATT CAL") / 2, 40, "BATT CAL", rgb565(0xfb, 0xd9, 0x75));
+  char t[16];
+  if (mv > 0)
+    snprintf(t, sizeof(t), "%lu.%02luV", (unsigned long)(mv / 1000),
+             (unsigned long)(mv % 1000 / 10));
+  else
+    snprintf(t, sizeof(t), "--");
+  mtPrint(CX - mtTextW(t) / 2, 140, t, RGB565_WHITE);
+  snprintf(t, sizeof(t), "%+d.%d%%", (cal - 1000) / 10, abs(cal - 1000) % 10);
+  bbPrint(CX - bbTextW(t) / 2, 196, t, rgb565(0x9d, 0x97, 0xed));
+  mdPrint(CX - mdTextW("match the multimeter") / 2, 246,
+          "match the multimeter", rgb565(130, 130, 130));
+  mdPrint(CX - mdTextW("on the battery (B+/B-)") / 2, 272,
+          "on the battery (B+/B-)", rgb565(130, 130, 130));
+  mdPrint(CX - mdTextW("center: save") / 2, 306, "center: save",
+          rgb565(130, 130, 130));
+}
+
 // Reglage de proximite des rencontres, avec jauge LIVE du badge le plus
 // proche (la radio ecoute en mode sonde pendant cet ecran) : la zone au-dela
 // du seuil est celle qui declenche.
