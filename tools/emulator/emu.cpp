@@ -683,8 +683,8 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
     if (autoShort)
     {
       prefs.putUShort("rotDeg", (uint16_t)(uiScreenRot + 128)); // persiste (session)
-      uiMode = UI_MENU;
-      uiDrawList(menuCat, menuSel, autoCycle, batPct, batCharging);
+      uiMode = UI_SETMENU; // Rotate vit dans Settings desormais
+      uiDrawSetMenu(setMenuSel);
       return;
     }
     uiDrawRotate(uiScreenRot);
@@ -910,9 +910,9 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
   if (uiMode == UI_SETMENU)
   {
     if (navNext)
-      setMenuSel = (setMenuSel + 1) % 3;
+      setMenuSel = (setMenuSel + 1) % SETMENU_N;
     if (navPrev)
-      setMenuSel = (setMenuSel + 2) % 3;
+      setMenuSel = (setMenuSel + SETMENU_N - 1) % SETMENU_N;
     if (autoShort)
     {
       if (setMenuSel == 0)
@@ -926,6 +926,18 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
         uiMode = UI_PROX;
         return;
       }
+      if (setMenuSel == 2)
+      {
+        uiMode = UI_ROT;
+        return;
+      }
+      if (setMenuSel == 3)
+      {
+        uiMode = UI_FLASH;
+        return;
+      }
+      if (setMenuSel == 4)
+        return; // ligne info tension
       uiMode = UI_MENU;
       uiDrawList(menuCat, menuSel, autoCycle, batPct, batCharging);
       return;

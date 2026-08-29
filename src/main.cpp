@@ -1737,9 +1737,11 @@ void loop()
     {
       prefs.putChar("rotDeg", (int8_t)uiScreenRot);
       Serial0.printf("rotation ecran sauvee : %+d deg\n", uiScreenRot);
-      uiMode = UI_MENU;
       rotShown = -99;
-      uiDrawList(menuCat, menuSel, autoCycle, batPct, batCharging);
+      setMenuShown = -1; // Rotate vit dans Settings : retour au sous-menu
+      uiMode = UI_SETMENU;
+      uiDrawSetMenu(setMenuSel);
+      waitTE();
       badgeFlush();
       fpsCount++;
       return;
@@ -1816,9 +1818,9 @@ void loop()
   if (uiMode == UI_SETMENU)
   {
     if (navNext)
-      setMenuSel = (setMenuSel + 1) % 3;
+      setMenuSel = (setMenuSel + 1) % SETMENU_N;
     if (navPrev)
-      setMenuSel = (setMenuSel + 2) % 3;
+      setMenuSel = (setMenuSel + SETMENU_N - 1) % SETMENU_N;
     if (autoShort)
     {
       if (setMenuSel == 0) // Avatar
@@ -1833,6 +1835,21 @@ void loop()
           if (UI_PROX_LEVELS[i] == socialRssiNear)
             proxLevel = i;
         uiMode = UI_PROX; // la radio passe en mode sonde (voir loop)
+      }
+      else if (setMenuSel == 2) // Rotate screen
+      {
+        uiMode = UI_ROT;
+      }
+      else if (setMenuSel == 3) // OTA flash mode
+      {
+        Serial0.println("settings : redemarrage en mode flash OTA");
+        otaRequest = OTA_MAGIC;
+        delay(50);
+        esp_restart();
+      }
+      else if (setMenuSel == 4) // ligne info tension : non cliquable
+      {
+        return;
       }
       else
       {

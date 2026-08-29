@@ -94,7 +94,8 @@ static int uiListCount(int cat)
   case UIC_PLAY: return 5;
   case UIC_WATCH: return 8;
   case UIC_MEET: return 8; // Schedule + QR Code + Encounters + Leaderboard + 3 photos + Back
-  default: return 8; // More : Draw, Setup, Auto cycle, OTA, Rotate, Settings, info tension, Back
+  default: return 5; // More : Draw, Setup, Auto cycle, Settings, Back
+                     // (OTA / Rotate / Batt deplaces dans Settings, sous PIN)
   }
 }
 
@@ -128,17 +129,8 @@ static void uiListLabel(int cat, int i, bool autoCyc, char *buf, size_t n)
       snprintf(buf, n, "Setup (WiFi)");
     else if (i == 2)
       snprintf(buf, n, "Auto cycle: %s", autoCyc ? "ON" : "OFF");
-    else if (i == 3)
-      snprintf(buf, n, "OTA flash mode");
-    else if (i == 4)
-      snprintf(buf, n, "Rotate screen");
-    else if (i == 5)
-      snprintf(buf, n, "Settings");
-    else if (batMvRaw > 0) // tension ADC brute (diagnostic jauge)
-      snprintf(buf, n, "Batt: %lu.%02luV", (unsigned long)(batMvRaw / 1000),
-               (unsigned long)(batMvRaw % 1000 / 10));
     else
-      snprintf(buf, n, "Batt: --");
+      snprintf(buf, n, "Settings");
   }
 }
 
@@ -172,13 +164,7 @@ static UiAction uiResolve(int cat, int sel, int *arg)
       return UIA_SETUP; // parcours de config sur telephone (nom/buddy/QR)
     if (sel == 2)
       return UIA_AUTO;
-    if (sel == 3)
-      return UIA_OTA;
-    if (sel == 4)
-      return UIA_ROT;
-    if (sel == 5)
-      return UIA_SETTINGS; // protege par code (avatar / personne du badge)
-    return UIA_NONE; // ligne info tension : non cliquable
+    return UIA_SETTINGS; // protege par code (avatar, proximite, OTA...)
   }
 }
 
@@ -229,14 +215,24 @@ static void uiRotateBlit(const uint16_t *src, uint16_t *dst, int deg)
 }
 
 // Petit menu des Settings (apres le code PIN) : Avatar / Proximity / Back
+#define SETMENU_N 6 // Avatar, Proximity, Rotate, OTA, Batt (info), Back
 static void uiDrawSetMenu(int sel)
 {
   canvas->fillScreen(RGB565_BLACK);
   mtPrint(CX - mtTextW("SETTINGS") / 2, 40, "SETTINGS", rgb565(0xfb, 0xd9, 0x75));
-  static const char *IT[3] = {"Avatar", "Proximity", "Back"};
-  for (int i = 0; i < 3; i++)
+  // OTA / Rotate / Batt deplaces depuis More (revue Romain 2026-08-29) :
+  // reserves a l'organisation, derriere le code PIN
+  char batt[20];
+  if (batMvRaw > 0)
+    snprintf(batt, sizeof(batt), "Batt: %lu.%02luV", (unsigned long)(batMvRaw / 1000),
+             (unsigned long)(batMvRaw % 1000 / 10));
+  else
+    snprintf(batt, sizeof(batt), "Batt: --");
+  const char *IT[SETMENU_N] = {"Avatar", "Proximity", "Rotate screen",
+                               "OTA flash mode", batt, "Back"};
+  for (int i = 0; i < SETMENU_N; i++)
   {
-    int y = 130 + i * 44;
+    int y = 96 + i * 38;
     if (i == sel)
     {
       int w = mfTextW(IT[i]) + 36;
@@ -246,7 +242,8 @@ static void uiDrawSetMenu(int sel)
       mfPrint(CX - mfTextW(IT[i]) / 2, y, IT[i], RGB565_BLACK);
     }
     else
-      mfPrint(CX - mfTextW(IT[i]) / 2, y, IT[i], RGB565_WHITE);
+      mfPrint(CX - mfTextW(IT[i]) / 2, y, IT[i],
+              i == 4 ? rgb565(130, 130, 130) : RGB565_WHITE);
   }
 }
 
