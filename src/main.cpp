@@ -1279,6 +1279,19 @@ static void powerOff()
   rtc_gpio_pullup_en((gpio_num_t)BTN_AUTO);
   rtc_gpio_pulldown_dis((gpio_num_t)BTN_AUTO);
   esp_sleep_enable_ext0_wakeup((gpio_num_t)BTN_AUTO, 0);
+  // Reveil AUSSI au branchement USB (revue Romain 2026-08-30 : badge coupe
+  // par la protection batterie -> "rien ne se passe" au branchement, alors
+  // qu'il charge en silence). Le VBUS arrive divise par 2 sur GPIO2 (RTC) :
+  // ext1 ANY_HIGH ~1.65 V au branchement. ARME SEULEMENT si le VBUS est
+  // absent a l'extinction — sinon une extinction manuelle pendant la charge
+  // se reveillerait aussitot.
+  analogReadMilliVolts(PIN_VBUS); // purge du residu d'echantillonneur ADC
+  if (analogReadMilliVolts(PIN_VBUS) < 700)
+  {
+    rtc_gpio_pullup_dis((gpio_num_t)PIN_VBUS);
+    rtc_gpio_pulldown_en((gpio_num_t)PIN_VBUS);
+    esp_sleep_enable_ext1_wakeup(1ULL << PIN_VBUS, ESP_EXT1_WAKEUP_ANY_HIGH);
+  }
   esp_deep_sleep_start();
 }
 
