@@ -1387,6 +1387,40 @@ void setup()
   prefs.begin("badge", false); // records des jeux (NVS)
   uiScreenRot = (int)(int8_t)prefs.getChar("rotDeg", 0); // rotation ecran calibree
   vbatCal = prefs.getShort("vcal", 1000); // calibration jauge batterie par badge
+
+  // GARDE DE CHARGE (revue Romain 2026-08-30) : cellule critique + chargeur
+  // branche -> chaque boot complet (anim, PSRAM, retroeclairage) s'effondrait
+  // en brownout et bouclait, l'ecran clignotait et le courant de charge
+  // partait dans les tentatives. Ici on attend, CPU au ralenti et ecran
+  // eteint (la LED du TP4056 sert de temoin), que la cellule remonte avant
+  // de demarrer pour de bon. Debranchement -> on tente le boot normal.
+  {
+    analogReadMilliVolts(PIN_VBUS); // purge de l'echantillonneur partage
+    bool onUsb = analogReadMilliVolts(PIN_VBUS) > 700;
+    uint32_t mv = 0;
+    for (int i = 0; i < 4; i++)
+      mv += analogReadMilliVolts(PIN_VBAT);
+    mv = mv / 4 * 2 * (uint32_t)vbatCal / 1000;
+    if (onUsb && mv > 2500 && mv < 3400) // 2500 = pont absent (proto nu)
+    {
+      Serial0.printf("batterie critique en charge (%lu mV) : attente avant boot\n",
+                     (unsigned long)mv);
+      while (true)
+      {
+        delay(2000);
+        uint32_t s2 = 0;
+        for (int i = 0; i < 4; i++)
+          s2 += analogReadMilliVolts(PIN_VBAT);
+        s2 = s2 / 4 * 2 * (uint32_t)vbatCal / 1000;
+        if (s2 >= 3550) // ~3.4 V reels sous charge : boot serein
+          break;
+        analogReadMilliVolts(PIN_VBUS);
+        if (analogReadMilliVolts(PIN_VBUS) < 700)
+          break; // debranche par l'utilisateur : on tente
+      }
+      Serial0.println("charge ok : boot");
+    }
+  }
   g_avatarIdx = prefs.getUChar("avatar", 0) % AVATAR_N;  // avatar/personne du badge
   g_avatarFaceIdx = g_avatarIdx;
   // buddy custom + nom + URL du QR (parcours More > Setup, sur telephone)
@@ -1397,7 +1431,7 @@ void setup()
   prefs.getString("bname", qrName, sizeof(qrName));
   socialMetLoad(); // compteurs de rencontres (ecran Meet > Encounters)
   lbLoad();        // scores appris des autres badges (Meet > Leaderboard)
-  socialRssiNear = (int8_t)prefs.getChar("prox", -58); // seuil de proximite
+  socialRssiNear = (int8_t)prefs.getChar("prox", -62); // seuil de proximite (= Normal)
   prefs.getString("bcomp", qrCompany, sizeof(qrCompany));
   prefs.getString("bmsg", qrMsg, sizeof(qrMsg));
   if (prefs.getString("qrurl", qrUrl, sizeof(qrUrl)) == 0 || !qrUrl[0])
