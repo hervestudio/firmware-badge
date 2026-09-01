@@ -980,7 +980,7 @@ static const int NACTIVE = (int)sizeof(ACTIVE);
 RTC_NOINIT_ATTR uint32_t otaRequest;
 
 // Etat de l'interface : animations / menu / jeux
-enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX, UI_LB, UI_VCAL };
+enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX, UI_LB, UI_VCAL, UI_BLOG };
 static UiMode uiMode = UI_ANIM;
 
 // ---- etat des Settings (code d'acces + choix d'avatar, voir menu_ui.h) ----
@@ -1006,6 +1006,36 @@ static int batPct = -1; // -1 : pont diviseur absent
 static int16_t vbatCal = 1000; // calibration du pont, pour-mille (NVS "vcal")
 static uint32_t batMvRaw = 0; // tension lissee (mV), pour l'info du menu More
 static bool batCharging = false;
+
+// ---- Enregistreur d'autonomie (Settings > Batt log) : echantillons du
+// niveau batterie pendant que le badge tourne, pour MESURER la decharge
+// reelle sur l'appareil (revue Romain 2026-09-01). Quand le tampon est
+// plein, decimation par 2 et intervalle double (la fenetre couverte double).
+#define BLOG_MAX 240
+static uint8_t blogPct[BLOG_MAX];
+static uint16_t blogMv[BLOG_MAX];
+static int blogN = 0;
+static uint32_t blogIvlMs = 120000; // 2 min au depart -> 8 h de fenetre
+static uint32_t blogT0 = 0;         // millis() du premier echantillon
+
+static void blogPush(uint8_t pct, uint16_t mv, uint32_t now)
+{
+  if (blogN == 0)
+    blogT0 = now;
+  if (blogN >= BLOG_MAX) // plein : decimation par 2, intervalle double
+  {
+    for (int i = 0; i < BLOG_MAX / 2; i++)
+    {
+      blogPct[i] = blogPct[i * 2];
+      blogMv[i] = blogMv[i * 2];
+    }
+    blogN = BLOG_MAX / 2;
+    blogIvlMs *= 2;
+  }
+  blogPct[blogN] = pct;
+  blogMv[blogN] = mv;
+  blogN++;
+}
 
 static void updateBattery(uint32_t now)
 {
@@ -1109,6 +1139,17 @@ static void updateBattery(uint32_t now)
   }
   else if (pct < batPct)
     batPct--;
+
+  // enregistreur d'autonomie (Settings > Batt log) : un echantillon toutes
+  // les blogIvlMs tant que la jauge est valide et qu'on decharge (les points
+  // en charge fausseraient la pente)
+  static uint32_t blogLast = 0;
+  if (batPct >= 0 && !batCharging &&
+      (blogLast == 0 || now - blogLast >= blogIvlMs))
+  {
+    blogLast = now;
+    blogPush((uint8_t)batPct, (uint16_t)batMvRaw, now);
+  }
 }
 
 #include "menu_ui.h" // menu bulles + listes (partage firmware/emulateur)
@@ -1618,17 +1659,36 @@ void loop()
     return false;
   }();
   {
-    bool wantSocial = ((uiMode == UI_ANIM && ACTIVE[slot] == 8) ||
-                       uiMode == UI_PROX) &&
-                      !socialBlocked;
+    bool wantSession = ((uiMode == UI_ANIM && ACTIVE[slot] == 8) ||
+                        uiMode == UI_PROX) &&
+                       !socialBlocked;
     socialProbeOnly = (uiMode == UI_PROX);
+    // CYCLAGE de l'ecoute pendant Conf Buddy (voir SOCIAL_DUTY_* dans
+    // social.h) ; Proximity reste en continu. Le briseur de boucle "socboot"
+    // n'est arme qu'au PREMIER allumage du cycle d'alimentation : une fois
+    // la radio prouvee 8 s, les rallumages du cyclage ne re-arment pas
+    // (sinon deux ecritures NVS par periode de 12 s).
+    static uint32_t dutyAnchor = 0;
+    static bool socialProven = false;
+    bool wantSocial = wantSession;
+    if (wantSession && !socialProbeOnly)
+    {
+      if (!dutyAnchor)
+        dutyAnchor = now ? now : 1;
+      wantSocial = ((now - dutyAnchor) % SOCIAL_DUTY_PERIOD) < SOCIAL_DUTY_ON;
+    }
+    else if (!wantSession)
+      dutyAnchor = 0;
     if (wantSocial != socialOn)
     {
       if (wantSocial)
       {
-        prefs.putUChar("socboot", 1); // arme : si on meurt ici, bloque au boot
+        if (!socialProven)
+        {
+          prefs.putUChar("socboot", 1); // arme : si on meurt ici, bloque au boot
+          socialArmMs = now ? now : 1;
+        }
         socialStart();
-        socialArmMs = now ? now : 1;
       }
       else
         socialStop();
@@ -1637,6 +1697,7 @@ void loop()
     {
       prefs.putUChar("socboot", 0); // 8 s stables : la radio passe sur cette carte
       socialArmMs = 0;
+      socialProven = true;
     }
     if (socialOn)
       socialLoop(now);
@@ -1904,6 +1965,10 @@ void loop()
       {
         uiMode = UI_VCAL;
       }
+      else if (setMenuSel == 5) // Batt log : courbe de decharge enregistree
+      {
+        uiMode = UI_BLOG;
+      }
       else
       {
         uiMode = UI_MENU;
@@ -1954,6 +2019,38 @@ void loop()
     waitTE();
     badgeFlush();
     fpsCount++;
+    return;
+  }
+
+  if (uiMode == UI_BLOG)
+  {
+    // courbe d'autonomie : gauche = remise a zero du log, centre = retour ;
+    // redessine ~1x/s (la courbe evolue lentement)
+    static uint32_t blogDrawMs = 0;
+    if (navPrev)
+    {
+      blogN = 0;
+      blogIvlMs = 120000;
+      blogDrawMs = 0;
+    }
+    if (autoShort)
+    {
+      setMenuShown = -1;
+      uiMode = UI_SETMENU;
+      uiDrawSetMenu(setMenuSel);
+      waitTE();
+      badgeFlush();
+      fpsCount++;
+      return;
+    }
+    if (now - blogDrawMs > 1000)
+    {
+      blogDrawMs = now;
+      uiDrawBlog(now, batPct, batMvRaw);
+      waitTE();
+      badgeFlush();
+      fpsCount++;
+    }
     return;
   }
 

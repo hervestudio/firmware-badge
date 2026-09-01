@@ -15,7 +15,17 @@
 #include "social_ui.h"
 
 #define SOCIAL_CHANNEL 1
-#define SOCIAL_BEACON_MS 1000
+// Beacon rapproche (600 ms) : avec le CYCLAGE de la radio (voir main.cpp),
+// chaque fenetre d'ecoute de 3 s doit contenir plusieurs emissions pour que
+// deux badges aux fenetres desynchronisees se croisent vite (~10 s).
+#define SOCIAL_BEACON_MS 600
+// Cyclage d'ecoute pendant Conf Buddy (autonomie, revue Romain 2026-09-01) :
+// l'ecoute continue coute ~90 mA, poste n1 du mode. 3 s d'ecoute par periode
+// de 12 s = ~75 % du poste radio economise, detection d'une rencontre en
+// ~10-15 s (imperceptible : on se croise plus longtemps que ca). L'ecran
+// Proximity garde l'ecoute continue pour sa jauge live.
+#define SOCIAL_DUTY_ON 3000
+#define SOCIAL_DUTY_PERIOD 12000
 // Seuil de proximite REGLABLE (Settings > Proximity, NVS "prox") : 4 niveaux
 // de Touch (badges quasi colles) a Far (~5 m). -62 = "Normal" par defaut.
 static int8_t socialRssiNear = -62;  // valeur active (UI_PROX_LEVELS)

@@ -77,7 +77,7 @@ static const int NACTIVE = (int)sizeof(ACTIVE);
 // (tables du menu : voir menu_ui.h, partage avec le firmware)
 
 enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW,
-                        UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_FLASH, UI_OFF, UI_VCAL,
+                        UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_FLASH, UI_OFF, UI_VCAL, UI_BLOG,
                         UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX, UI_LB };
 static UiMode uiMode = UI_ANIM;
 static int menuSel = 0, slot = 0, menuCat = 0, schedIdx = 0;
@@ -100,6 +100,36 @@ static int lastAnim = -1;
 static int batPct = 76; // jauge simulee (pas d'ADC dans le navigateur)
 static uint32_t batMvRaw = 3780; // tension simulee
 static int16_t vbatCal = 1000;   // calibration jauge (session)
+// ---- Enregistreur d'autonomie (Settings > Batt log) : echantillons du
+// niveau batterie pendant que le badge tourne, pour MESURER la decharge
+// reelle sur l'appareil (revue Romain 2026-09-01). Quand le tampon est
+// plein, decimation par 2 et intervalle double (la fenetre couverte double).
+#define BLOG_MAX 240
+static uint8_t blogPct[BLOG_MAX];
+static uint16_t blogMv[BLOG_MAX];
+static int blogN = 0;
+static uint32_t blogIvlMs = 120000; // 2 min au depart -> 8 h de fenetre
+static uint32_t blogT0 = 0;         // millis() du premier echantillon
+
+static void blogPush(uint8_t pct, uint16_t mv, uint32_t now)
+{
+  if (blogN == 0)
+    blogT0 = now;
+  if (blogN >= BLOG_MAX) // plein : decimation par 2, intervalle double
+  {
+    for (int i = 0; i < BLOG_MAX / 2; i++)
+    {
+      blogPct[i] = blogPct[i * 2];
+      blogMv[i] = blogMv[i * 2];
+    }
+    blogN = BLOG_MAX / 2;
+    blogIvlMs *= 2;
+  }
+  blogPct[blogN] = pct;
+  blogMv[blogN] = mv;
+  blogN++;
+}
+
 static bool batCharging = false;
 
 #include "menu_ui.h" // menu bulles + listes (partage avec le firmware)
@@ -942,11 +972,39 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
         uiMode = UI_VCAL; // calibration de la jauge (simulee)
         return;
       }
+      if (setMenuSel == 5)
+      {
+        // Batt log : donnees de demo si vide (pas de vraie batterie ici)
+        if (blogN < 2)
+        {
+          blogIvlMs = 120000;
+          blogN = 0;
+          for (int i = 0; i < 90; i++)
+            blogPush((uint8_t)(92 - i * 55 / 90 - (i % 7 == 0 ? 1 : 0)),
+                     (uint16_t)(4050 - i * 6), (uint32_t)emuNowMs);
+        }
+        uiMode = UI_BLOG;
+        return;
+      }
       uiMode = UI_MENU;
       uiDrawList(menuCat, menuSel, autoCycle, batPct, batCharging);
       return;
     }
     uiDrawSetMenu(setMenuSel);
+    return;
+  }
+
+  if (uiMode == UI_BLOG)
+  {
+    if (navPrev)
+      blogN = 0;
+    if (autoShort)
+    {
+      uiMode = UI_SETMENU;
+      uiDrawSetMenu(setMenuSel);
+      return;
+    }
+    uiDrawBlog((uint32_t)emuNowMs, batPct, batMvRaw * (uint32_t)vbatCal / 1000);
     return;
   }
 

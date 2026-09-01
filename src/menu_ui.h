@@ -210,7 +210,7 @@ static void uiRotateBlit(const uint16_t *src, uint16_t *dst, int deg)
 }
 
 // Petit menu des Settings (apres le code PIN) : Avatar / Proximity / Back
-#define SETMENU_N 6 // Avatar, Proximity, Rotate, OTA, Batt (info), Back
+#define SETMENU_N 7 // Avatar, Proximity, Rotate, OTA, Batt, Batt log, Back
 static void uiDrawSetMenu(int sel)
 {
   canvas->fillScreen(RGB565_BLACK);
@@ -224,10 +224,10 @@ static void uiDrawSetMenu(int sel)
   else
     snprintf(batt, sizeof(batt), "Batt: --");
   const char *IT[SETMENU_N] = {"Avatar", "Proximity", "Rotate screen",
-                               "OTA flash mode", batt, "Back"};
+                               "OTA flash mode", batt, "Batt log", "Back"};
   for (int i = 0; i < SETMENU_N; i++)
   {
-    int y = 96 + i * 38;
+    int y = 88 + i * 34;
     if (i == sel)
     {
       int w = mfTextW(IT[i]) + 36;
@@ -240,6 +240,67 @@ static void uiDrawSetMenu(int sel)
       mfPrint(CX - mfTextW(IT[i]) / 2, y, IT[i],
               i == 4 ? rgb565(130, 130, 130) : RGB565_WHITE);
   }
+}
+
+// Ecran Settings > Batt log : courbe de decharge enregistree pendant que le
+// badge tourne. Ordonnee = %, abscisse = temps ecoule. Pente %/h calculee
+// entre le premier et le dernier echantillon -> projection d'autonomie
+// pleine->vide. gauche = remise a zero, centre = retour.
+static void uiDrawBlog(uint32_t now, int curPct, uint32_t curMv)
+{
+  canvas->fillScreen(RGB565_BLACK);
+  mfPrint(CX - mfTextW("BATT LOG") / 2, 44, "BATT LOG",
+          rgb565(0x9d, 0x97, 0xed));
+  const int gx0 = 64, gx1 = 296, gy0 = 92, gy1 = 232;
+  // grille : 0 / 50 / 100 %
+  for (int p = 0; p <= 100; p += 50)
+  {
+    int y = gy1 - (gy1 - gy0) * p / 100;
+    for (int x = gx0; x < gx1; x += 4)
+      canvas->drawPixel(x, y, rgb565(46, 50, 46));
+  }
+  char buf[28];
+  if (blogN < 2)
+  {
+    mdPrint(CX - mdTextW("recording...") / 2, 150, "recording...",
+            rgb565(150, 160, 150));
+    snprintf(buf, sizeof(buf), "1 point / %lu min",
+             (unsigned long)(blogIvlMs / 60000));
+    mdPrint(CX - mdTextW(buf) / 2, 176, buf, rgb565(130, 130, 130));
+  }
+  else
+  {
+    for (int i = 1; i < blogN; i++)
+    {
+      int xa = gx0 + (gx1 - gx0) * (i - 1) / (blogN - 1);
+      int xb = gx0 + (gx1 - gx0) * i / (blogN - 1);
+      int ya = gy1 - (gy1 - gy0) * blogPct[i - 1] / 100;
+      int yb = gy1 - (gy1 - gy0) * blogPct[i] / 100;
+      canvas->drawLine(xa, ya, xb, yb, rgb565(0xfb, 0xd9, 0x75));
+      canvas->drawLine(xa, ya + 1, xb, yb + 1, rgb565(0xfb, 0xd9, 0x75));
+    }
+  }
+  // stats : duree couverte, etat courant, pente et projection
+  uint32_t spanMin = blogN > 1 ? (uint32_t)(blogN - 1) * blogIvlMs / 60000 : 0;
+  snprintf(buf, sizeof(buf), "%luh%02lu  %d%%  %lu.%02luV",
+           (unsigned long)(spanMin / 60), (unsigned long)(spanMin % 60),
+           curPct < 0 ? 0 : curPct, (unsigned long)(curMv / 1000),
+           (unsigned long)(curMv % 1000 / 10));
+  mfPrint(CX - mfTextW(buf) / 2, 246, buf, RGB565_WHITE);
+  if (blogN > 5 && blogPct[0] > blogPct[blogN - 1])
+  {
+    float hours = (blogN - 1) * (blogIvlMs / 1000.0f) / 3600.0f;
+    float rate = (blogPct[0] - blogPct[blogN - 1]) / hours; // %/h
+    if (rate > 0.5f)
+    {
+      snprintf(buf, sizeof(buf), "-%d.%d%%/h  full in %d.%dh",
+               (int)rate, (int)(rate * 10) % 10, (int)(100 / rate),
+               (int)(1000 / rate) % 10);
+      bbPrint(CX - bbTextW(buf) / 2, 276, buf, rgb565(0xfb, 0xd9, 0x75));
+    }
+  }
+  mdPrint(CX - mdTextW("left: reset   center: back") / 2, 308,
+          "left: reset   center: back", rgb565(130, 130, 130));
 }
 
 // Ecran Settings > Batt : CALIBRATION de la jauge par badge. Le pont
