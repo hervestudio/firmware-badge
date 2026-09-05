@@ -665,12 +665,19 @@ Module.onRuntimeInitialized = () => {
       px[j + 3] = 255;
     }
     ctx.putImageData(img, 0, 0);
-    // favicon VIVANT : miroir de l'ecran du badge (le Conf Buddy configure,
-    // anime), rafraichi ~4x/s — un onglet qui vit
-    if (now - favLast > 250) {
+    // favicon VIVANT : le Conf Buddy UNIQUEMENT, rond sur fond transparent.
+    // Capture seulement pendant l'anim idle (la sphere, en overscan, remplit
+    // alors tout le cercle de l'ecran) ; sur les autres ecrans le favicon
+    // reste fige sur le dernier buddy vu.
+    if (now - favLast > 250 && Module._emu_idle_on()) {
       favLast = now;
       favCtx.clearRect(0, 0, 64, 64);
+      favCtx.save();
+      favCtx.beginPath();
+      favCtx.arc(32, 32, 31.5, 0, Math.PI * 2);
+      favCtx.clip();
       favCtx.drawImage(cv, 0, 0, 64, 64);
+      favCtx.restore();
       fav.href = favCv.toDataURL('image/png');
     }
     requestAnimationFrame(loop);

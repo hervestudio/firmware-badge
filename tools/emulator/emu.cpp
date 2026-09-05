@@ -500,6 +500,12 @@ static void drawEmuTick()
 extern "C"
 {
   EMSCRIPTEN_KEEPALIVE int emu_mode() { return (int)uiMode; }
+  // vrai quand l'anim Conf Buddy est a l'ecran : la sphere (overscan +13 %)
+  // remplit tout le cercle — le favicon de la page ne se met a jour que la
+  EMSCRIPTEN_KEEPALIVE int emu_idle_on()
+  {
+    return uiMode == UI_ANIM && ACTIVE[slot] == 8;
+  }
   EMSCRIPTEN_KEEPALIVE void emu_draw_seg(int x0, int y0, int x1, int y1,
                                          int col, int r, int brush)
   {
