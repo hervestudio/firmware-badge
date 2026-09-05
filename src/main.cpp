@@ -69,6 +69,11 @@
 #define BTN_PREV 20 // precedente / monter dans le menu ; maintenu au BOOT -> mode flash OTA
 #define BTN_AUTO 21 // appui court : ouvre le menu / selectionne ; appui long 2 s : extinction
 #define BTN_BOOT 0  // bouton BOOT de la carte : aussi "suivante" (pratique en test)
+#define PIN_RGB 48  // LED RGB WS2812 du devkit : jamais utilisee, mais sa broche
+                    // data flottante peut lui faire "latcher" une couleur qui
+                    // reste allumee (lueur visible a travers la dalle, badge
+                    // eteint compris — revue Romain 2026-09-05). On l'eteint
+                    // explicitement au boot et avant le deep sleep.
 
 // Jauge batterie (menu) : pont diviseur 100k/100k B+ -> GPIO5 -> GND, et
 // detection de charge par le VBUS du TP4056 via 100k/100k -> GPIO6.
@@ -1310,6 +1315,10 @@ static void powerOff()
   gpio_hold_en((gpio_num_t)TFT_BL);
   digitalWrite(TFT_BL_LEGACY, LOW);
   gpio_hold_en((gpio_num_t)TFT_BL_LEGACY);
+  neopixelWrite(PIN_RGB, 0, 0, 0); // WS2812 du devkit : noir explicite
+  pinMode(PIN_RGB, OUTPUT);
+  digitalWrite(PIN_RGB, LOW);
+  gpio_hold_en((gpio_num_t)PIN_RGB); // et data verrouillee basse en sommeil
   gpio_deep_sleep_hold_en();
   // Attendre le RELACHEMENT du bouton : l'appui long est encore en cours a cet
   // instant, et le reveil ext0 se declenche sur niveau bas — sans cette attente
@@ -1499,6 +1508,10 @@ void setup()
   gpio_hold_dis((gpio_num_t)TFT_BL_LEGACY);
   pinMode(TFT_BL_LEGACY, OUTPUT);
   digitalWrite(TFT_BL_LEGACY, HIGH);
+  gpio_hold_dis((gpio_num_t)PIN_RGB);
+  neopixelWrite(PIN_RGB, 0, 0, 0); // WS2812 eteinte des le boot (data flottante
+  pinMode(PIN_RGB, OUTPUT);        // = couleur aleatoire possible)
+  digitalWrite(PIN_RGB, LOW);
 
   pinMode(TFT_TE, INPUT_PULLDOWN);
   attachInterrupt(digitalPinToInterrupt(TFT_TE), teIsr, RISING);
