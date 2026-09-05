@@ -76,9 +76,12 @@ static const uint8_t ACTIVE[] = {8, 4, 5, 6, 7, 9, 10, 14, 15};
 static const int NACTIVE = (int)sizeof(ACTIVE);
 // (tables du menu : voir menu_ui.h, partage avec le firmware)
 
+// ATTENTION : le JS d'index.html teste ces numeros en dur (UI_DRAW=5,
+// UI_SET=14, UI_SETUP=15) — tout NOUVEL etat s'ajoute EN FIN d'enum.
 enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW,
-                        UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_FLASH, UI_OFF, UI_VCAL, UI_BLOG,
-                        UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX, UI_LB };
+                        UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_FLASH, UI_OFF,
+                        UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX, UI_LB,
+                        UI_VCAL, UI_BLOG };
 static UiMode uiMode = UI_ANIM;
 static int menuSel = 0, slot = 0, menuCat = 0, schedIdx = 0;
 
