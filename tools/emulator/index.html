@@ -39,6 +39,33 @@
     border-radius: 5px; padding: 1px 6px; font-size: 11px; color: var(--ink);
   }
 
+  /* ---- credit (bas-gauche) + billetterie (haut-droite) ---- */
+  #credit {
+    position: fixed; left: 6vw; bottom: 2.2vh; z-index: 2;
+    font-size: 12px; color: rgba(33,28,59,.55);
+  }
+  #credit a {
+    color: var(--ink); text-decoration: none; font-weight: 600;
+    border-bottom: 1px solid rgba(33,28,59,.35);
+  }
+  #credit a:hover { border-bottom-color: var(--ink); }
+  #ticket {
+    position: fixed; top: 5.5vh; right: 6vw; z-index: 3;
+    display: inline-block; background: var(--ink); color: #fff;
+    font-size: 13.5px; font-weight: 600; letter-spacing: .02em;
+    padding: 11px 20px; border-radius: 999px; text-decoration: none;
+    box-shadow: 0 4px 14px rgba(33,28,59,.28);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  #ticket:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 7px 18px rgba(33,28,59,.34);
+  }
+  @media (max-width: 720px) {
+    #ticket { top: auto; bottom: 2.2vh; right: 5vw; }
+    #credit { max-width: 55vw; }
+  }
+
   /* ---- badge 3D transparent, ancre en haut (sangle coupee au bord) ---- */
   #badge3d {
     position: fixed; top: 0; left: 50%;
@@ -191,6 +218,9 @@
 </head>
 <body>
 <div id="frame"></div>
+
+<a id="ticket" href="https://threejs.paris/" target="_blank" rel="noopener">Buy conference ticket</a>
+<div id="credit">made by <a href="https://www.herve.paris" target="_blank" rel="noopener">Herv&eacute; Studio</a></div>
 
 <div id="badge3d">
   <img src="badge3d.webp" alt="threejs.paris conference badge">
