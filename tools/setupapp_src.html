@@ -241,14 +241,18 @@ function drawFace(ctx, s, id, hu, sa) {
     ctx.stroke(new Path2D('M32.1099 34.3398C37.0394 44.1075 36.3352 71.3541 7.81445 65.1851'));
     ctx.stroke(new Path2D('M38.8256 34.3398C33.8961 44.1075 34.6003 71.3541 63.1211 65.1851'));
     ctx.restore(); break; }
-  case 1: { // rire : grande bouche, blanc = demi-lune basse
-    eye(-0.380, -0.190, 0.105, 0.105); eye(0.380, -0.190, 0.105, 0.105);
-    const [mx, scm] = P(0, 0.075), my = Y(0.075);
-    const rw = 0.320 * fr * scm, rh = 0.230 * fr;
-    ctx.beginPath(); ctx.ellipse(mx, my, rw, rh, 0, 0, 7); ctx.fill();
-    ctx.save(); ctx.beginPath(); ctx.rect(mx - rw, my, rw * 2, rh); ctx.clip();
+  case 1: { // rire : bouche carree-arrondie + bol blanc (image ref 2026-09-07)
+    eye(-0.437, -0.232, 0.106, 0.106); eye(0.437, -0.232, 0.106, 0.106);
+    const [mx, scm] = P(0, 0.072), my = Y(0.072);
+    const mW = 0.231 * fr * scm, mH = 0.185 * fr;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(mx - mW, my - mH, mW * 2, mH * 2, 0.105 * fr);
+    else ctx.ellipse(mx, my, mW, mH, 0, 0, 7);
+    ctx.fill();
+    const rw2 = mW - 0.042 * fr, rh2 = mH - 0.026 * fr, yCut = my - 0.013 * fr;
+    ctx.save(); ctx.beginPath(); ctx.rect(mx - rw2, yCut, rw2 * 2, rh2); ctx.clip();
     ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.ellipse(mx, my, rw * 0.86, rh * 0.86, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(mx, yCut, rw2, rh2, 0, 0, 7); ctx.fill();
     ctx.restore(); ctx.fillStyle = ink; break; }
   case 2: { // petit sourire fin
     eye(-0.431, -0.213, 0.084, 0.084); eye(0.431, -0.213, 0.084, 0.084);

@@ -212,24 +212,28 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
   // ------------------------------------------- rire : grande bouche ouverte
   case AF_RIRE:
   {
-    // proportions du rendu du SITE (reference Romain 2026-08-17) : bouche
-    // plus grande que le board, juste sous les yeux, blanc coupe au milieu
-    avProject(-0.380f, -0.190f, &exl, &scl, &visl);
-    avProject(0.380f, -0.190f, &exr, &scr, &visr);
-    avProject(0, 0.075f, &mxx, &scm, &vism);
-    float er = fr * 0.105f;
+    // recale sur le rendu de reference (image Romain 2026-09-07) : bouche
+    // CARREE-ARRONDIE (plus un ellipse), blanc en bol qui demarre juste
+    // au-dessus du centre, lisere noir conserve en bas et sur les cotes
+    avProject(-0.437f, -0.232f, &exl, &scl, &visl);
+    avProject(0.437f, -0.232f, &exr, &scr, &visr);
+    avProject(0, 0.072f, &mxx, &scm, &vism);
+    float er = fr * 0.106f;
     int ry = (int)(er * openness); if (ry < 1) ry = 1;
     if (visl > 0)
-      canvas->fillEllipse((int)exl, (int)avY(-0.190f), (int)(er * scl), ry, ink);
+      canvas->fillEllipse((int)exl, (int)avY(-0.232f), (int)(er * scl), ry, ink);
     if (visr > 0)
-      canvas->fillEllipse((int)exr, (int)avY(-0.190f), (int)(er * scr), ry, ink);
-    float rw = fr * 0.320f * scm, rh = fr * 0.230f, my = avY(0.075f);
-    canvas->fillEllipse((int)mxx, (int)my, (int)rw, (int)rh, ink);
-    float rw2 = rw * 0.86f, rh2 = rh * 0.86f;
-    int yCut = (int)my;
-    for (int y = yCut; y <= (int)(my + rh2); y++)
+      canvas->fillEllipse((int)exr, (int)avY(-0.232f), (int)(er * scr), ry, ink);
+    float mW = fr * 0.231f * scm, mH = fr * 0.185f, my = avY(0.072f);
+    canvas->fillRoundRect((int)(mxx - mW), (int)(my - mH), (int)(2 * mW),
+                          (int)(2 * mH), (int)(fr * 0.105f), ink);
+    // bol blanc : demi-ellipse coupee 0.013 fr au-dessus du centre, lisere
+    // noir de 0.039 fr en bas et 0.042 fr sur les cotes
+    float rw2 = mW - fr * 0.042f, rh2 = mH - fr * 0.026f;
+    float yCut = my - fr * 0.013f;
+    for (int y = (int)yCut; y <= (int)(yCut + rh2); y++)
     {
-      float t = (y - my) / rh2;
+      float t = (y - yCut) / rh2;
       float k = 1 - t * t;
       if (k <= 0)
         continue;
