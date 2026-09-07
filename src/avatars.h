@@ -143,6 +143,48 @@ static float avY(float ny) // y ecran d'un point du visage
   return avCy + ny * avFr + avBreathe * 0.4f + avYShift;
 }
 
+// ---- anticrenelage (revue Romain 2026-09-07 : visages creneles) ----
+// melange un pixel avec l'encre selon une couverture 0..1 (lecture du
+// framebuffer : API canvas-> des deux plateformes)
+static inline void avBlend(int x, int y, uint16_t ink, float a)
+{
+  if (x < 0 || x >= W || y < 0 || y >= H || a <= 0.003f)
+    return;
+  uint16_t *fb = canvas->getFramebuffer();
+  if (a >= 0.997f)
+  {
+    fb[y * W + x] = ink;
+    return;
+  }
+  uint16_t d = fb[y * W + x];
+  int dr = (d >> 11) & 31, dg = (d >> 5) & 63, db = d & 31;
+  int ir = (ink >> 11) & 31, ig = (ink >> 5) & 63, ib = ink & 31;
+  int r = dr + (int)((ir - dr) * a);
+  int g = dg + (int)((ig - dg) * a);
+  int b = db + (int)((ib - db) * a);
+  fb[y * W + x] = (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+// ellipse pleine anticrenelee (bord adouci sur ~1 px)
+static void avFillEllipseAA(float cx, float cy, float rx, float ry, uint16_t ink)
+{
+  if (rx < 0.5f || ry < 0.5f)
+    return;
+  float rm = rx < ry ? rx : ry;
+  int x0 = (int)(cx - rx - 1), x1 = (int)(cx + rx + 1);
+  int y0 = (int)(cy - ry - 1), y1 = (int)(cy + ry + 1);
+  for (int y = y0; y <= y1; y++)
+    for (int x = x0; x <= x1; x++)
+    {
+      float dx = (x + 0.5f - cx) / rx, dy = (y + 0.5f - cy) / ry;
+      float d = sqrtf(dx * dx + dy * dy);
+      float a = (1 - d) * rm + 0.5f;
+      if (a <= 0)
+        continue;
+      avBlend(x, y, ink, a > 1 ? 1 : a);
+    }
+}
+
 // trace epais le long d'une courbe : serie de disques (pas d'arc natif).
 // mode : 0 = arc doux vers le bas (sourire), 1 = onde sin 1.5 periode,
 // 2 = omega chat (2 bosses vers le bas), 3 = arc vers le haut (oeil ferme),
@@ -162,19 +204,19 @@ static void avStroke(int mode, float x0, float w, float yBase, float amp,
     case 3: y = yBase - amp * sinf(u * (float)PI); break;
     case 4: y = yBase - amp * u + amp * 0.5f * (0.25f - (u - 0.5f) * (u - 0.5f)) * 4.0f; break;
     }
-    canvas->fillCircle((int)(x0 + u * w), (int)y, (int)r, ink);
+    avFillEllipseAA(x0 + u * w, y, r, r, ink);
   }
 }
 
 // etoile a 8 branches (yeux AF_ETOILES) : disque central + 8 lobes
 static void avStar(float cx, float cy, float R, uint16_t ink)
 {
-  canvas->fillCircle((int)cx, (int)cy, (int)(R * 0.72f), ink);
+  avFillEllipseAA(cx, cy, R * 0.72f, R * 0.72f, ink);
   for (int k = 0; k < 8; k++)
   {
     float a = k * (float)PI / 4.0f;
-    canvas->fillCircle((int)(cx + cosf(a) * R * 0.68f),
-                       (int)(cy + sinf(a) * R * 0.68f), (int)(R * 0.36f), ink);
+    avFillEllipseAA(cx + cosf(a) * R * 0.68f, cy + sinf(a) * R * 0.68f,
+                    R * 0.36f, R * 0.36f, ink);
   }
 }
 
@@ -203,11 +245,11 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
     avProject(0.381f, -0.210f, &exr, &scr, &visr);
     avProject(0, 0.074f, &mxx, &scm, &vism);
     float er = fr * 0.099f;
-    int ry = (int)(er * openness); if (ry < 1) ry = 1;
+    float ryf = er * openness; if (ryf < 1) ryf = 1;
     if (visl > 0)
-      canvas->fillEllipse((int)exl, (int)avY(-0.210f), (int)(er * scl), ry, ink);
+      avFillEllipseAA(exl, avY(-0.210f), er * scl, ryf, ink);
     if (visr > 0)
-      canvas->fillEllipse((int)exr, (int)avY(-0.210f), (int)(er * scr), ry, ink);
+      avFillEllipseAA(exr, avY(-0.210f), er * scr, ryf, ink);
     avatarPlatformMouth(mxx, avY(0.074f), fr * 0.316f * scm, fr * 0.342f, ink);
     break;
   }
@@ -217,19 +259,20 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
     // recale sur le rendu de reference (image Romain 2026-09-07) : bouche
     // CARREE-ARRONDIE (plus un ellipse), blanc en bol qui demarre juste
     // au-dessus du centre, lisere noir conserve en bas et sur les cotes
-    // echelle/position calees sur la Frame 76 (reference Romain 2026-09-07)
-    avProject(-0.470f, -0.255f, &exl, &scl, &visl);
-    avProject(0.470f, -0.255f, &exr, &scr, &visr);
-    avProject(0, 0.050f, &mxx, &scm, &vism);
+    // echelle/position : 2e reference Romain 2026-09-07 (bouche agrandie,
+    // yeux recales)
+    avProject(-0.465f, -0.215f, &exl, &scl, &visl);
+    avProject(0.465f, -0.215f, &exr, &scr, &visr);
+    avProject(0, 0.085f, &mxx, &scm, &vism);
     float er = fr * 0.095f;
-    int ry = (int)(er * openness); if (ry < 1) ry = 1;
+    float ryf = er * openness; if (ryf < 1) ryf = 1;
     if (visl > 0)
-      canvas->fillEllipse((int)exl, (int)avY(-0.255f), (int)(er * scl), ry, ink);
+      avFillEllipseAA(exl, avY(-0.255f), er * scl, ryf, ink);
     if (visr > 0)
-      canvas->fillEllipse((int)exr, (int)avY(-0.255f), (int)(er * scr), ry, ink);
+      avFillEllipseAA(exr, avY(-0.255f), er * scr, ryf, ink);
     // bouche = masque tessele de l'export SVG Mouth_visage2.svg (73x59),
     // rendu par la plateforme — voir initLaughMask (ratio du SVG conserve)
-    avatarPlatformLaugh(mxx, avY(0.050f), fr * 0.410f * scm, fr * 0.331f, ink);
+    avatarPlatformLaugh(mxx, avY(0.085f), fr * 0.485f * scm, fr * 0.392f, ink);
     break;
   }
   // ------------------------------------------------------ petit sourire fin
@@ -239,11 +282,11 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
     avProject(0.431f, -0.213f, &exr, &scr, &visr);
     avProject(0, -0.032f, &mxx, &scm, &vism);
     float er = fr * 0.084f;
-    int ry = (int)(er * openness); if (ry < 1) ry = 1;
+    float ryf = er * openness; if (ryf < 1) ryf = 1;
     if (visl > 0)
-      canvas->fillEllipse((int)exl, (int)avY(-0.213f), (int)(er * scl), ry, ink);
+      avFillEllipseAA(exl, avY(-0.213f), er * scl, ryf, ink);
     if (visr > 0)
-      canvas->fillEllipse((int)exr, (int)avY(-0.213f), (int)(er * scr), ry, ink);
+      avFillEllipseAA(exr, avY(-0.213f), er * scr, ryf, ink);
     float w = fr * 0.380f * scm;
     avStroke(0, mxx - w / 2, w, avY(-0.038f) - fr * 0.010f, fr * 0.025f,
              fr * 0.026f, ink);
@@ -256,11 +299,11 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
     avProject(0.431f, -0.194f, &exr, &scr, &visr);
     avProject(0, 0.035f, &mxx, &scm, &vism);
     float er = fr * 0.103f;
-    int ry = (int)(er * openness); if (ry < 1) ry = 1;
+    float ryf = er * openness; if (ryf < 1) ryf = 1;
     if (visl > 0)
-      canvas->fillEllipse((int)exl, (int)avY(-0.194f), (int)(er * scl), ry, ink);
+      avFillEllipseAA(exl, avY(-0.194f), er * scl, ryf, ink);
     if (visr > 0)
-      canvas->fillEllipse((int)exr, (int)avY(-0.194f), (int)(er * scr), ry, ink);
+      avFillEllipseAA(exr, avY(-0.194f), er * scr, ryf, ink);
     float w = fr * 0.440f * scm;
     avStroke(1, mxx - w / 2, w, avY(0.032f), fr * 0.018f, fr * 0.028f, ink);
     break;
@@ -272,11 +315,11 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
     avProject(0.316f, -0.204f, &exr, &scr, &visr);
     avProject(0, 0.150f, &mxx, &scm, &vism);
     float rx = fr * 0.075f, ryv = fr * 0.094f;
-    int ry = (int)(ryv * openness); if (ry < 1) ry = 1;
+    float ryf = ryv * openness; if (ryf < 1) ryf = 1;
     if (visl > 0)
-      canvas->fillEllipse((int)exl, (int)avY(-0.204f), (int)(rx * scl), ry, ink);
+      avFillEllipseAA(exl, avY(-0.204f), rx * scl, ryf, ink);
     if (visr > 0)
-      canvas->fillEllipse((int)exr, (int)avY(-0.204f), (int)(rx * scr), ry, ink);
+      avFillEllipseAA(exr, avY(-0.204f), rx * scr, ryf, ink);
     float w = fr * 0.580f * scm, amp = fr * 0.105f;
     avStroke(2, mxx - w / 2, w, avY(0.100f), amp, fr * 0.035f, ink);
     break;
@@ -298,8 +341,8 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
       float hw = lensHalf * sc;
       canvas->fillRect((int)(c - hw), (int)(barTop + barH - 1), (int)(2 * hw),
                        (int)(lensDrop * 0.5f), ink);
-      canvas->fillEllipse((int)c, (int)(barTop + barH + lensDrop * 0.5f),
-                          (int)hw, (int)(lensDrop * 0.5f), ink);
+      avFillEllipseAA(c, barTop + barH + lensDrop * 0.5f, hw,
+                      lensDrop * 0.5f, ink);
     }
     float w = fr * 0.330f * scm;
     avStroke(4, mxx - w / 2, w, avY(0.058f) + fr * 0.045f, fr * 0.090f,
@@ -327,11 +370,11 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
     avProject(0.342f, -0.168f, &exr, &scr, &visr);
     avProject(0, 0.103f, &mxx, &scm, &vism);
     float er = fr * 0.084f;
-    int ry = (int)(er * openness); if (ry < 1) ry = 1;
+    float ryf = er * openness; if (ryf < 1) ryf = 1;
     if (visl > 0)
-      canvas->fillEllipse((int)exl, (int)avY(-0.168f), (int)(er * scl), ry, ink);
+      avFillEllipseAA(exl, avY(-0.168f), er * scl, ryf, ink);
     if (visr > 0)
-      canvas->fillEllipse((int)exr, (int)avY(-0.168f), (int)(er * scr), ry, ink);
+      avFillEllipseAA(exr, avY(-0.168f), er * scr, ryf, ink);
     float w = fr * 0.826f * scm;
     avStroke(1, mxx - w / 2, w, avY(0.103f), fr * 0.033f, fr * 0.035f, ink);
     break;

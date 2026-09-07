@@ -527,14 +527,27 @@ static void drawLaughImg(float cx, float cy, float wpx, float hpx, uint16_t ink)
     return;
   int x0 = (int)(cx - iw / 2.0f), y0 = (int)(cy - ih / 2.0f);
   uint16_t wht = rgb565(255, 255, 255);
+  // surechantillonnage 2x2 du masque -> couverture encre/blanc, melange AA
   for (int yy = 0; yy < ih; yy++)
   {
-    int my = yy * LAUGH_MH / ih;
+    int mya = (yy * 2) * LAUGH_MH / (ih * 2);
+    int myb = (yy * 2 + 1) * LAUGH_MH / (ih * 2);
     for (int xx = 0; xx < iw; xx++)
     {
-      uint8_t v = laughMask[my * LAUGH_MW + xx * LAUGH_MW / iw];
-      if (v)
-        canvas->drawPixel(x0 + xx, y0 + yy, v == 2 ? wht : ink);
+      int mxa = (xx * 2) * LAUGH_MW / (iw * 2);
+      int mxb = (xx * 2 + 1) * LAUGH_MW / (iw * 2);
+      uint8_t v0 = laughMask[mya * LAUGH_MW + mxa];
+      uint8_t v1 = laughMask[mya * LAUGH_MW + mxb];
+      uint8_t v2 = laughMask[myb * LAUGH_MW + mxa];
+      uint8_t v3 = laughMask[myb * LAUGH_MW + mxb];
+      int nInk = (v0 == 1) + (v1 == 1) + (v2 == 1) + (v3 == 1);
+      int nWht = (v0 == 2) + (v1 == 2) + (v2 == 2) + (v3 == 2);
+      if (!nInk && !nWht)
+        continue;
+      if (nWht)
+        avBlend(x0 + xx, y0 + yy, wht, nWht / 4.0f);
+      if (nInk)
+        avBlend(x0 + xx, y0 + yy, ink, nInk / 4.0f);
     }
   }
 }
@@ -545,13 +558,19 @@ static void drawMouth(float cx, float cy, float wpx, float hpx, uint16_t ink)
   if (iw < 2 || ih < 2)
     return;
   int x0 = (int)(cx - iw / 2.0f), y0 = (int)(cy - ih / 2.0f);
+  // surechantillonnage 2x2 -> couverture, melange AA (voir avBlend)
   for (int yy = 0; yy < ih; yy++)
   {
-    int my = yy * MOUTH_MH / ih;
+    int mya = (yy * 2) * MOUTH_MH / (ih * 2);
+    int myb = (yy * 2 + 1) * MOUTH_MH / (ih * 2);
     for (int xx = 0; xx < iw; xx++)
     {
-      if (mouthMask[my * MOUTH_MW + xx * MOUTH_MW / iw])
-        canvas->drawPixel(x0 + xx, y0 + yy, ink);
+      int mxa = (xx * 2) * MOUTH_MW / (iw * 2);
+      int mxb = (xx * 2 + 1) * MOUTH_MW / (iw * 2);
+      int n = mouthMask[mya * MOUTH_MW + mxa] + mouthMask[mya * MOUTH_MW + mxb] +
+              mouthMask[myb * MOUTH_MW + mxa] + mouthMask[myb * MOUTH_MW + mxb];
+      if (n)
+        avBlend(x0 + xx, y0 + yy, ink, n / 4.0f);
     }
   }
 }
