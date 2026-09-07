@@ -217,18 +217,19 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
     // recale sur le rendu de reference (image Romain 2026-09-07) : bouche
     // CARREE-ARRONDIE (plus un ellipse), blanc en bol qui demarre juste
     // au-dessus du centre, lisere noir conserve en bas et sur les cotes
-    avProject(-0.437f, -0.232f, &exl, &scl, &visl);
-    avProject(0.437f, -0.232f, &exr, &scr, &visr);
-    avProject(0, 0.072f, &mxx, &scm, &vism);
-    float er = fr * 0.106f;
+    // echelle/position calees sur la Frame 76 (reference Romain 2026-09-07)
+    avProject(-0.470f, -0.255f, &exl, &scl, &visl);
+    avProject(0.470f, -0.255f, &exr, &scr, &visr);
+    avProject(0, 0.050f, &mxx, &scm, &vism);
+    float er = fr * 0.095f;
     int ry = (int)(er * openness); if (ry < 1) ry = 1;
     if (visl > 0)
-      canvas->fillEllipse((int)exl, (int)avY(-0.232f), (int)(er * scl), ry, ink);
+      canvas->fillEllipse((int)exl, (int)avY(-0.255f), (int)(er * scl), ry, ink);
     if (visr > 0)
-      canvas->fillEllipse((int)exr, (int)avY(-0.232f), (int)(er * scr), ry, ink);
+      canvas->fillEllipse((int)exr, (int)avY(-0.255f), (int)(er * scr), ry, ink);
     // bouche = masque tessele de l'export SVG Mouth_visage2.svg (73x59),
-    // rendu par la plateforme — voir initLaughMask
-    avatarPlatformLaugh(mxx, avY(0.072f), fr * 0.462f * scm, fr * 0.373f, ink);
+    // rendu par la plateforme — voir initLaughMask (ratio du SVG conserve)
+    avatarPlatformLaugh(mxx, avY(0.050f), fr * 0.410f * scm, fr * 0.331f, ink);
     break;
   }
   // ------------------------------------------------------ petit sourire fin
