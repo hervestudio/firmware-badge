@@ -90,7 +90,7 @@
 
 <div class="card" id="s1">
   <span class="lab dingos">YOUR CONF BUDDY</span>
-  <div id="prevWrap"><canvas id="prev" width="120" height="120"></canvas></div>
+  <div id="prevWrap"><canvas id="prev" width="120" height="120"></canvas><script>{const c=document.getElementById("prev"),d=Math.min(3,window.devicePixelRatio||1);c.width=c.height=Math.round(120*d);}</script></div>
   <span class="lab dingos dim">COLOR</span>
   <input type="range" id="hue" min="0" max="359" value="0">
   <span class="lab dingos dim">INTENSITY</span>
@@ -196,8 +196,9 @@ function sphMaster(hu, sa) {
 }
 function drawFace(ctx, s, id, hu, sa) {
   ctx.clearRect(0, 0, s, s);
-  { const R = s*0.46; ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(sphMaster(hu, sa), s/2-R, s/2-R, R*2, R*2); }
+  { const R = s*0.46; ctx.imageSmoothingEnabled = false; // pixels francs (badge)
+    ctx.drawImage(sphMaster(hu, sa), s/2-R, s/2-R, R*2, R*2);
+    ctx.imageSmoothingEnabled = true; }
   // ---- visage : portage EXACT de avatarDrawFace (src/avatars.h), vue de
   // face (cosT=1, openness=1) — memes cotes Figma, memes traits
   const fr = s * 0.46, cx = s / 2, cy = s / 2, ink = '#272727';
@@ -305,7 +306,9 @@ const faces = document.getElementById('faces');
 for (let i = 0; i < 9; i++) {
   const b = document.createElement('button');
   const c = document.createElement('canvas');
-  c.width = c.height = 64;
+  const dprF = Math.min(3, window.devicePixelRatio || 1);
+  c.width = c.height = Math.round(64 * dprF);
+  c.style.width = c.style.height = '64px';
   b.appendChild(c);
   b.onclick = () => { face = i; custom = 1; sync(); sendBuddy(); };
   faces.appendChild(b);
@@ -314,8 +317,9 @@ function sync() {
   document.querySelectorAll('#faces button').forEach((b, i) =>
     b.classList.toggle('sel', i === face));
   document.querySelectorAll('#faces canvas').forEach((c, i) =>
-    drawFace(c.getContext('2d'), 64, i, hue, sat));
-  drawFace(document.getElementById('prev').getContext('2d'), 120, face, hue, sat);
+    drawFace(c.getContext('2d'), c.width, i, hue, sat));
+  drawFace(document.getElementById('prev').getContext('2d'),
+           document.getElementById('prev').width, face, hue, sat);
   document.getElementById('hue').value = hue;
   document.getElementById('sat').value = sat;
 }

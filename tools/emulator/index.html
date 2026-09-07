@@ -273,7 +273,7 @@
       </div>
       <div class="pcard" id="ps1">
         <span class="plab">YOUR CONF BUDDY</span>
-        <div id="pprevWrap"><canvas id="pprev" width="84" height="84"></canvas></div>
+        <div id="pprevWrap"><canvas id="pprev" width="84" height="84"></canvas></div><script>{const c=document.getElementById("pprev"),d=Math.min(3,window.devicePixelRatio||1);c.width=c.height=Math.round(84*d);}</script>
         <input type="range" id="phue" min="0" max="359" value="0">
         <input type="range" id="psat" min="35" max="130" value="100">
         <div id="pfaces"></div>
@@ -510,8 +510,9 @@ function sphMaster(hu, sa) {
 }
 function sDrawFace(ctx2, s, id, hu, sa) {
   ctx2.clearRect(0, 0, s, s);
-  { const R = s*0.46; ctx2.imageSmoothingEnabled = true;
-    ctx2.drawImage(sphMaster(hu, sa), s/2-R, s/2-R, R*2, R*2); }
+  { const R = s*0.46; ctx2.imageSmoothingEnabled = false; // pixels francs (badge)
+    ctx2.drawImage(sphMaster(hu, sa), s/2-R, s/2-R, R*2, R*2);
+    ctx2.imageSmoothingEnabled = true; }
   // ---- visage : portage EXACT de avatarDrawFace (src/avatars.h), vue de
   // face (cosT=1, openness=1) — memes cotes Figma, memes traits
   const fr = s * 0.46, cx = s / 2, cy = s / 2, ink = '#272727';
@@ -619,7 +620,9 @@ const pfaces = document.getElementById('pfaces');
   for (let i = 0; i < 9; i++) {
     const b = document.createElement('button');
     const c = document.createElement('canvas');
-    c.width = c.height = 48;
+    const dprF = Math.min(3, window.devicePixelRatio || 1);
+    c.width = c.height = Math.round(48 * dprF);
+    c.style.width = c.style.height = '48px';
     b.appendChild(c);
     b.onclick = () => { sFace = i; sSync(); sSendBuddy(); };
     pfaces.appendChild(b);
@@ -628,8 +631,9 @@ const pfaces = document.getElementById('pfaces');
     pfaces.querySelectorAll('button').forEach((b, i) =>
       b.classList.toggle('sel', i === sFace));
     pfaces.querySelectorAll('canvas').forEach((c, i) =>
-      sDrawFace(c.getContext('2d'), 48, i, sHue, sSat));
-    sDrawFace(document.getElementById('pprev').getContext('2d'), 84, sFace, sHue, sSat);
+      sDrawFace(c.getContext('2d'), c.width, i, sHue, sSat));
+    sDrawFace(document.getElementById('pprev').getContext('2d'),
+              document.getElementById('pprev').width, sFace, sHue, sSat);
     document.getElementById('phue').value = sHue;
     document.getElementById('psat').value = sSat;
   }
