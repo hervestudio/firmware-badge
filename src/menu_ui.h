@@ -25,7 +25,9 @@ static const char *UI_PLAY_IT[] = {"Snake", "Pong", "Sphere Run", "Roundtris"};
 // (tama.h, UI_PET) reste en place, re-ajouter l'entree suffit a le retablir)
 static const char *UI_WATCH_IT[] = {"Conf Buddy", "Snake", "Disco", "Globe",
                                     "Three Conf", "DVD", "Points", "Warp",
-                                    "Solar System"};
+                                    "Solar System", "My Photo"};
+// ("My Photo" n'apparait que si une photo a ete uploadee via Setup :
+// g_hasPhoto est declare par chaque plateforme avant l'include)
 
 // ---- rencontres (qui j'ai croise, combien de fois) : table partagee,
 // alimentee par socialReactTrigger (social_ui.h), persistee en NVS "met2"
@@ -92,7 +94,7 @@ static int uiListCount(int cat)
   switch (cat)
   {
   case UIC_PLAY: return 5;
-  case UIC_WATCH: return 10;
+  case UIC_WATCH: return g_hasPhoto ? 11 : 10;
   case UIC_MEET: return 5; // Schedule + QR Code + Encounters + Leaderboard + Back
   default: return 5; // More : Draw, Setup, Auto cycle, Settings, Back
                      // (OTA / Rotate / Batt deplaces dans Settings, sous PIN)

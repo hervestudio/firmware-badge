@@ -88,7 +88,9 @@ static WebSocketsServer *setupWs = nullptr;
 static bool setupRedraw = false; // l'etat a change -> repeindre la preview
 static uint8_t setupClients = 0;
 static uint16_t *setupSpr = nullptr; // sprite de preview du buddy (cache)
-static uint8_t setupStep = 0;        // etape affichee sur le telephone (0..2)
+static uint8_t setupStep = 0;        // etape affichee sur le telephone (0..3)
+static File setupPhotoFile;          // upload photo en cours (LittleFS)
+static uint32_t setupPhotoLeft = 0;  // octets restants attendus
 static bool setupBuilding = false;   // URL en cours de saisie -> QR "chantier"
 static bool setupQrDirty = true;     // l'URL a change -> re-encoder le QR
 
@@ -255,9 +257,38 @@ static void setupWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t le
     case 'B': // URL en cours de saisie / incomplete -> QR en construction
       setupBuilding = true;
       break;
-    case 'S': // etape affichee sur le telephone (0..2)
+    case 'S': // etape affichee sur le telephone (0..3)
       if (len >= 2)
-        setupStep = (uint8_t)((payload[1] - '0') % 3);
+        setupStep = (uint8_t)((payload[1] - '0') % 4);
+      break;
+    case 'P': // debut d'upload photo : "P<octets>" (RGB565 360x360 brut,
+              // recadre cote telephone), suivi de trames binaires acquittees
+    {
+      uint32_t n = strtoul((const char *)payload + 1, nullptr, 10);
+      if (n != (uint32_t)W * H * 2 || !LittleFS.begin(true))
+      {
+        setupWs->sendTXT(num, "PERR");
+        break;
+      }
+      if (setupPhotoFile)
+        setupPhotoFile.close();
+      setupPhotoFile = LittleFS.open("/photo.tmp", "w");
+      setupPhotoLeft = setupPhotoFile ? n : 0;
+      if (!setupPhotoFile)
+        setupWs->sendTXT(num, "PERR");
+      else
+      {
+        setupWs->sendTXT(num, "PACK"); // pret pour la premiere trame
+        Serial0.printf("setup : upload photo (%lu octets)\n", (unsigned long)n);
+      }
+      break;
+    }
+    case 'X': // suppression de la photo
+      if (LittleFS.begin(true))
+        LittleFS.remove("/photo.565");
+      g_hasPhoto = false;
+      setupWs->sendTXT(num, "XOK");
+      Serial0.println("setup : photo supprimee");
       break;
     case 'A': // buddy custom : hue,sat100,face
     {
@@ -291,6 +322,32 @@ static void setupWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t le
       break;
     }
     setupRedraw = true;
+    break;
+  case WStype_BIN: // trames de l'upload photo, acquittees une par une
+    if (setupPhotoFile && setupPhotoLeft)
+    {
+      size_t take = len > setupPhotoLeft ? setupPhotoLeft : len;
+      if (setupPhotoFile.write(payload, take) != take)
+      {
+        setupPhotoFile.close();
+        setupPhotoLeft = 0;
+        setupWs->sendTXT(num, "PERR");
+        break;
+      }
+      setupPhotoLeft -= take;
+      if (setupPhotoLeft == 0)
+      {
+        setupPhotoFile.close();
+        LittleFS.remove("/photo.565");
+        LittleFS.rename("/photo.tmp", "/photo.565");
+        g_hasPhoto = false; // myPhotoLoad rearme si le fichier est valide
+        myPhotoLoad();
+        setupWs->sendTXT(num, g_hasPhoto ? "POK" : "PERR");
+        Serial0.println("setup : photo recue");
+      }
+      else
+        setupWs->sendTXT(num, "PACK");
+    }
     break;
   default:
     break;

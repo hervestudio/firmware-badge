@@ -27,6 +27,7 @@
 #include <driver/rtc_io.h>
 #include <driver/gpio.h>
 #include <Preferences.h>
+#include <LittleFS.h> // photo du speaker uploadee via Setup (partition spiffs)
 
 // ---- Cablage (module : GND VCC SCL SDA RST DC CS BL SDO TE) ----
 // VCC -> 3V3   GND -> GND
@@ -101,7 +102,7 @@ static bool otaMode = false;
 #define CX 180
 #define CY 180
 
-#define ANIM_COUNT 16
+#define ANIM_COUNT 17
 #define ANIM_DURATION_MS 15000
 #define RADIUS 180 // rayon utile de l'ecran rond
 
@@ -1095,7 +1096,8 @@ static void resetIdle()
 
 // Anims actives (les autres restent dispo dans le code) + noms affiches.
 // Photos speaker (11..13) retirees avec les entrees Meet (revue 2026-08-29).
-static const uint8_t ACTIVE[] = {8, 4, 5, 6, 7, 9, 10, 14, 15};
+static const uint8_t ACTIVE[] = {8, 4, 5, 6, 7, 9, 10, 14, 15, 16};
+// (16 = My Photo : entree cachee et slot saute tant que g_hasPhoto est faux)
 static const int NACTIVE = (int)sizeof(ACTIVE);
 // (les tables du menu vivent dans menu_ui.h, partage avec l'emulateur)
 
@@ -1274,6 +1276,45 @@ static void updateBattery(uint32_t now)
     blogLast = now;
     blogPush((uint8_t)batPct, (uint16_t)batMvRaw, now);
   }
+}
+
+// ---- Photo du speaker uploadee via Setup (Watch > My Photo) ----
+// RGB565 360x360 brut dans /photo.565 (LittleFS, partition spiffs 3.4 MB),
+// recadree/reduite COTE TELEPHONE, chargee ici en PSRAM au boot.
+static uint16_t *g_myPhoto = nullptr;
+static bool g_hasPhoto = false; // pilote l'entree de menu (menu_ui.h)
+
+static void myPhotoLoad()
+{
+  if (!LittleFS.begin(true))
+  {
+    Serial0.println("photo : LittleFS indisponible");
+    return;
+  }
+  File f = LittleFS.open("/photo.565", "r");
+  if (!f)
+    return;
+  if (f.size() != (size_t)W * H * 2)
+  {
+    f.close();
+    return;
+  }
+  if (!g_myPhoto)
+    g_myPhoto = (uint16_t *)ps_malloc((size_t)W * H * 2);
+  if (g_myPhoto && f.read((uint8_t *)g_myPhoto, (size_t)W * H * 2) == (size_t)W * H * 2)
+  {
+    g_hasPhoto = true;
+    Serial0.println("photo : chargee (Watch > My Photo)");
+  }
+  f.close();
+}
+
+static void animMyPhoto(float)
+{
+  if (g_hasPhoto && g_myPhoto)
+    memcpy(canvas->getFramebuffer(), g_myPhoto, (size_t)W * H * 2);
+  else
+    canvas->fillScreen(RGB565_BLACK);
 }
 
 #include "menu_ui.h" // menu bulles + listes (partage firmware/emulateur)
@@ -1591,6 +1632,7 @@ void setup()
   prefs.getString("bname", qrName, sizeof(qrName));
   socialMetLoad(); // compteurs de rencontres (ecran Meet > Encounters)
   lbLoad();        // scores appris des autres badges (Meet > Leaderboard)
+  myPhotoLoad();   // photo uploadee via Setup (Watch > My Photo)
   socialRssiNear = (int8_t)prefs.getChar("prox", -62); // seuil de proximite (= Normal)
   prefs.getString("bcomp", qrCompany, sizeof(qrCompany));
   prefs.getString("bmsg", qrMsg, sizeof(qrMsg));
@@ -2589,11 +2631,15 @@ void loop()
   if (navNext)
   {
     slot = (slot + 1) % NACTIVE;
+    if (ACTIVE[slot] == 16 && !g_hasPhoto)
+      slot = (slot + 1) % NACTIVE;
     slotStartMs = now;
   }
   if (navPrev)
   {
     slot = (slot + NACTIVE - 1) % NACTIVE;
+    if (ACTIVE[slot] == 16 && !g_hasPhoto)
+      slot = (slot + NACTIVE - 1) % NACTIVE;
     slotStartMs = now;
   }
   if (autoShort)
@@ -2605,6 +2651,8 @@ void loop()
   if (autoCycle && now - slotStartMs >= ANIM_DURATION_MS)
   {
     slot = (slot + 1) % NACTIVE;
+    if (ACTIVE[slot] == 16 && !g_hasPhoto)
+      slot = (slot + 1) % NACTIVE;
     slotStartMs = now;
   }
   if (uiMode == UI_HOME)
@@ -2625,7 +2673,8 @@ void loop()
     static const char *names[ANIM_COUNT] = {"cube", "starfield", "plasma", "torus",
                                             "snake", "disco", "globe", "threeconf",
                                             "idlerainbow", "dvd", "points", "photo",
-                                            "photo2", "photo3", "warp", "solar"};
+                                            "photo2", "photo3", "warp", "solar",
+                                            "myphoto"};
     Serial0.printf("animation : %s\n", names[anim]);
   }
   float t = (now - animStartMs) / 1000.0f; // temps local a l'animation
@@ -2648,6 +2697,7 @@ void loop()
   case 13: animPhoto3(t); break;
   case 14: animWarp(t, dt); break;
   case 15: animSolar(t, dt); break;
+  case 16: animMyPhoto(t); break;
   }
   if (anim == 8) // Conf Buddy : reaction "un ami est la" par-dessus l'anim
     socialReactDraw(now);

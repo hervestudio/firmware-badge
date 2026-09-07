@@ -204,6 +204,15 @@
   #pnav button { border: none; cursor: pointer; border-radius: 18px;
                  padding: 9px 22px; font-size: 11px; letter-spacing: 1px;
                  font-family: 'DingosBlack', sans-serif; font-weight: normal; }
+  #pphotoZone { display: flex; flex-direction: column; align-items: center;
+                gap: 8px; margin-bottom: 8px; }
+  #pphotoPrev { width: 96px; height: 96px; border-radius: 50%;
+                background: #161b15; border: 2px dashed #3a423a; }
+  #pphotoPrev.has { border-style: solid; border-color: #aaa6fc; }
+  #pphotoBtns { display: flex; gap: 6px; }
+  #pphotoBtns button { background: #161b15; border: 1.5px solid #262c25;
+    color: #e8f0e8; border-radius: 8px; padding: 6px 10px; font-size: 10px;
+    cursor: pointer; }
   #pback { background: #1b201a; color: #9aa39a; }
   #pnext { background: #fff; color: #0e120d; }
   /* note mobile */
@@ -280,6 +289,19 @@
         <button id="preset">use my default badge avatar</button>
       </div>
       <div class="pcard" id="ps2">
+        <span class="plab">YOUR PHOTO</span>
+        <div id="pphotoZone">
+          <canvas id="pphotoPrev" width="360" height="360"></canvas>
+          <div id="pphotoBtns">
+            <button id="pphotoPick">CHOOSE A PHOTO</button>
+            <button id="pphotoDel" style="display:none">REMOVE</button>
+          </div>
+          <input type="file" id="pphotoFile" accept="image/*" style="display:none">
+        </div>
+        <p class="phint">Optional: a photo of you, shown full screen on the
+          badge (<b>Watch &gt; My Photo</b>).</p>
+      </div>
+      <div class="pcard" id="ps3">
         <span class="plab">YOUR QR CODE</span>
         <input class="pin" type="url" id="purl" maxlength="90"
                placeholder="https://your-site.dev"
@@ -294,7 +316,8 @@
       <div id="psteps">
         <span class="sdot on" data-s="0">1</span><span class="sbar"></span>
         <span class="sdot" data-s="1">2</span><span class="sbar"></span>
-        <span class="sdot" data-s="2">3</span>
+        <span class="sdot" data-s="2">3</span><span class="sbar"></span>
+        <span class="sdot" data-s="3">4</span>
       </div>
     </div>
   </div>
@@ -637,22 +660,52 @@ const pfaces = document.getElementById('pfaces');
     document.getElementById('psat').value = sSat;
   }
   function sShowStep(n) {
-    sStep = Math.max(0, Math.min(2, n));
-    for (let i = 0; i < 3; i++) {
+    sStep = Math.max(0, Math.min(3, n));
+    for (let i = 0; i < 4; i++) {
       document.getElementById('ps' + i).classList.toggle('on', i === sStep);
       document.querySelector('.sdot[data-s="' + i + '"]')
         .classList.toggle('on', i === sStep);
     }
     document.getElementById('pback').style.visibility = sStep ? 'visible' : 'hidden';
-    document.getElementById('pnext').textContent = sStep === 2 ? 'DONE' : 'NEXT';
+    document.getElementById('pnext').textContent = sStep === 3 ? 'DONE' : 'NEXT';
     // le badge suit l'etape : a l'etape QR il affiche le QR code en direct
     Module._emu_setup_step(sStep);
   }
   document.getElementById('pback').onclick = () => sShowStep(sStep - 1);
   document.getElementById('pnext').onclick = () =>
-    sShowStep(sStep === 2 ? 0 : sStep + 1);
+    sShowStep(sStep === 3 ? 0 : sStep + 1);
   document.querySelectorAll('.sdot').forEach(d =>
     d.onclick = () => sShowStep(+d.dataset.s));
+  // etape photo : recadrage rond 360 + envoi pixel a pixel au WASM
+  const pphPrev = document.getElementById('pphotoPrev');
+  const pphCtx = pphPrev.getContext('2d');
+  const pphFile = document.getElementById('pphotoFile');
+  document.getElementById('pphotoPick').onclick = () => pphFile.click();
+  pphFile.onchange = async () => {
+    const f = pphFile.files && pphFile.files[0];
+    if (!f) return;
+    const bmp = await createImageBitmap(f);
+    const side = Math.min(bmp.width, bmp.height);
+    pphCtx.clearRect(0, 0, 360, 360);
+    pphCtx.save();
+    pphCtx.beginPath(); pphCtx.arc(180, 180, 180, 0, 7); pphCtx.clip();
+    pphCtx.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2,
+                     side, side, 0, 0, 360, 360);
+    pphCtx.restore();
+    pphPrev.classList.add('has');
+    document.getElementById('pphotoDel').style.display = '';
+    const d = pphCtx.getImageData(0, 0, 360, 360).data;
+    for (let i = 0, j = 0; i < 360 * 360; i++, j += 4)
+      Module._emu_photo_px(i,
+        ((d[j] >> 3) << 11) | ((d[j + 1] >> 2) << 5) | (d[j + 2] >> 3));
+    Module._emu_photo_done(1); // "Watch > My Photo" apparait dans l'emulateur
+  };
+  document.getElementById('pphotoDel').onclick = () => {
+    pphCtx.clearRect(0, 0, 360, 360);
+    pphPrev.classList.remove('has');
+    document.getElementById('pphotoDel').style.display = 'none';
+    Module._emu_photo_done(0);
+  };
   function sSendStr(fn, v) {
     const p = Module.stringToNewUTF8(v);
     fn(p);

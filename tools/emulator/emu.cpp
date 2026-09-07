@@ -72,7 +72,7 @@ static Preferences prefs;
 
 // ---------------------------------------------- menu / UI (copie de main.cpp)
 #define ANIM_DURATION_MS 15000
-static const uint8_t ACTIVE[] = {8, 4, 5, 6, 7, 9, 10, 14, 15};
+static const uint8_t ACTIVE[] = {8, 4, 5, 6, 7, 9, 10, 14, 15, 16};
 static const int NACTIVE = (int)sizeof(ACTIVE);
 // (tables du menu : voir menu_ui.h, partage avec le firmware)
 
@@ -134,6 +134,18 @@ static void blogPush(uint8_t pct, uint16_t mv, uint32_t now)
 }
 
 static bool batCharging = false;
+
+// ---- photo uploadee (Watch > My Photo) : buffer alimente par la page via
+// les exports emu_photo_px / emu_photo_done ----
+static uint16_t *g_myPhoto = nullptr;
+static bool g_hasPhoto = false;
+static void animMyPhoto(float)
+{
+  if (g_hasPhoto && g_myPhoto)
+    memcpy(canvas->getFramebuffer(), g_myPhoto, (size_t)W * H * 2);
+  else
+    canvas->fillScreen(RGB565_BLACK);
+}
 
 #include "menu_ui.h" // menu bulles + listes (partage avec le firmware)
 #include "qr_screen.h" // ecran Meet > QR Code (partage avec le firmware)
@@ -595,6 +607,18 @@ extern "C"
   }
   // simulateur de rencontre : un "badge ami" passe a proximite (le vrai
   // badge detecte ca via les beacons ESP-NOW)
+  // photo uploadee : la page pousse les pixels 565 un a un puis valide
+  EMSCRIPTEN_KEEPALIVE void emu_photo_px(int i, int c)
+  {
+    if (!g_myPhoto)
+      g_myPhoto = (uint16_t *)malloc((size_t)W * H * 2);
+    if (g_myPhoto && i >= 0 && i < W * H)
+      g_myPhoto[i] = (uint16_t)c;
+  }
+  EMSCRIPTEN_KEEPALIVE void emu_photo_done(int ok)
+  {
+    g_hasPhoto = ok != 0 && g_myPhoto;
+  }
   EMSCRIPTEN_KEEPALIVE void emu_social_seen(const char *name)
   {
     const char *who = (name && name[0]) ? name : "Kim";
@@ -1117,11 +1141,15 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
   if (navNext)
   {
     slot = (slot + 1) % NACTIVE;
+    if (ACTIVE[slot] == 16 && !g_hasPhoto)
+      slot = (slot + 1) % NACTIVE;
     slotStartMs = now;
   }
   if (navPrev)
   {
     slot = (slot + NACTIVE - 1) % NACTIVE;
+    if (ACTIVE[slot] == 16 && !g_hasPhoto)
+      slot = (slot + NACTIVE - 1) % NACTIVE;
     slotStartMs = now;
   }
   if (autoShort)
@@ -1134,6 +1162,8 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
   if (autoCycle && now - slotStartMs >= ANIM_DURATION_MS)
   {
     slot = (slot + 1) % NACTIVE;
+    if (ACTIVE[slot] == 16 && !g_hasPhoto)
+      slot = (slot + 1) % NACTIVE;
     slotStartMs = now;
   }
   int anim = ACTIVE[slot];
@@ -1158,6 +1188,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
   case 13: animPhoto3(t); break;
   case 14: animWarp(t, dt); break;
   case 15: animSolar(t, dt); break;
+  case 16: animMyPhoto(t); break;
   }
   if (anim == 8) // Conf Buddy : reaction "un ami est la" par-dessus l'anim
     socialReactDraw((uint32_t)emuNowMs);
