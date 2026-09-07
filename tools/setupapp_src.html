@@ -307,8 +307,7 @@ for (let i = 0; i < 9; i++) {
   const b = document.createElement('button');
   const c = document.createElement('canvas');
   const dprF = Math.min(3, window.devicePixelRatio || 1);
-  c.width = c.height = Math.round(64 * dprF);
-  c.style.width = c.style.height = '64px';
+  c.width = c.height = Math.round(64 * dprF); // taille CSS : width:100% (grille)
   b.appendChild(c);
   b.onclick = () => { face = i; custom = 1; sync(); sendBuddy(); };
   faces.appendChild(b);
