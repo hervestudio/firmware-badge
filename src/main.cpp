@@ -983,8 +983,6 @@ static const int NACTIVE = (int)sizeof(ACTIVE);
 // Demande de mode OTA depuis le menu : survit au redemarrage logiciel (RTC RAM)
 #define OTA_MAGIC 0x07A07A17
 RTC_NOINIT_ATTR uint32_t otaRequest;
-// VBUS present au moment de l'extinction (voir powerOff/reveil timer)
-RTC_DATA_ATTR bool rtcVbusAtOff = false;
 
 // Etat de l'interface : animations / menu / jeux
 enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX, UI_LB, UI_VCAL, UI_BLOG };
@@ -1331,24 +1329,10 @@ static void powerOff()
   rtc_gpio_pullup_en((gpio_num_t)BTN_AUTO);
   rtc_gpio_pulldown_dis((gpio_num_t)BTN_AUTO);
   esp_sleep_enable_ext0_wakeup((gpio_num_t)BTN_AUTO, 0);
-  // Reveil AUSSI au branchement USB (revues Romain 2026-08-30/09-07) : le
-  // VBUS arrive divise par 2 (~2.5 V) sur GPIO2 — PAS de pulldown interne
-  // (les ~45 k internes contre le pont 100k ecrasaient le niveau a ~1.2 V,
-  // sous le seuil ext1 ~2.5 V : le reveil ne partait jamais ; le pont
-  // externe suffit a tenir la broche basse). Le niveau restant juste au
-  // seuil, un TIMER de secours (90 s) verifie le VBUS a l'ADC et se rendort
-  // aussitot sinon (~0.1 mA de moyenne). Drapeau RTC : une extinction
-  // volontaire PENDANT la charge ne doit pas rallumer l'ecran de charge.
-  analogReadMilliVolts(PIN_VBUS); // purge du residu d'echantillonneur ADC
-  bool vbusNow = analogReadMilliVolts(PIN_VBUS) > 700;
-  rtcVbusAtOff = vbusNow;
-  if (!vbusNow)
-  {
-    rtc_gpio_pullup_dis((gpio_num_t)PIN_VBUS);
-    rtc_gpio_pulldown_dis((gpio_num_t)PIN_VBUS);
-    esp_sleep_enable_ext1_wakeup(1ULL << PIN_VBUS, ESP_EXT1_WAKEUP_ANY_HIGH);
-  }
-  esp_sleep_enable_timer_wakeup(90ULL * 1000000);
+  // (Le reveil au branchement USB a ete tente puis abandonne — revue Romain
+  // 2026-09-07, niveau ext1 limite et pas le temps de fiabiliser avant la
+  // serie : reveil par bouton central uniquement, la LED du TP4056 sert de
+  // temoin de charge badge eteint.)
   esp_deep_sleep_start();
 }
 
@@ -1437,116 +1421,9 @@ static void bootGenTask(void *)
 
 // ---------------------------------------------------------------- boucle
 
-// Ecran de charge minimal (revue Romain 2026-09-07) : quand le badge ETEINT
-// est branche (reveil par VBUS), on n'allume que l'icone de charge — comme un
-// telephone — au lieu de booter toute l'interface. Bouton central ou BOOT =
-// allumage normal ; debranchement = retour au sommeil profond.
-static void chargeScreen()
-{
-  Serial0.println("charge : ecran minimal (reveil par branchement USB)");
-  uint32_t unplugSince = 0;
-  uint32_t start = millis();
-  while (true)
-  {
-    uint32_t now = millis();
-    updateBattery(now);
-
-    canvas->fillScreen(RGB565_BLACK);
-    const int bw = 150, bh = 74;
-    const int bx = CX - bw / 2, by = CY - bh / 2 - 22;
-    canvas->drawRoundRect(bx, by, bw, bh, 10, RGB565_WHITE);
-    canvas->drawRoundRect(bx + 1, by + 1, bw - 2, bh - 2, 9, RGB565_WHITE);
-    canvas->fillRoundRect(bx + bw, by + bh / 2 - 13, 9, 26, 3, RGB565_WHITE);
-    int pct = batPct < 0 ? 0 : batPct;
-    if (pct > 0)
-    {
-      int fw = (bw - 12) * pct / 100;
-      uint16_t col = pct >= 99 ? rgb565(90, 230, 140)
-                               : (pct < 15 ? rgb565(235, 120, 80)
-                                           : rgb565(120, 210, 120));
-      canvas->fillRoundRect(bx + 6, by + 6, fw, bh - 12, 6, col);
-    }
-    // eclair au centre de l'icone (blanc, lisible sur le remplissage)
-    canvas->fillTriangle(CX + 6, by + 12, CX - 12, by + bh / 2 + 4,
-                         CX + 2, by + bh / 2 + 4, RGB565_WHITE);
-    canvas->fillTriangle(CX - 6, by + bh - 12, CX + 12, by + bh / 2 - 4,
-                         CX - 2, by + bh / 2 - 4, RGB565_WHITE);
-    char t[12];
-    if (batPct >= 0)
-      snprintf(t, sizeof(t), "%d%%", batPct);
-    else
-      snprintf(t, sizeof(t), "--");
-    mtPrint(CX - mtTextW(t) / 2, by + bh + 34, t, RGB565_WHITE);
-    mdPrint(CX - mdTextW(batPct >= 99 ? "fully charged" : "charging") / 2, 264,
-            batPct >= 99 ? "fully charged" : "charging", rgb565(130, 140, 130));
-    mdPrint(CX - mdTextW("press: turn on") / 2, 296, "press: turn on",
-            rgb565(110, 110, 110));
-    waitTE();
-    badgeFlush();
-
-    // 1 s de pause en scrutant les boutons (central ou BOOT = boot normal)
-    for (int i = 0; i < 10; i++)
-    {
-      if (digitalRead(BTN_AUTO) == LOW || digitalRead(BTN_BOOT) == LOW)
-      {
-        while (digitalRead(BTN_AUTO) == LOW || digitalRead(BTN_BOOT) == LOW)
-          delay(10);
-        btnNextFlag = btnPrevFlag = false; // l'appui ne fuit pas dans le boot
-        btnAutoShort = false;
-        Serial0.println("charge : allumage demande");
-        return;
-      }
-      delay(100);
-    }
-    // debranche (3 s de grace, et pas avant que la mesure se stabilise) :
-    // retour au sommeil — powerOff resarmera le reveil VBUS
-    if (now - start > 3000 && !batCharging)
-    {
-      if (!unplugSince)
-        unplugSince = now;
-      else if (now - unplugSince > 3000)
-      {
-        Serial0.println("charge : debranche, retour au sommeil");
-        powerOff();
-      }
-    }
-    else
-      unplugSince = 0;
-  }
-}
-
 void setup()
 {
   Serial0.begin(115200); // UART0 -> pont CH343 : logs visibles sur /dev/cu.usbmodem*
-  // Tri des reveils de deep sleep AVANT toute init lourde. Le timer de
-  // secours (90 s) verifie le VBUS a l'ADC : branche pendant le sommeil
-  // (ext1 rate, niveau limite) -> ecran de charge ; sinon on se rendort
-  // immediatement, ecran jamais touche (les holds du retroeclairage du
-  // powerOff precedent sont encore actifs).
-  esp_sleep_wakeup_cause_t wakeCause = esp_sleep_get_wakeup_cause();
-  bool wokeByUsb = (wakeCause == ESP_SLEEP_WAKEUP_EXT1); // branchement USB
-  if (wakeCause == ESP_SLEEP_WAKEUP_TIMER)
-  {
-    analogReadMilliVolts(PIN_VBUS);
-    bool vbus = analogReadMilliVolts(PIN_VBUS) > 700;
-    if (vbus && !rtcVbusAtOff)
-      wokeByUsb = true; // branche pendant le sommeil : ecran de charge
-    else
-    {
-      rtcVbusAtOff = vbus; // debranche -> le prochain branchement rallumera
-      rtc_gpio_pullup_en((gpio_num_t)BTN_AUTO);
-      rtc_gpio_pulldown_dis((gpio_num_t)BTN_AUTO);
-      esp_sleep_enable_ext0_wakeup((gpio_num_t)BTN_AUTO, 0);
-      if (!vbus)
-      {
-        rtc_gpio_pullup_dis((gpio_num_t)PIN_VBUS);
-        rtc_gpio_pulldown_dis((gpio_num_t)PIN_VBUS);
-        esp_sleep_enable_ext1_wakeup(1ULL << PIN_VBUS, ESP_EXT1_WAKEUP_ANY_HIGH);
-      }
-      esp_sleep_enable_timer_wakeup(90ULL * 1000000);
-      esp_deep_sleep_start();
-    }
-  }
   Serial0.println("=== Badge threejs.paris - animations GC9B72 ===");
   prefs.begin("badge", false); // records des jeux (NVS)
   uiScreenRot = (int)(int8_t)prefs.getChar("rotDeg", 0); // rotation ecran calibree
@@ -1651,11 +1528,6 @@ void setup()
   dmafOk = dmafInit();
   Serial0.printf("PSRAM libre : %u octets\n", (unsigned)ESP.getFreePsram());
 
-  // Reveil par BRANCHEMENT USB (badge eteint) : ecran de charge minimal —
-  // ne revient que si l'utilisateur appuie (allumage) ; un debranchement
-  // renvoie au sommeil profond depuis l'interieur.
-  if (wokeByUsb && !otaMode)
-    chargeScreen();
 
   // Sequence de demarrage : anim "Three Conf" (logo + loader) pendant 4 s —
   // fait aussi office de verification visuelle de la liaison SPI. La
