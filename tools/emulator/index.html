@@ -438,13 +438,80 @@ Module.onRuntimeInitialized = () => {
   // ---- app Setup : nom / Conf Buddy / URL du QR, en 3 etapes ------------
   let sHue = 0, sSat = 100, sFace = 0, sStep = 0;
   // mini rendus des 9 visages (meme approximation que la vraie webapp)
-  function sDrawFace(ctx2, s, id, hu, sa) {
+  // --- sphere du badge repliquee (dvdGenSprite du firmware) : palette
+// PAL_RAINBOW, blend gaussien, vibrance, grain — sprite maitre 112 px en
+// cache, redessine seulement quand teinte/saturation changent
+const SPH_PAL = [[-0.65,-0.65,250,209,228],[-0.43,-0.65,248,229,157],[-0.22,-0.65,244,213,121],[0.00,-0.65,228,170,144],[0.22,-0.65,214,135,150],[0.43,-0.65,185,100,129],[-0.65,-0.43,251,225,208],[-0.43,-0.43,250,229,177],[-0.22,-0.43,236,197,99],[0.00,-0.43,217,160,69],[0.22,-0.43,202,140,54],[0.43,-0.43,166,99,48],[-0.65,-0.22,249,233,179],[-0.43,-0.22,245,219,152],[-0.22,-0.22,226,166,96],[0.00,-0.22,207,132,71],[0.22,-0.22,177,113,29],[0.43,-0.22,140,75,25],[-0.65,0.00,229,212,104],[-0.43,0.00,221,195,96],[-0.22,0.00,211,125,138],[0.00,0.00,187,86,127],[0.22,0.00,142,60,43],[0.43,0.00,109,41,46],[-0.65,0.22,206,194,82],[-0.43,0.22,190,178,80],[-0.22,0.22,186,110,159],[0.00,0.22,163,63,140],[0.22,0.22,120,39,85],[0.43,0.22,92,27,71],[-0.65,0.43,196,171,83],[-0.43,0.43,161,164,76],[-0.22,0.43,141,128,133],[0.00,0.43,135,53,139],[0.22,0.43,102,31,101],[0.43,0.43,97,30,107],[-0.65,0.65,178,99,142],[-0.43,0.65,133,136,66],[-0.22,0.65,100,113,121],[0.00,0.65,98,55,125],[0.22,0.65,103,35,117],[0.43,0.65,109,36,117],[0.850,0.000,93,95,61],[0.736,0.425,77,68,119],[0.425,0.736,117,40,132],[0.000,0.850,80,76,143],[-0.425,0.736,123,111,58],[-0.736,0.425,208,145,145],[-0.850,0.000,241,181,177],[-0.736,-0.425,251,214,202],[-0.425,-0.736,252,234,169],[0.000,-0.850,232,188,213],[0.425,-0.736,192,104,162],[0.736,-0.425,103,58,52],[-0.797,-0.460,250,204,211],[-0.920,0.000,240,166,218],[0.000,-0.920,233,188,223],[0.460,-0.797,184,97,168]];
+function sphRgb2hsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  if (mx === mn) return [0, 0, l];
+  const d = mx - mn, s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  let h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+function sphHue1(p, q, t) {
+  if (t < 0) t += 1; if (t > 1) t -= 1;
+  if (t < 1/6) return p + (q - p) * 6 * t;
+  if (t < 1/2) return q;
+  if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+  return p;
+}
+function sphHsl2rgb(h, s, l) {
+  if (s === 0) { const v = l * 255; return [v, v, v]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  return [sphHue1(p, q, h + 1/3) * 255, sphHue1(p, q, h) * 255, sphHue1(p, q, h - 1/3) * 255];
+}
+let sphCv = null, sphKey = '';
+function sphMaster(hu, sa) {
+  const key = hu + '_' + sa;
+  if (sphCv && sphKey === key) return sphCv;
+  const M = 112;
+  if (!sphCv) { sphCv = document.createElement('canvas'); sphCv.width = sphCv.height = M; }
+  sphKey = key;
+  const P = SPH_PAL.map(p => {
+    let [px, py, r, g, b] = p;
+    if (hu || sa !== 100) {
+      const [h0, s0, l0] = sphRgb2hsl(r, g, b);
+      [r, g, b] = sphHsl2rgb((h0 + hu / 360 + 1) % 1,
+                             Math.min(1, Math.max(0, s0 * sa / 100)), l0);
+    }
+    const nz = 1 - px * px - py * py;
+    return [px, py, r, g, b, Math.sqrt(nz > 0 ? Math.sqrt(nz) : 0.5)];
+  });
+  const c2 = sphCv.getContext('2d');
+  const img = c2.createImageData(M, M), d = img.data, rr = M / 2 - 1;
+  for (let y = 0; y < M; y++) for (let x = 0; x < M; x++) {
+    const nx = (x - M / 2) / rr, ny = (y - M / 2) / rr;
+    if (nx * nx + ny * ny > 1) continue;
+    let tw = 0, pr = 0, pg = 0, pb = 0;
+    for (const p of P) {
+      const dx = nx - p[0], dy = ny - p[1], d2 = dx * dx + dy * dy;
+      if (d2 > 0.3025) continue;
+      const w = Math.exp(-d2 / 0.0512) * p[5];
+      tw += w; pr += p[2] * w; pg += p[3] * w; pb += p[4] * w;
+    }
+    if (tw > 1e-6) {
+      pr /= tw; pg /= tw; pb /= tw;
+      const lum = 0.299 * pr + 0.587 * pg + 0.114 * pb;
+      pr = (lum + (pr - lum) * 1.75) * 1.12;
+      pg = (lum + (pg - lum) * 1.75) * 1.12;
+      pb = (lum + (pb - lum) * 1.75) * 1.12;
+    }
+    const gr = ((Math.imul(x * 374761393 + y * 668265263, 1274126177) >>> 15) % 41) - 20;
+    const i = (y * M + x) * 4;
+    d[i] = Math.max(0, Math.min(255, pr + gr));
+    d[i + 1] = Math.max(0, Math.min(255, pg + gr));
+    d[i + 2] = Math.max(0, Math.min(255, pb + gr));
+    d[i + 3] = 255;
+  }
+  c2.putImageData(img, 0, 0);
+  return sphCv;
+}
+function sDrawFace(ctx2, s, id, hu, sa) {
     ctx2.clearRect(0, 0, s, s);
-    const g = ctx2.createRadialGradient(s*0.38, s*0.34, s*0.06, s*0.5, s*0.5, s*0.55);
-    const h = (n) => 'hsl(' + ((n + hu) % 360) + ',' + Math.min(95, sa*0.85) + '%,60%)';
-    g.addColorStop(0, h(45)); g.addColorStop(0.5, h(310)); g.addColorStop(1, h(260));
-    ctx2.fillStyle = g;
-    ctx2.beginPath(); ctx2.arc(s/2, s/2, s*0.46, 0, 7); ctx2.fill();
+    { const R = s*0.46; ctx2.imageSmoothingEnabled = true;
+      ctx2.drawImage(sphMaster(hu, sa), s/2-R, s/2-R, R*2, R*2); }
     ctx2.fillStyle = '#272727'; ctx2.strokeStyle = '#272727';
     ctx2.lineWidth = Math.max(2, s*0.05); ctx2.lineCap = 'round';
     const e = s*0.16, ey = s*0.42, er = s*0.055, cx = s/2;
