@@ -444,6 +444,101 @@ static void initMouthMask()
 }
 
 // Blit de la bouche : masque redimensionne (nearest), couleur unie
+
+// ---- Bouche du visage "rire" (AF_RIRE) : masque 0/1/2 (transparent/encre/
+// blanc) tessele depuis l'export SVG Mouth_visage2.svg (viewBox 73x59,
+// reference Romain 2026-09-07) — meme technique que le museau.
+#define LAUGH_MW 146 // 73 x 2
+#define LAUGH_MH 118 // 59 x 2
+static uint8_t *laughMask = nullptr;
+
+static void laughFillPath(const float *pts, int ncub, uint8_t val)
+{
+  // pts : x0,y0 puis ncub cubiques (c1x,c1y,c2x,c2y,px,py), contour ferme
+  const float SC = 2.0f;
+  float poly[220][2];
+  int np = 0;
+  const int SEG = 24;
+  float cxp = pts[0], cyp = pts[1];
+  poly[np][0] = cxp * SC;
+  poly[np++][1] = cyp * SC;
+  for (int c = 0; c < ncub; c++)
+  {
+    const float *q = &pts[2 + c * 6];
+    for (int i = 1; i <= SEG; i++)
+    {
+      float x, y;
+      bez3(cxp, cyp, q[0], q[1], q[2], q[3], q[4], q[5], (float)i / SEG, &x, &y);
+      poly[np][0] = x * SC;
+      poly[np++][1] = y * SC;
+    }
+    cxp = q[4];
+    cyp = q[5];
+  }
+  for (int yy = 0; yy < LAUGH_MH; yy++)
+  {
+    float fy = yy + 0.5f;
+    float xs[32];
+    int nxs = 0;
+    for (int i = 0; i < np; i++)
+    {
+      float y0 = poly[i][1], y1 = poly[(i + 1) % np][1];
+      if ((y0 <= fy && y1 > fy) || (y1 <= fy && y0 > fy))
+        xs[nxs++] = poly[i][0] + (fy - y0) / (y1 - y0) * (poly[(i + 1) % np][0] - poly[i][0]);
+    }
+    for (int i = 0; i < nxs - 1; i++)
+      for (int j = i + 1; j < nxs; j++)
+        if (xs[j] < xs[i])
+        {
+          float tmp = xs[i];
+          xs[i] = xs[j];
+          xs[j] = tmp;
+        }
+    for (int i = 0; i + 1 < nxs; i += 2)
+      for (int xx = (int)(xs[i] + 0.5f); xx < (int)(xs[i + 1] + 0.5f); xx++)
+        if (xx >= 0 && xx < LAUGH_MW)
+          laughMask[yy * LAUGH_MW + xx] = val;
+  }
+}
+
+static void initLaughMask()
+{
+  laughMask = (uint8_t *)calloc(LAUGH_MW * LAUGH_MH, 1);
+  static const float BLACK[] = {34.7607f, 5.49146f,
+      27.8109f, 5.50955f, 20.212f, 4.00743f, 13.9419f, 2.34413f,
+      7.58008f, 0.656501f, 0.862811f, 5.53642f, 1.41466f, 12.0951f,
+      3.45424f, 36.335f, 9.38839f, 61.0545f, 38.1324f, 58.2857f,
+      67.812f, 55.4268f, 72.9704f, 33.2371f, 72.1404f, 9.20926f,
+      71.9349f, 3.26263f, 65.812f, -0.567272f, 60.0948f, 1.08149f,
+      52.7209f, 3.20802f, 42.9625f, 5.47012f, 34.7607f, 5.49146f};
+  static const float WHITE[] = {38.2526f, 56.2221f,
+      57.4991f, 54.998f, 65.3174f, 43.6002f, 66.9171f, 34.5579f,
+      44.6629f, 27.8063f, 18.5998f, 32.2446f, 7.56836f, 35.5361f,
+      11.2605f, 47.3106f, 19.006f, 57.4462f, 38.2526f, 56.2221f};
+  laughFillPath(BLACK, 6, 1);
+  laughFillPath(WHITE, 3, 2);
+}
+
+// Blit du rire : masque redimensionne (nearest), encre + blanc
+static void drawLaughImg(float cx, float cy, float wpx, float hpx, uint16_t ink)
+{
+  int iw = (int)wpx, ih = (int)hpx;
+  if (iw < 2 || ih < 2 || !laughMask)
+    return;
+  int x0 = (int)(cx - iw / 2.0f), y0 = (int)(cy - ih / 2.0f);
+  uint16_t wht = rgb565(255, 255, 255);
+  for (int yy = 0; yy < ih; yy++)
+  {
+    int my = yy * LAUGH_MH / ih;
+    for (int xx = 0; xx < iw; xx++)
+    {
+      uint8_t v = laughMask[my * LAUGH_MW + xx * LAUGH_MW / iw];
+      if (v)
+        canvas->drawPixel(x0 + xx, y0 + yy, v == 2 ? wht : ink);
+    }
+  }
+}
+
 static void drawMouth(float cx, float cy, float wpx, float hpx, uint16_t ink)
 {
   int iw = (int)wpx, ih = (int)hpx;
@@ -465,6 +560,11 @@ static void drawMouth(float cx, float cy, float wpx, float hpx, uint16_t ink)
 static void avatarPlatformMouth(float mx, float my, float mw, float mh, uint16_t ink)
 {
   drawMouth(mx, my, mw, mh, ink);
+}
+// bouche du visage "rire" (masque SVG noir + blanc)
+static void avatarPlatformLaugh(float mx, float my, float mw, float mh, uint16_t ink)
+{
+  drawLaughImg(mx, my, mw, mh, ink);
 }
 
 // ---- Etat "idle" du visage : regard vagabond + clignements (port de

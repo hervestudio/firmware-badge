@@ -17,6 +17,8 @@ static void rgb2hsl(float r, float g, float b, float *h, float *s, float *l);
 static void hsl2rgb(float h, float s, float l, float *r, float *g, float *b);
 // museau du perso original, rendu par la plateforme (defini apres l'include)
 static void avatarPlatformMouth(float mx, float my, float mw, float mh, uint16_t ink);
+// bouche du visage "rire" (masque SVG noir + blanc), idem par plateforme
+static void avatarPlatformLaugh(float mx, float my, float mw, float mh, uint16_t ink);
 
 // Les 9 visages du Figma 4195-8272, de gauche a droite. Geometrie extraite
 // des metadonnees Figma (frames yeux/bouche), echelle calee sur l'ecart des
@@ -224,22 +226,9 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
       canvas->fillEllipse((int)exl, (int)avY(-0.232f), (int)(er * scl), ry, ink);
     if (visr > 0)
       canvas->fillEllipse((int)exr, (int)avY(-0.232f), (int)(er * scr), ry, ink);
-    float mW = fr * 0.231f * scm, mH = fr * 0.185f, my = avY(0.072f);
-    canvas->fillRoundRect((int)(mxx - mW), (int)(my - mH), (int)(2 * mW),
-                          (int)(2 * mH), (int)(fr * 0.105f), ink);
-    // bol blanc : demi-ellipse coupee 0.013 fr au-dessus du centre, lisere
-    // noir de 0.039 fr en bas et 0.042 fr sur les cotes
-    float rw2 = mW - fr * 0.042f, rh2 = mH - fr * 0.026f;
-    float yCut = my - fr * 0.013f;
-    for (int y = (int)yCut; y <= (int)(yCut + rh2); y++)
-    {
-      float t = (y - yCut) / rh2;
-      float k = 1 - t * t;
-      if (k <= 0)
-        continue;
-      float hw = rw2 * sqrtf(k);
-      canvas->fillRect((int)(mxx - hw), y, (int)(2 * hw), 1, rgb565(255, 255, 255));
-    }
+    // bouche = masque tessele de l'export SVG Mouth_visage2.svg (73x59),
+    // rendu par la plateforme — voir initLaughMask
+    avatarPlatformLaugh(mxx, avY(0.072f), fr * 0.462f * scm, fr * 0.373f, ink);
     break;
   }
   // ------------------------------------------------------ petit sourire fin

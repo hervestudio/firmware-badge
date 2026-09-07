@@ -358,6 +358,7 @@ EMSCRIPTEN_KEEPALIVE void emu_init()
   srand(42);
   initBallSprite();
   initMouthMask();
+  initLaughMask();
   initTgLogo();
   irInit();
   for (int i = 0; i < IR_FRAMES; i++)

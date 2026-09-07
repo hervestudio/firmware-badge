@@ -241,18 +241,14 @@ function drawFace(ctx, s, id, hu, sa) {
     ctx.stroke(new Path2D('M32.1099 34.3398C37.0394 44.1075 36.3352 71.3541 7.81445 65.1851'));
     ctx.stroke(new Path2D('M38.8256 34.3398C33.8961 44.1075 34.6003 71.3541 63.1211 65.1851'));
     ctx.restore(); break; }
-  case 1: { // rire : bouche carree-arrondie + bol blanc (image ref 2026-09-07)
+  case 1: { // rire : paths SVG Mouth_visage2.svg (73x59), comme le badge
     eye(-0.437, -0.232, 0.106, 0.106); eye(0.437, -0.232, 0.106, 0.106);
     const [mx, scm] = P(0, 0.072), my = Y(0.072);
-    const mW = 0.231 * fr * scm, mH = 0.185 * fr;
-    ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(mx - mW, my - mH, mW * 2, mH * 2, 0.105 * fr);
-    else ctx.ellipse(mx, my, mW, mH, 0, 0, 7);
-    ctx.fill();
-    const rw2 = mW - 0.042 * fr, rh2 = mH - 0.026 * fr, yCut = my - 0.013 * fr;
-    ctx.save(); ctx.beginPath(); ctx.rect(mx - rw2, yCut, rw2 * 2, rh2); ctx.clip();
+    const w = 0.462 * fr * scm, h = 0.373 * fr;
+    ctx.save(); ctx.translate(mx - w / 2, my - h / 2); ctx.scale(w / 73, h / 59);
+    ctx.fill(new Path2D('M34.7607 5.49146C27.8109 5.50955 20.212 4.00743 13.9419 2.34413C7.58008 0.656501 0.862811 5.53642 1.41466 12.0951C3.45424 36.335 9.38839 61.0545 38.1324 58.2857C67.812 55.4268 72.9704 33.2371 72.1404 9.20926C71.9349 3.26263 65.812 -0.567272 60.0948 1.08149C52.7209 3.20802 42.9625 5.47012 34.7607 5.49146Z'));
     ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.ellipse(mx, yCut, rw2, rh2, 0, 0, 7); ctx.fill();
+    ctx.fill(new Path2D('M38.2526 56.2221C57.4991 54.998 65.3174 43.6002 66.9171 34.5579C44.6629 27.8063 18.5998 32.2446 7.56836 35.5361C11.2605 47.3106 19.006 57.4462 38.2526 56.2221Z'));
     ctx.restore(); ctx.fillStyle = ink; break; }
   case 2: { // petit sourire fin
     eye(-0.431, -0.213, 0.084, 0.084); eye(0.431, -0.213, 0.084, 0.084);
