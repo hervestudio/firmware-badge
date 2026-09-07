@@ -134,6 +134,26 @@ static void setupDrawScreen()
 // "en construction" pendant la saisie de l'URL
 static void setupDrawLive(float t)
 {
+  // etape photo (setupStep 2) : PROGRESSION pendant le transfert, puis
+  // apercu plein ecran de la photo recue (revue Romain 2026-09-07)
+  if (setupStep == 2 && setupPhotoFile && setupPhotoLeft)
+  {
+    canvas->fillScreen(RGB565_BLACK);
+    uint32_t total = (uint32_t)W * H * 2;
+    int pct = (int)((total - setupPhotoLeft) * 100 / total);
+    bbPrint(CX - bbTextW("RECEIVING PHOTO") / 2, 140, "RECEIVING PHOTO",
+            rgb565(0x9d, 0x97, 0xed));
+    const int bx = 80, bw = 200, by = 180, bh = 14;
+    canvas->drawRoundRect(bx, by, bw, bh, 7, rgb565(90, 90, 90));
+    canvas->fillRoundRect(bx + 2, by + 2, (bw - 4) * pct / 100, bh - 4, 5,
+                          rgb565(0xfb, 0xd9, 0x75));
+    return;
+  }
+  if (setupStep == 2 && g_hasPhoto && g_myPhoto)
+  {
+    memcpy(canvas->getFramebuffer(), g_myPhoto, (size_t)W * H * 2);
+    return;
+  }
   if (setupStep == 3)
   {
     if (setupQrDirty) // (re)genere aussi le sprite du buddy du medaillon

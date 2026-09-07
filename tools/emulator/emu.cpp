@@ -251,8 +251,14 @@ static void drawSetupScreen(float t)
     drawWaitScreen("SETUP", rgb565(0xfb, 0xd9, 0x75));
     return;
   }
-  // etape 3 : le QR en direct sur le badge pendant la config
-  if (setupEmuStep == 2)
+  // etape photo (2) : apercu plein ecran de la photo recue
+  if (setupEmuStep == 2 && g_hasPhoto && g_myPhoto)
+  {
+    memcpy(canvas->getFramebuffer(), g_myPhoto, (size_t)W * H * 2);
+    return;
+  }
+  // etape QR (3) : le QR en direct sur le badge pendant la config
+  if (setupEmuStep == 3)
   {
     if (setupEmuQrDirty) // (re)genere aussi le sprite du buddy du medaillon
     {
@@ -597,7 +603,7 @@ extern "C"
   }
   EMSCRIPTEN_KEEPALIVE void emu_setup_step(int s)
   {
-    setupEmuStep = s < 0 ? 0 : (s > 2 ? 2 : s);
+    setupEmuStep = s < 0 ? 0 : (s > 3 ? 3 : s);
     setupEmuConnected = true;
   }
   EMSCRIPTEN_KEEPALIVE void emu_setup_building()
