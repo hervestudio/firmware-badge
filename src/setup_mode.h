@@ -128,12 +128,13 @@ static void setupDrawScreen()
   canvas->print("center: exit");
 }
 
-// Preview live (telephone connecte), animee frame par frame : etapes 1-2 =
-// carte d'identite (buddy + message + nom + entreprise) ; etape 3 (QR) =
-// le QR en direct, version "en construction" pendant la saisie de l'URL
+// Preview live (telephone connecte), animee frame par frame : etapes 1-3 =
+// carte d'identite (buddy + message + nom + entreprise) ; etape 4 (QR,
+// setupStep 3 depuis l'ajout de l'etape photo) = le QR en direct, version
+// "en construction" pendant la saisie de l'URL
 static void setupDrawLive(float t)
 {
-  if (setupStep == 2)
+  if (setupStep == 3)
   {
     if (setupQrDirty) // (re)genere aussi le sprite du buddy du medaillon
     {
