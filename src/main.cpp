@@ -983,6 +983,8 @@ static const int NACTIVE = (int)sizeof(ACTIVE);
 // Demande de mode OTA depuis le menu : survit au redemarrage logiciel (RTC RAM)
 #define OTA_MAGIC 0x07A07A17
 RTC_NOINIT_ATTR uint32_t otaRequest;
+// VBUS present au moment de l'extinction (voir powerOff/reveil timer)
+RTC_DATA_ATTR bool rtcVbusAtOff = false;
 
 // Etat de l'interface : animations / menu / jeux
 enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX, UI_LB, UI_VCAL, UI_BLOG };
@@ -1329,19 +1331,24 @@ static void powerOff()
   rtc_gpio_pullup_en((gpio_num_t)BTN_AUTO);
   rtc_gpio_pulldown_dis((gpio_num_t)BTN_AUTO);
   esp_sleep_enable_ext0_wakeup((gpio_num_t)BTN_AUTO, 0);
-  // Reveil AUSSI au branchement USB (revue Romain 2026-08-30 : badge coupe
-  // par la protection batterie -> "rien ne se passe" au branchement, alors
-  // qu'il charge en silence). Le VBUS arrive divise par 2 sur GPIO2 (RTC) :
-  // ext1 ANY_HIGH ~1.65 V au branchement. ARME SEULEMENT si le VBUS est
-  // absent a l'extinction — sinon une extinction manuelle pendant la charge
-  // se reveillerait aussitot.
+  // Reveil AUSSI au branchement USB (revues Romain 2026-08-30/09-07) : le
+  // VBUS arrive divise par 2 (~2.5 V) sur GPIO2 — PAS de pulldown interne
+  // (les ~45 k internes contre le pont 100k ecrasaient le niveau a ~1.2 V,
+  // sous le seuil ext1 ~2.5 V : le reveil ne partait jamais ; le pont
+  // externe suffit a tenir la broche basse). Le niveau restant juste au
+  // seuil, un TIMER de secours (90 s) verifie le VBUS a l'ADC et se rendort
+  // aussitot sinon (~0.1 mA de moyenne). Drapeau RTC : une extinction
+  // volontaire PENDANT la charge ne doit pas rallumer l'ecran de charge.
   analogReadMilliVolts(PIN_VBUS); // purge du residu d'echantillonneur ADC
-  if (analogReadMilliVolts(PIN_VBUS) < 700)
+  bool vbusNow = analogReadMilliVolts(PIN_VBUS) > 700;
+  rtcVbusAtOff = vbusNow;
+  if (!vbusNow)
   {
     rtc_gpio_pullup_dis((gpio_num_t)PIN_VBUS);
-    rtc_gpio_pulldown_en((gpio_num_t)PIN_VBUS);
+    rtc_gpio_pulldown_dis((gpio_num_t)PIN_VBUS);
     esp_sleep_enable_ext1_wakeup(1ULL << PIN_VBUS, ESP_EXT1_WAKEUP_ANY_HIGH);
   }
+  esp_sleep_enable_timer_wakeup(90ULL * 1000000);
   esp_deep_sleep_start();
 }
 
@@ -1511,8 +1518,35 @@ static void chargeScreen()
 void setup()
 {
   Serial0.begin(115200); // UART0 -> pont CH343 : logs visibles sur /dev/cu.usbmodem*
-  bool wokeByUsb =
-      esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1; // branchement USB
+  // Tri des reveils de deep sleep AVANT toute init lourde. Le timer de
+  // secours (90 s) verifie le VBUS a l'ADC : branche pendant le sommeil
+  // (ext1 rate, niveau limite) -> ecran de charge ; sinon on se rendort
+  // immediatement, ecran jamais touche (les holds du retroeclairage du
+  // powerOff precedent sont encore actifs).
+  esp_sleep_wakeup_cause_t wakeCause = esp_sleep_get_wakeup_cause();
+  bool wokeByUsb = (wakeCause == ESP_SLEEP_WAKEUP_EXT1); // branchement USB
+  if (wakeCause == ESP_SLEEP_WAKEUP_TIMER)
+  {
+    analogReadMilliVolts(PIN_VBUS);
+    bool vbus = analogReadMilliVolts(PIN_VBUS) > 700;
+    if (vbus && !rtcVbusAtOff)
+      wokeByUsb = true; // branche pendant le sommeil : ecran de charge
+    else
+    {
+      rtcVbusAtOff = vbus; // debranche -> le prochain branchement rallumera
+      rtc_gpio_pullup_en((gpio_num_t)BTN_AUTO);
+      rtc_gpio_pulldown_dis((gpio_num_t)BTN_AUTO);
+      esp_sleep_enable_ext0_wakeup((gpio_num_t)BTN_AUTO, 0);
+      if (!vbus)
+      {
+        rtc_gpio_pullup_dis((gpio_num_t)PIN_VBUS);
+        rtc_gpio_pulldown_dis((gpio_num_t)PIN_VBUS);
+        esp_sleep_enable_ext1_wakeup(1ULL << PIN_VBUS, ESP_EXT1_WAKEUP_ANY_HIGH);
+      }
+      esp_sleep_enable_timer_wakeup(90ULL * 1000000);
+      esp_deep_sleep_start();
+    }
+  }
   Serial0.println("=== Badge threejs.paris - animations GC9B72 ===");
   prefs.begin("badge", false); // records des jeux (NVS)
   uiScreenRot = (int)(int8_t)prefs.getChar("rotDeg", 0); // rotation ecran calibree
