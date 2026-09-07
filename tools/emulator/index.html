@@ -509,62 +509,113 @@ function sphMaster(hu, sa) {
   return sphCv;
 }
 function sDrawFace(ctx2, s, id, hu, sa) {
-    ctx2.clearRect(0, 0, s, s);
-    { const R = s*0.46; ctx2.imageSmoothingEnabled = true;
-      ctx2.drawImage(sphMaster(hu, sa), s/2-R, s/2-R, R*2, R*2); }
-    ctx2.fillStyle = '#272727'; ctx2.strokeStyle = '#272727';
-    ctx2.lineWidth = Math.max(2, s*0.05); ctx2.lineCap = 'round';
-    const e = s*0.16, ey = s*0.42, er = s*0.055, cx = s/2;
-    const eyes = () => { ctx2.beginPath(); ctx2.arc(cx-e, ey, er, 0, 7);
-                         ctx2.arc(cx+e, ey, er, 0, 7); ctx2.fill(); };
-    switch (id) {
-    case 0: eyes(); ctx2.beginPath(); ctx2.ellipse(cx, s*0.58, s*0.10, s*0.075, 0, 0, 7);
-          ctx2.fill(); ctx2.beginPath(); ctx2.moveTo(cx, s*0.63); ctx2.lineTo(cx, s*0.695);
-          ctx2.stroke();
-          ctx2.beginPath(); ctx2.moveTo(cx-s*0.13, s*0.665);
-          ctx2.quadraticCurveTo(cx-s*0.06, s*0.735, cx, s*0.695);
-          ctx2.quadraticCurveTo(cx+s*0.06, s*0.735, cx+s*0.13, s*0.665);
-          ctx2.stroke(); break;
-    case 1: eyes(); ctx2.beginPath(); ctx2.ellipse(cx, s*0.60, s*0.14, s*0.11, 0, 0, 7);
-            ctx2.fill(); ctx2.fillStyle = '#fff';
-            ctx2.save(); ctx2.beginPath(); ctx2.rect(0, s*0.60, s, s*0.40); ctx2.clip();
-            ctx2.beginPath(); ctx2.ellipse(cx, s*0.60, s*0.12, s*0.094, 0, 0, 7);
-            ctx2.fill(); ctx2.restore(); break;
-    case 2: eyes(); ctx2.beginPath(); ctx2.arc(cx, s*0.52, s*0.13, 0.4, 2.7);
-            ctx2.stroke(); break;
-    case 3: eyes(); ctx2.beginPath();
-            for (let i = 0; i <= 20; i++) { const u = i/20, x = cx - s*0.13 + u*s*0.26;
-              const y = s*0.60 + Math.sin(u*9.4)*s*0.03;
-              i ? ctx2.lineTo(x, y) : ctx2.moveTo(x, y); } ctx2.stroke(); break;
-    case 4: ctx2.beginPath(); ctx2.ellipse(cx-e, ey, er*0.85, er*1.3, 0, 0, 7);
-          ctx2.ellipse(cx+e, ey, er*0.85, er*1.3, 0, 0, 7); ctx2.fill();
-          ctx2.beginPath();
-          for (let i = 0; i <= 24; i++) { const u = i/24, x = cx - s*0.12 + u*s*0.24;
-            const y = s*0.555 + Math.abs(Math.sin(u*6.28))*s*0.05;
-            i ? ctx2.lineTo(x, y) : ctx2.moveTo(x, y); } ctx2.stroke(); break;
-    case 5: ctx2.fillRect(cx-e-s*0.1, ey-s*0.05, s*0.52, s*0.05);
-            ctx2.beginPath(); ctx2.ellipse(cx-e, ey+s*0.03, s*0.09, s*0.07, 0, 0, 7);
-            ctx2.ellipse(cx+e, ey+s*0.03, s*0.09, s*0.07, 0, 0, 7); ctx2.fill();
-            ctx2.beginPath(); ctx2.moveTo(cx-s*0.09, s*0.635);
-            ctx2.quadraticCurveTo(cx+s*0.02, s*0.675, cx+s*0.11, s*0.585);
-            ctx2.stroke(); break;
-    case 6: ctx2.beginPath(); ctx2.arc(cx-e, ey+er, er*1.8, 3.4, 6.0); ctx2.stroke();
-            ctx2.beginPath(); ctx2.arc(cx+e, ey+er, er*1.8, 3.4, 6.0); ctx2.stroke();
-            ctx2.beginPath(); ctx2.arc(cx, s*0.56, s*0.09, 0.4, 2.7); ctx2.stroke(); break;
-    case 7: eyes(); ctx2.beginPath();
-            for (let i = 0; i <= 24; i++) { const u = i/24, x = cx - s*0.17 + u*s*0.34;
-              const y = s*0.58 + Math.sin(u*6.28)*s*0.045;
-              i ? ctx2.lineTo(x, y) : ctx2.moveTo(x, y); } ctx2.stroke(); break;
-    case 8: { const st = (x) => { for (let k = 0; k < 8; k++) { const a = k*Math.PI/4;
-              ctx2.beginPath(); ctx2.arc(x+Math.cos(a)*er*1.3, ey+Math.sin(a)*er*1.3,
-              er*0.7, 0, 7); ctx2.fill(); }
-              ctx2.beginPath(); ctx2.arc(x, ey, er*1.3, 0, 7); ctx2.fill(); };
-            st(cx-e); st(cx+e);
-            ctx2.fillRect(cx-e, ey-s*0.015, e*2, s*0.03);
-            ctx2.beginPath(); ctx2.arc(cx+s*0.02, s*0.585, s*0.085, 0.45, 2.7); ctx2.stroke(); break; }
+  ctx2.clearRect(0, 0, s, s);
+  { const R = s*0.46; ctx2.imageSmoothingEnabled = true;
+    ctx2.drawImage(sphMaster(hu, sa), s/2-R, s/2-R, R*2, R*2); }
+  // ---- visage : portage EXACT de avatarDrawFace (src/avatars.h), vue de
+  // face (cosT=1, openness=1) — memes cotes Figma, memes traits
+  const fr = s * 0.46, cx = s / 2, cy = s / 2, ink = '#272727';
+  ctx2.fillStyle = ink; ctx2.strokeStyle = ink;
+  ctx2.lineCap = 'round'; ctx2.lineJoin = 'round';
+  const P = (nx, ny) => {
+    const nz2 = 1 - nx * nx - ny * ny, nz = nz2 > 0 ? Math.sqrt(nz2) : 0.1;
+    return [cx + nx * fr, Math.max(0.3, nz)];
+  };
+  const Y = (ny) => cy + ny * fr;
+  const eye = (nx, ny, rx, ry) => { const [x, sc] = P(nx, ny);
+    ctx2.beginPath(); ctx2.ellipse(x, Y(ny), rx * fr * sc, ry * fr, 0, 0, 7); ctx2.fill(); };
+  const stroke = (mode, x0, w, yb, amp, r) => {
+    const n = Math.max(8, Math.floor(w / (r * 0.5)) + 4);
+    for (let i = 0; i <= n; i++) {
+      const u = i / n; let y = yb;
+      if (mode === 0) y = yb + amp * (0.25 - (u - 0.5) ** 2) * 4;
+      else if (mode === 1) y = yb + amp * Math.sin(u * 3 * Math.PI);
+      else if (mode === 2) y = yb + amp * Math.abs(Math.sin(u * 2 * Math.PI));
+      else if (mode === 3) y = yb - amp * Math.sin(u * Math.PI);
+      else if (mode === 4) y = yb - amp * u + amp * 0.5 * (0.25 - (u - 0.5) ** 2) * 4;
+      ctx2.beginPath(); ctx2.arc(x0 + u * w, y, r, 0, 7); ctx2.fill();
     }
+  };
+  const star = (x, y, R) => {
+    ctx2.beginPath(); ctx2.arc(x, y, R * 0.72, 0, 7); ctx2.fill();
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4;
+      ctx2.beginPath();
+      ctx2.arc(x + Math.cos(a) * R * 0.68, y + Math.sin(a) * R * 0.68, R * 0.36, 0, 7);
+      ctx2.fill(); }
+  };
+  switch (id) {
+  case 0: { // museau (perso original) : path SVG du firmware (viewBox 71x73)
+    eye(-0.381, -0.210, 0.099, 0.099); eye(0.381, -0.210, 0.099, 0.099);
+    const [mx, scm] = P(0, 0.074), my = Y(0.074);
+    const w = 0.316 * fr * scm, h = 0.342 * fr;
+    ctx2.save(); ctx2.translate(mx - w / 2, my - h / 2); ctx2.scale(w / 71, h / 73);
+    ctx2.fill(new Path2D('M12.8717 29.0658C0.183 19.6626 6.83373 -0.481934 22.6268 -0.481934H51.1003C66.7113 -0.481934 73.4774 19.2799 61.1424 28.8482L48.6013 38.5763C45.7282 40.805 42.1954 42.0146 38.5592 42.0146H35.7539C32.241 42.0146 28.8211 40.8855 25.9988 38.7939Z'));
+    ctx2.lineWidth = 12.2881;
+    ctx2.stroke(new Path2D('M32.1099 34.3398C37.0394 44.1075 36.3352 71.3541 7.81445 65.1851'));
+    ctx2.stroke(new Path2D('M38.8256 34.3398C33.8961 44.1075 34.6003 71.3541 63.1211 65.1851'));
+    ctx2.restore(); break; }
+  case 1: { // rire : grande bouche, blanc = demi-lune basse
+    eye(-0.380, -0.190, 0.105, 0.105); eye(0.380, -0.190, 0.105, 0.105);
+    const [mx, scm] = P(0, 0.075), my = Y(0.075);
+    const rw = 0.320 * fr * scm, rh = 0.230 * fr;
+    ctx2.beginPath(); ctx2.ellipse(mx, my, rw, rh, 0, 0, 7); ctx2.fill();
+    ctx2.save(); ctx2.beginPath(); ctx2.rect(mx - rw, my, rw * 2, rh); ctx2.clip();
+    ctx2.fillStyle = '#fff';
+    ctx2.beginPath(); ctx2.ellipse(mx, my, rw * 0.86, rh * 0.86, 0, 0, 7); ctx2.fill();
+    ctx2.restore(); ctx2.fillStyle = ink; break; }
+  case 2: { // petit sourire fin
+    eye(-0.431, -0.213, 0.084, 0.084); eye(0.431, -0.213, 0.084, 0.084);
+    const [mx, scm] = P(0, -0.032), w = 0.380 * fr * scm;
+    stroke(0, mx - w / 2, w, Y(-0.038) - 0.010 * fr, 0.025 * fr, 0.026 * fr); break; }
+  case 3: { // petite vague
+    eye(-0.431, -0.194, 0.103, 0.103); eye(0.431, -0.194, 0.103, 0.103);
+    const [mx, scm] = P(0, 0.035), w = 0.440 * fr * scm;
+    stroke(1, mx - w / 2, w, Y(0.032), 0.018 * fr, 0.028 * fr); break; }
+  case 4: { // chat : yeux ovales + omega
+    eye(-0.316, -0.204, 0.075, 0.094); eye(0.316, -0.204, 0.075, 0.094);
+    const [mx, scm] = P(0, 0.150), w = 0.580 * fr * scm;
+    stroke(2, mx - w / 2, w, Y(0.100), 0.105 * fr, 0.035 * fr); break; }
+  case 5: { // lunettes de soleil : bandeau + verres + rictus
+    const [exl, scl] = P(-0.200, -0.213), [exr, scr] = P(0.200, -0.213);
+    const [mxx, scm] = P(0.184, 0.058);
+    const barTop = Y(-0.297), barH = 0.065 * fr;
+    const lensHalf = 0.174 * fr, lensDrop = 0.103 * fr;
+    const xL = exl - lensHalf * scl, xR = exr + lensHalf * scr;
+    ctx2.beginPath();
+    if (ctx2.roundRect) ctx2.roundRect(xL, barTop, xR - xL, barH, barH * 0.3);
+    else ctx2.rect(xL, barTop, xR - xL, barH);
+    ctx2.fill();
+    for (let sdx = 0; sdx < 2; sdx++) {
+      const c = sdx ? exr : exl, sc = sdx ? scr : scl, hw = lensHalf * sc;
+      ctx2.fillRect(c - hw, barTop + barH - 1, 2 * hw, lensDrop * 0.5);
+      ctx2.beginPath();
+      ctx2.ellipse(c, barTop + barH + lensDrop * 0.5, hw, lensDrop * 0.5, 0, 0, 7);
+      ctx2.fill();
+    }
+    const w = 0.330 * fr * scm;
+    stroke(4, mxx - w / 2, w, Y(0.058) + 0.045 * fr, 0.090 * fr, 0.030 * fr); break; }
+  case 6: { // grands yeux fermes ^^ + petit sourire
+    const [exl, scl] = P(-0.271, -0.184), [exr, scr] = P(0.271, -0.184);
+    const aw = 0.297 * fr, amp = 0.050 * fr, base = Y(-0.159);
+    stroke(3, exl - aw * scl / 2, aw * scl, base, amp, 0.030 * fr);
+    stroke(3, exr - aw * scr / 2, aw * scr, base, amp, 0.030 * fr);
+    const [mxx, scm] = P(0.090, 0.178), w = 0.323 * fr * scm;
+    stroke(0, mxx - w / 2, w, Y(0.178) - 0.012 * fr, 0.043 * fr, 0.027 * fr); break; }
+  case 7: { // grande moustache ondulee
+    eye(-0.342, -0.168, 0.084, 0.084); eye(0.342, -0.168, 0.084, 0.084);
+    const [mx, scm] = P(0, 0.103), w = 0.826 * fr * scm;
+    stroke(1, mx - w / 2, w, Y(0.103), 0.033 * fr, 0.035 * fr); break; }
+  case 8: { // yeux etoiles relies par une barre + petit sourire
+    const [exl, scl] = P(-0.248, -0.129), [exr, scr] = P(0.248, -0.129);
+    const ey = Y(-0.129), R = 0.142 * fr;
+    ctx2.fillRect(exl, ey - 0.035 * fr, exr - exl, 0.070 * fr);
+    star(exl, ey, R * (0.7 + 0.3 * scl));
+    star(exr, ey, R * (0.7 + 0.3 * scr));
+    const [mxx, scm] = P(0.052, 0.168), w = 0.374 * fr * scm;
+    stroke(0, mxx - w / 2, w, Y(0.168) - 0.010 * fr, 0.035 * fr, 0.027 * fr); break; }
   }
-  const pfaces = document.getElementById('pfaces');
+}
+const pfaces = document.getElementById('pfaces');
   for (let i = 0; i < 9; i++) {
     const b = document.createElement('button');
     const c = document.createElement('canvas');
