@@ -251,10 +251,14 @@ static void drawSetupScreen(float t)
     drawWaitScreen("SETUP", rgb565(0xfb, 0xd9, 0x75));
     return;
   }
-  // etape photo (2) : apercu plein ecran de la photo recue
-  if (setupEmuStep == 2 && g_hasPhoto && g_myPhoto)
+  // etape photo (2) : apercu plein ecran de la photo recue, sinon
+  // emplacement en pointilles
+  if (setupEmuStep == 2)
   {
-    memcpy(canvas->getFramebuffer(), g_myPhoto, (size_t)W * H * 2);
+    if (g_hasPhoto && g_myPhoto)
+      memcpy(canvas->getFramebuffer(), g_myPhoto, (size_t)W * H * 2);
+    else
+      uiDrawPhotoPlaceholder();
     return;
   }
   // etape QR (3) : le QR en direct sur le badge pendant la config

@@ -244,6 +244,27 @@ static void uiDrawSetMenu(int sel)
   }
 }
 
+// Etape photo du Setup, cote badge, tant qu'aucune photo n'est recue :
+// emplacement en pointilles + invitation — montre qu'on est bien passe a
+// l'etape 3 (revue Romain 2026-09-07)
+static void uiDrawPhotoPlaceholder()
+{
+  canvas->fillScreen(RGB565_BLACK);
+  uint16_t dim = rgb565(110, 110, 110);
+  for (int k = 0; k < 64; k += 2) // cercle pointille
+  {
+    float a = k * (2 * (float)PI / 64);
+    canvas->fillCircle((int)(CX + cosf(a) * 118), (int)(CY + sinf(a) * 118),
+                       3, dim);
+  }
+  bbPrint(CX - bbTextW("YOUR PHOTO") / 2, 150, "YOUR PHOTO",
+          rgb565(0x9d, 0x97, 0xed));
+  mdPrint(CX - mdTextW("choose it on your phone") / 2, 186,
+          "choose it on your phone", rgb565(150, 160, 150));
+  mdPrint(CX - mdTextW("(optional)") / 2, 214, "(optional)",
+          rgb565(110, 110, 110));
+}
+
 // Ecran Settings > Batt log : courbe de decharge enregistree pendant que le
 // badge tourne. Ordonnee = %, abscisse = temps ecoule. Pente %/h calculee
 // entre le premier et le dernier echantillon -> projection d'autonomie

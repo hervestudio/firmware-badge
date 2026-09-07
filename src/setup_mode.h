@@ -149,9 +149,12 @@ static void setupDrawLive(float t)
                           rgb565(0xfb, 0xd9, 0x75));
     return;
   }
-  if (setupStep == 2 && g_hasPhoto && g_myPhoto)
+  if (setupStep == 2)
   {
-    memcpy(canvas->getFramebuffer(), g_myPhoto, (size_t)W * H * 2);
+    if (g_hasPhoto && g_myPhoto)
+      memcpy(canvas->getFramebuffer(), g_myPhoto, (size_t)W * H * 2);
+    else
+      uiDrawPhotoPlaceholder(); // pointilles + invitation (pas encore de photo)
     return;
   }
   if (setupStep == 3)
