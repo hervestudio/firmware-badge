@@ -2298,6 +2298,8 @@ void loop()
       // Setup (modifiable ensuite) et SSID badge-<Nom> immediats
       snprintf(qrName, sizeof(qrName), "%s", AVATARS[setSel].name);
       prefs.putString("bname", qrName);
+      snprintf(qrCompany, sizeof(qrCompany), "%s", AVATARS[setSel].comp);
+      prefs.putString("bcomp", qrCompany);
       irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
       g_ballDirty = true;    // + le sprite de boule (snake/DVD/jeux)
       if (setSpr)

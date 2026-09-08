@@ -39,55 +39,56 @@ enum AvatarFace : uint8_t
 struct AvatarDef
 {
   const char *name; // personne (protege par le code, sert aussi au social)
+  const char *comp; // societe (prereemplit "bcomp" comme le nom, carte QR)
   int16_t hue;      // rotation de teinte (deg) appliquee a PAL_RAINBOW
   float sat;        // multiplicateur de saturation
   uint8_t face;     // AvatarFace
   uint8_t extra;    // 0 rien, 1 joues roses, 2 etincelle
 };
 
-// 22 speakers du schedule + crew. Teintes reparties sur la roue, visages
-// varies pour que deux badges voisins ne se ressemblent pas.
+// 39 personnes de "stickers-badges (5).json" (releve 2026-09-08) :
+// n = nom, c = societe. Teintes reparties sur la roue (pas de 83 deg),
+// visages varies pour que deux badges voisins ne se ressemblent pas.
 static const AvatarDef AVATARS[] = {
-    {"David", 0, 1.00f, AF_MUSEAU, 0},      // le perso original
-    {"Daniel", -30, 1.00f, AF_RIRE, 0},     // sunset
-    {"Kim", 40, 1.05f, AF_CHAT, 1},         // bubblegum + joues
-    {"Robin", 90, 1.10f, AF_LUNETTES, 0},   // acid
-    {"Cassie", 130, 1.00f, AF_SOURIRE, 0},
-    {"Vincente", 180, 1.05f, AF_VAGUE, 0},
-    {"Celia", 220, 1.00f, AF_FERMES, 1},
-    {"Thomas", 260, 1.05f, AF_MOUSTACHE, 0},
-    {"Natalia", 300, 1.00f, AF_RIRE, 1},
-    {"Herve", 330, 1.05f, AF_LUNETTES, 0},
-    {"Mr.doob", 0, 0.35f, AF_ETOILES, 0},   // quasi N&B, yeux etoiles
-    {"Ponpom", 20, 1.25f, AF_CHAT, 1},
-    {"Dennis", 60, 1.05f, AF_VAGUE, 0},
-    {"Miris", 110, 1.00f, AF_FERMES, 2},
-    {"Daria", 150, 1.05f, AF_SOURIRE, 0},
-    {"Sunag", 200, 1.00f, AF_MOUSTACHE, 0},
-    {"Renaud", 240, 1.05f, AF_MUSEAU, 2},
-    {"Anderson", 280, 1.00f, AF_LUNETTES, 0},
-    {"Edan", 320, 1.10f, AF_RIRE, 0},
-    {"Merci Michel", -60, 1.05f, AF_FERMES, 1},
-    {"Cassandre", 70, 1.00f, AF_SOURIRE, 1},
-    {"Bruno", 335, 1.15f, AF_RIRE, 1},      // love
-    {"Crew 01", 15, 1.00f, AF_VAGUE, 0},
-    {"Crew 02", 45, 1.05f, AF_CHAT, 0},
-    {"Crew 03", 80, 1.00f, AF_SOURIRE, 0},
-    {"Crew 04", 100, 1.10f, AF_MUSEAU, 1},
-    {"Crew 05", 140, 1.00f, AF_ETOILES, 0},
-    {"Crew 06", 165, 1.05f, AF_FERMES, 0},
-    {"Crew 07", 190, 1.00f, AF_RIRE, 1},
-    {"Crew 08", 210, 1.10f, AF_LUNETTES, 0},
-    {"Crew 09", 235, 1.00f, AF_MOUSTACHE, 2},
-    {"Crew 10", 255, 1.05f, AF_CHAT, 0},
-    {"Crew 11", 275, 1.00f, AF_VAGUE, 1},
-    {"Crew 12", 295, 1.10f, AF_SOURIRE, 0},
-    {"Crew 13", 315, 1.00f, AF_MUSEAU, 0},
-    {"Crew 14", 345, 1.05f, AF_FERMES, 2},
-    {"Crew 15", -15, 1.10f, AF_RIRE, 1},
-    {"Crew 16", -45, 1.00f, AF_LUNETTES, 0},
-    {"Crew 17", 55, 1.20f, AF_CHAT, 0},
-    {"Crew 18", 120, 0.65f, AF_ETOILES, 2}, // pastel doux
+    {"Makio64", "", 0, 1.00f, AF_MUSEAU, 0},
+    {"Kim", "", 83, 1.05f, AF_LUNETTES, 0},
+    {"Robin", "TSL Zelda", 166, 1.10f, AF_MUSEAU, 1},
+    {"Cassie", "GSAP", 249, 1.00f, AF_CHAT, 2},
+    {"Vicente", "Abeto", 332, 1.05f, AF_ETOILES, 0},
+    {"Celia", "", 55, 1.10f, AF_VAGUE, 0},
+    {"Thomas", "Google", 138, 1.00f, AF_MOUSTACHE, 1},
+    {"Julie", "Herve Studio", 221, 1.05f, AF_SOURIRE, 0},
+    {"Romain", "Herve Studio", 304, 1.10f, AF_FERMES, 0},
+    {"Mr.doob", "three.js", 27, 1.00f, AF_RIRE, 0},
+    {"Justine", "Ponpon Mania", 110, 1.05f, AF_LUNETTES, 1},
+    {"Patrick", "Ponpon Mania", 193, 1.10f, AF_MUSEAU, 0},
+    {"Sean", "Miris", 276, 1.00f, AF_CHAT, 0},
+    {"Daria", "", 359, 1.05f, AF_ETOILES, 0},
+    {"Sunag", "TSL creator", 82, 1.10f, AF_VAGUE, 1},
+    {"Renaud", "utsubo", 165, 1.00f, AF_MOUSTACHE, 0},
+    {"Anderson", "Neotix", 248, 1.05f, AF_SOURIRE, 0},
+    {"Edan", "Lusion", 331, 1.10f, AF_FERMES, 2},
+    {"Antoine", "Merci Michel", 54, 1.00f, AF_RIRE, 1},
+    {"Cassandre", "Moment Factory", 137, 1.05f, AF_LUNETTES, 0},
+    {"Bruno", "Three.Js Journey", 220, 1.10f, AF_MUSEAU, 0},
+    {"Dennis", "pmndrs", 303, 1.00f, AF_CHAT, 0},
+    {"Natalia", "Google", 26, 1.05f, AF_ETOILES, 1},
+    {"Kris", "pmndrs", 109, 1.10f, AF_VAGUE, 0},
+    {"Lovis", "fal.ai", 192, 1.00f, AF_MOUSTACHE, 2},
+    {"Misha", "edclub", 275, 1.05f, AF_SOURIRE, 0},
+    {"Misaki", "bonobo", 358, 1.10f, AF_FERMES, 1},
+    {"Umut", "fal.ai", 81, 1.00f, AF_RIRE, 0},
+    {"Bryan", "miris", 164, 1.05f, AF_LUNETTES, 0},
+    {"Marc", "Vercel", 247, 1.10f, AF_MUSEAU, 0},
+    {"Spline", "", 330, 1.00f, AF_CHAT, 1},
+    {"Stijn", "flux", 53, 1.05f, AF_ETOILES, 2},
+    {"Tanya", "shopify", 136, 1.10f, AF_VAGUE, 0},
+    {"Daniel", "shopify", 219, 1.00f, AF_MOUSTACHE, 0},
+    {"Francisco", "joyco", 302, 1.05f, AF_SOURIRE, 1},
+    {"Zubin", "edclub", 25, 1.10f, AF_FERMES, 0},
+    {"Mike", "edclub", 108, 1.00f, AF_RIRE, 0},
+    {"Arnaud", "shopify", 191, 1.05f, AF_LUNETTES, 0},
+    {"Damian", "shopify", 274, 1.10f, AF_MUSEAU, 1},
 };
 #define AVATAR_N ((int)(sizeof(AVATARS) / sizeof(AVATARS[0])))
 
@@ -109,7 +110,7 @@ static float g_sphereScale = 1.0f; // scale de la sphere (battement Love)
 // l'avatar de la table pour la couleur de la sphere ET le visage. Persiste en
 // NVS (bcust/bhue/bsat/bface) ; choisir un avatar dans Settings le desactive.
 static bool g_buddyCustom = false;
-static AvatarDef g_buddyCustomDef = {"Custom", 0, 1.00f, AF_MUSEAU, 0};
+static AvatarDef g_buddyCustomDef = {"Custom", "", 0, 1.00f, AF_MUSEAU, 0};
 static int g_faceForce = -1; // >=0 : force un avatar de la table (preview
                              // Settings, meme si le custom est actif)
 static inline const AvatarDef &avatarCurrent()

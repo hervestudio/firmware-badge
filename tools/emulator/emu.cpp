@@ -825,6 +825,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
       // l'avatar choisi devient l'identite du badge (nom + SSID), comme
       // sur le vrai badge
       snprintf(qrName, sizeof(qrName), "%s", AVATARS[setSel].name);
+      snprintf(qrCompany, sizeof(qrCompany), "%s", AVATARS[setSel].comp);
       irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
       g_ballDirty = true;    // + le sprite de boule (snake/DVD/jeux)
       if (setSpr)
