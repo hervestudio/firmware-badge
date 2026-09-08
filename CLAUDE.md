@@ -68,8 +68,8 @@ pio run -e proto -t upload                # PREMIER PROTOTYPE uniquement (ancien
 - **More** : Draw (WiFi), Setup (WiFi), Auto cycle, Settings
 - **Settings** (code PIN) : Avatar, Proximity, Rotate screen, OTA flash mode,
   Batt (→ écran de **calibration de la jauge**, facteur NVS par badge — les
-  ponts 100k ont ±5 % de tolérance). ⚠️ PIN temporaire `00000`, à remettre à
-  `39193` avant la série (`UI_PIN_CODE`).
+  ponts 100k ont ±5 % de tolérance). PIN définitif : **2010** (année de
+  création de three.js, `UI_PIN_CODE` dans menu_ui.h).
 
 ## Social (ESP-NOW)
 

@@ -542,8 +542,10 @@ static void uiDrawRotate(int deg)
 // Les Settings (avatar/personne du badge) sont proteges par un code a 5
 // chiffres : gauche/droite = chiffre -/+, centre = valider et passer au
 // suivant. Mauvais code = retour au menu.
-#define UI_PIN_LEN 5
-static const uint8_t UI_PIN_CODE[UI_PIN_LEN] = {0, 0, 0, 0, 0}; // provisoire (etait 39193)
+#define UI_PIN_LEN 4
+// 2010 : annee de creation de three.js (code DEFINITIF serie, revue
+// Romain 2026-09-08 — a remplace le 00000 provisoire des tests)
+static const uint8_t UI_PIN_CODE[UI_PIN_LEN] = {2, 0, 1, 0};
 
 static void uiDrawPin(const uint8_t *digits, int pos, bool error)
 {
