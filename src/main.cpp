@@ -1586,6 +1586,20 @@ void setup()
   Serial0.begin(115200); // UART0 -> pont CH343 : logs visibles sur /dev/cu.usbmodem*
   Serial0.println("=== Badge threejs.paris - animations GC9B72 ===");
   prefs.begin("badge", false); // records des jeux (NVS)
+  // REMISE A ZERO DE FLOTTE (revue Romain 2026-09-08) : l'OTA WiFi ne peut
+  // pas effacer la flash, donc le firmware s'en charge — au PREMIER boot
+  // d'une nouvelle "generation", la NVS (identite, scores, calibration...)
+  // et la photo sont effacees. Incrementer RESET_GEN pour declencher un
+  // nouvel effacement de toute la flotte au prochain flash.
+#define RESET_GEN 1
+  if (prefs.getUShort("fwgen", 0) != RESET_GEN)
+  {
+    prefs.clear();
+    if (LittleFS.begin(true))
+      LittleFS.remove("/photo.565");
+    prefs.putUShort("fwgen", RESET_GEN);
+    Serial0.println("flotte : memoire remise a zero (nouvelle generation)");
+  }
   uiScreenRot = (int)(int8_t)prefs.getChar("rotDeg", 0); // rotation ecran calibree
   vbatCal = prefs.getShort("vcal", 1000); // calibration jauge batterie par badge
 
