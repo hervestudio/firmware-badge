@@ -123,6 +123,18 @@ captures PPM — utilisé pour vérifier chaque écran sans matériel
 
 - Écran qui scintille + LED en rythme = **alim marginale** (3V3 < 3,25 V sous
   charge), pas un bug logiciel. QC série : 3V3 ≥ 3,25 V pendant une anim.
+  Arbre de diagnostic (revues 2026-09-07/08) : mesurer 5V (VIN) → si < 4,6 V,
+  fil boost→devkit à ressouder ; sinon 3V3 sur la BROCHE du devkit, fil écran
+  débranché → si < 3,25 V à vide, **régulateur du devkit HS → remplacer la
+  carte** (2 cas en série : un régulateur mort à 2,98 V, un module en
+  court-circuit brûlant). Double logo de boot = brownout au 1er boot ;
+  scintillement qui apparaît PILE sur Conf Buddy = pics de la radio ESP-NOW.
+- **QC devkit AVANT soudure** (30 s/carte) : USB branché, 3V3 ≥ 3,25 V au
+  multimètre, chip à peine tiède — sinon carte écartée. Évite d'assembler un
+  badge complet autour d'un régulateur faiblard.
+- Ports USB du devkit : flash/logs par le port **UART (CH343)** uniquement.
+  Le port natif = GPIO 19/20 (boutons) : sur un badge aux boutons câblés il
+  n'énumère plus, et le trafic USB déclenche le mode OTA au boot.
 - `Serial0.printf` interdit sous `portENTER_CRITICAL` (copie d'abord).
 - Écritures NVS interdites dans les callbacks WiFi/ESP-NOW.
 - Génération lourde sur cœur 0 + rendu PSRAM cœur 1 = TG1WDT sur cartes
