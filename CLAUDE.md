@@ -74,7 +74,10 @@ pio run -e proto -t upload                # PREMIER PROTOTYPE uniquement (ancien
 ## Social (ESP-NOW)
 
 Radio active UNIQUEMENT pendant l'anim Conf Buddy (et l'écran Proximity en
-mode sonde). Beacon broadcast ~1 Hz canal 1, TX bridée 8,5 dBm (pics de
+mode sonde), **et seulement si le badge a une identité** (`bname` non vide,
+écrit par Setup ou Settings) : badge non configuré = buddy ALÉATOIRE stable
+(NVS `rhue`/`rface`, custom non persisté) et radio muette — pas de détection
+anonyme (revue 2026-09-08). Beacon broadcast ~1 Hz canal 1, TX bridée 8,5 dBm (pics de
 courant → brownouts sinon). Contenu : identité (nom/avatar/couleur) + les
 4 records de jeux (ajout rétro-compatible en fin de paquet).
 

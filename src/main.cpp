@@ -1630,6 +1630,30 @@ void setup()
   g_buddyCustomDef.sat = prefs.getUChar("bsat", 100) / 100.0f;
   g_buddyCustomDef.face = prefs.getUChar("bface", 0) % 9;
   prefs.getString("bname", qrName, sizeof(qrName));
+  // Buddy ALEATOIRE par badge tant qu'aucun profil n'est configure (revue
+  // Romain 2026-09-08) : ni nom (Setup/Settings ecrivent "bname") ni buddy
+  // custom -> teinte + visage tires une fois et PERSISTES ("rhue"/"rface",
+  // stables d'un boot a l'autre), appliques en custom NON sauve ("bcust"
+  // reste 0) — le vrai profil, quand il arrive, reprend la main tel quel.
+  if (!qrName[0] && !g_buddyCustom)
+  {
+    uint16_t rh = prefs.getUShort("rhue", 0xFFFF);
+    uint8_t rf;
+    if (rh == 0xFFFF)
+    {
+      rh = (uint16_t)(esp_random() % 360);
+      rf = (uint8_t)(esp_random() % 9);
+      prefs.putUShort("rhue", rh);
+      prefs.putUChar("rface", rf);
+      Serial0.printf("buddy aleatoire : hue %u, visage %u\n", rh, rf);
+    }
+    else
+      rf = prefs.getUChar("rface", 0) % 9;
+    g_buddyCustom = true;
+    g_buddyCustomDef.hue = (int16_t)rh;
+    g_buddyCustomDef.sat = 1.0f;
+    g_buddyCustomDef.face = rf;
+  }
   socialMetLoad(); // compteurs de rencontres (ecran Meet > Encounters)
   lbLoad();        // scores appris des autres badges (Meet > Leaderboard)
   myPhotoLoad();   // photo uploadee via Setup (Watch > My Photo)
@@ -1825,7 +1849,11 @@ void loop()
     return false;
   }();
   {
-    bool wantSession = ((uiMode == UI_ANIM && ACTIVE[slot] == 8) ||
+    // La detection ESP-NOW exige une IDENTITE (revue Romain 2026-09-08) :
+    // badge non configure (pas de nom via Setup/Settings) = radio muette —
+    // pas de "qui est a cote" anonyme. L'ecran Proximity (outil orga,
+    // mode sonde) reste actif pour le diagnostic.
+    bool wantSession = (((uiMode == UI_ANIM && ACTIVE[slot] == 8) && qrName[0]) ||
                         uiMode == UI_PROX) &&
                        !socialBlocked;
     socialProbeOnly = (uiMode == UI_PROX);
