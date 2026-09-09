@@ -1592,7 +1592,7 @@ void setup()
   // d'une nouvelle "generation", la NVS (identite, scores, calibration...)
   // et la photo sont effacees. Incrementer RESET_GEN pour declencher un
   // nouvel effacement de toute la flotte au prochain flash.
-#define RESET_GEN 1
+#define RESET_GEN 2 // gen 2 : remise a zero de flotte du 2026-09-09
   if (prefs.getUShort("fwgen", 0) != RESET_GEN)
   {
     prefs.clear();
