@@ -27,7 +27,8 @@
 #include <driver/rtc_io.h>
 #include <driver/gpio.h>
 #include <Preferences.h>
-#include <LittleFS.h> // photo du speaker uploadee via Setup (partition spiffs)
+#include <LittleFS.h>
+#include <esp_mac.h> // MAC eFuse (tirage du buddy aleatoire) // photo du speaker uploadee via Setup (partition spiffs)
 
 // ---- Cablage (module : GND VCC SCL SDA RST DC CS BL SDO TE) ----
 // VCC -> 3V3   GND -> GND
