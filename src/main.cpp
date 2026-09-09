@@ -1655,8 +1655,15 @@ void setup()
     uint8_t rf;
     if (rh == 0xFFFF)
     {
-      rh = (uint16_t)(esp_random() % 360);
-      rf = (uint8_t)(esp_random() % 9);
+      // tot au boot, esp_random() manque d'entropie (radio eteinte) : on
+      // melange la MAC eFuse, unique par chip — deux badges ne peuvent pas
+      // tirer le meme buddy
+      uint8_t mac[6] = {0};
+      esp_efuse_mac_get_default(mac);
+      uint32_t mix = esp_random() ^ ((uint32_t)mac[5] << 16) ^
+                     ((uint32_t)mac[4] << 8) ^ mac[3] ^ ((uint32_t)mac[2] << 24);
+      rh = (uint16_t)(mix % 360);
+      rf = (uint8_t)((mix >> 9) % 9);
       prefs.putUShort("rhue", rh);
       prefs.putUChar("rface", rf);
       Serial0.printf("buddy aleatoire : hue %u, visage %u\n", rh, rf);
