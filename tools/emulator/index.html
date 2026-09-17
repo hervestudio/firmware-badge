@@ -36,7 +36,7 @@
   #info { max-width: 360px; position: fixed; left: 6vw; bottom: 7vh; z-index: 2; }
   #info #logo { width: 188px; display: block; margin-bottom: 18px; }
   #info p { font-size: 14.5px; line-height: 1.55; margin-bottom: 14px; }
-  #help { color: rgba(33,28,59,.72); font-size: 12px; text-align: left; line-height: 1.75; }
+  #help, #helpMobile { color: rgba(33,28,59,.72); font-size: 12px; text-align: left; line-height: 1.75; }
   kbd {
     background: rgba(33,28,59,.10); border: 1px solid rgba(33,28,59,.25);
     border-radius: 5px; padding: 1px 6px; font-size: 11px; color: var(--ink);
@@ -225,10 +225,58 @@
   }
   #mobileNote.visible { transform: translateX(-50%) translateY(0); }
 
+  /* ---- bouton info + popin (mobile uniquement, voir media query) ---- */
+  #infoBtn {
+    display: none; position: fixed; top: 24px; right: 24px; z-index: 21;
+    width: 42px; height: 42px; border-radius: 50%;
+    border: 1.5px solid var(--frame); background: rgba(255,255,255,.55);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    color: var(--ink); font: italic 600 19px/1 Georgia, serif;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  #infoBackdrop {
+    display: none; position: fixed; inset: 0; z-index: 19;
+    background: rgba(33,28,59,.38);
+  }
+  #infoBackdrop.open { display: block; }
+  #infoClose { display: none; }
+  .mobileOnly { display: none; }
+
+  /* ---- mobile : badge quasi plein ecran (l'image quasi carree est calee
+     sur la hauteur, ses flancs debordent — la colonne centrale ecran +
+     boutons garde un cadrage "format telephone"), infos en popin ---- */
   @media (max-width: 900px) {
-    #badge3d { position: relative; left: auto; transform: none;
-               margin: 0 auto; height: auto; width: min(94vw, 72vh); }
-    #info { position: static; padding: 20px 6vw 40px; max-width: none; }
+    html, body { height: 100%; overflow: hidden; }
+    #frame { inset: 12px; border-radius: 30px; }
+    #badge3d { height: min(97vh, 97dvh); max-width: none; }
+    #credit { left: 26px; bottom: 24px; font-size: 11px; max-width: 46vw; }
+    #infoBtn { display: block; }
+    #help { display: none; }        /* raccourcis clavier : sans objet au doigt */
+    .mobileOnly { display: block; }
+    /* le bloc #info devient une popin centree, fermee par defaut */
+    #info {
+      display: none; position: fixed; z-index: 20;
+      left: 50%; top: 50%; bottom: auto; transform: translate(-50%, -50%);
+      width: min(88vw, 380px); max-width: none; max-height: 78dvh;
+      overflow: auto; background: #f7f6ff; border: 1.5px solid var(--frame);
+      border-radius: 26px; padding: 26px 24px 20px;
+      box-shadow: 0 24px 60px rgba(33,28,59,.35);
+    }
+    #info.open { display: block; }
+    #info #logo { width: 150px; margin-bottom: 14px; }
+    #infoClose {
+      display: block; position: absolute; top: 14px; right: 14px;
+      width: 32px; height: 32px; border-radius: 50%; border: none;
+      background: rgba(33,28,59,.08); color: var(--ink);
+      font-size: 15px; line-height: 1; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #meetBtn {
+      margin-top: 10px; border: 1.5px solid var(--frame);
+      background: none; color: var(--ink); border-radius: 999px;
+      padding: 9px 16px; font-size: 12px; cursor: pointer;
+      font-family: inherit;
+    }
   }
 </style>
 </head>
@@ -327,7 +375,11 @@
 <div id="mobileNote">&#128241; This app pairs your phone with the badge over WiFi.
 The phone mock-up needs more room &mdash; open the emulator on a desktop to try it live!</div>
 
+<button id="infoBtn" aria-label="About this emulator" title="About">i</button>
+<div id="infoBackdrop"></div>
+
 <div id="info">
+  <button id="infoClose" aria-label="Close">&#10005;</button>
   <img id="logo" src="logo.svg" alt="THREE CONF .JS — Badge Emulator">
   <p>A pixel-perfect, in-browser emulator of the threejs.paris conference
      badge — the real ESP32 firmware compiled to WebAssembly.</p>
@@ -336,6 +388,12 @@ The phone mock-up needs more room &mdash; open the emulator on a desktop to try 
     In action games: center = act · quit = hold <kbd>&#8592;</kbd>+<kbd>&#8594;</kbd> for 0.8 s · game over: next = play again<br>
     <kbd>m</kbd> = simulate another badge passing by (Conf Buddy reacts)<br>
     Animations &amp; games are the real firmware sources (anims_extra.h, games.h, tama.h) compiled to WebAssembly.
+  </p>
+  <p id="helpMobile" class="mobileOnly">
+    Tap the badge buttons: <b>&#8743;</b> previous &nbsp;&middot;&nbsp; smiley = center
+    (tap = menu/select, <b>hold 2&nbsp;s = power off</b>) &nbsp;&middot;&nbsp; <b>&#8744;</b> next<br>
+    In action games: center = act &middot; quit = hold <b>&#8743;</b>+<b>&#8744;</b> for 0.8&nbsp;s<br>
+    <button id="meetBtn">&#128075; Simulate a badge passing by</button>
   </p>
 </div>
 
@@ -358,13 +416,28 @@ const typing = e => e.target && (e.target.tagName === 'INPUT' || e.target.tagNam
 // touche m : simule un badge ami qui passe a proximite (reaction du buddy)
 const MEET_NAMES = ['Kim', 'David', 'Mr.doob', 'Bruno', 'Cassie'];
 let meetIdx = 0;
+function simulateMeet() {
+  if (!(window.Module && Module._emu_social_seen)) return;
+  const p = Module.stringToNewUTF8(MEET_NAMES[meetIdx++ % MEET_NAMES.length]);
+  Module._emu_social_seen(p);
+  Module._free(p);
+}
 addEventListener('keydown', e => {
-  if (e.key === 'm' && !typing(e) && window.Module && Module._emu_social_seen) {
-    const p = Module.stringToNewUTF8(MEET_NAMES[meetIdx++ % MEET_NAMES.length]);
-    Module._emu_social_seen(p);
-    Module._free(p);
-  }
+  if (e.key === 'm' && !typing(e)) simulateMeet();
 });
+// ---- popin info (mobile) : bouton "i", backdrop, croix ----
+const infoBox = document.getElementById('info');
+const infoBackdrop = document.getElementById('infoBackdrop');
+function infoOpen(on) {
+  infoBox.classList.toggle('open', on);
+  infoBackdrop.classList.toggle('open', on);
+}
+document.getElementById('infoBtn').onclick =
+  () => infoOpen(!infoBox.classList.contains('open'));
+document.getElementById('infoClose').onclick = () => infoOpen(false);
+infoBackdrop.onclick = () => infoOpen(false);
+document.getElementById('meetBtn').onclick =
+  () => { infoOpen(false); simulateMeet(); };
 addEventListener('keydown', e => { const k = KEYS[e.key];
   if (k && !typing(e)) { e.preventDefault(); held[k] = true; } });
 addEventListener('keyup', e => { const k = KEYS[e.key];
