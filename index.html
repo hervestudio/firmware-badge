@@ -17,6 +17,16 @@
     --frame: #8f89e2;
   }
   * { margin: 0; box-sizing: border-box; }
+  /* page-application : pas de selection de texte — un appui long sur le
+     bouton central (extinction 2 s) declenchait la selection/loupe mobile.
+     Les champs de saisie (app Setup) restent selectionnables. */
+  body {
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+  }
+  input, textarea {
+    -webkit-user-select: text; user-select: text;
+  }
   body {
     background: var(--bg);
     background-image: radial-gradient(rgba(33,28,59,.16) 1.3px, transparent 1.4px);
@@ -410,6 +420,9 @@ function bindBtn(el, key) {
 bindBtn(document.getElementById('bPrev'), 'prev');
 bindBtn(document.getElementById('bNext'), 'next');
 bindBtn(document.getElementById('bCtr'), 'ctr');
+// appui long mobile (extinction 2 s) : pas de menu contextuel sur le badge
+document.getElementById('badge3d')
+  .addEventListener('contextmenu', e => e.preventDefault());
 const KEYS = { ArrowLeft: 'prev', ArrowUp: 'prev', ArrowRight: 'next',
                ArrowDown: 'next', ' ': 'ctr', Enter: 'ctr' };
 const typing = e => e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
