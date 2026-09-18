@@ -764,7 +764,7 @@ const pfaces = document.getElementById('pfaces');
     sShowStep(sStep === 3 ? 0 : sStep + 1);
   document.querySelectorAll('.sdot').forEach(d =>
     d.onclick = () => sShowStep(+d.dataset.s));
-  // etape photo : recadrage rond 360 + envoi pixel a pixel au WASM
+  // photo step: round 360 crop + pixel-by-pixel upload to the WASM
   const pphPrev = document.getElementById('pphotoPrev');
   const pphCtx = pphPrev.getContext('2d');
   const pphFile = document.getElementById('pphotoFile');
