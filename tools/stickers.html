@@ -12,7 +12,7 @@
   body { background: #0c140e; color: #e8ecdf; font-family: -apple-system, system-ui, sans-serif;
          display: flex; min-height: 100vh; }
 
-  /* ---- barre laterale d'edition ---- */
+  /* ---- editing sidebar ---- */
   #side { width: 340px; flex: none; padding: 18px 16px 40px; background: #101c13;
           border-right: 1px solid #223526; overflow-y: auto; height: 100vh; position: sticky; top: 0; }
   h1 { font-size: 14px; letter-spacing: 2.5px; color: #fbd975; font-weight: 600; margin-bottom: 14px; }
@@ -35,14 +35,14 @@
   #warn { color: #f0a04d; font-size: 11.5px; line-height: 1.5; margin-top: 8px; display: none; }
   .hint { color: #93a394; font-size: 11.5px; line-height: 1.6; margin-top: 10px; }
 
-  /* ---- zone planches ---- */
+  /* ---- sheets area ---- */
   #main { flex: 1; padding: 26px; overflow-y: auto; }
   .sheetbox { margin: 0 auto 26px; }
   .sheetbox svg { display: block; width: 100%; height: auto; background: #fff;
                   box-shadow: 0 10px 34px rgba(0,0,0,.45); border-radius: 4px; }
   .sticker-hit { cursor: pointer; }
 
-  /* ---- impression : uniquement les planches, aux cotes reelles ---- */
+  /* ---- printing: sheets only, at real dimensions ---- */
   @media print {
     body { background: #fff; display: block; }
     #side, #screenTitle { display: none !important; }
@@ -102,7 +102,7 @@
 <script>
 const YELLOW = '#FFDB78', INK = '#211C3B', PINK = '#E6007E', GREEN = '#00C800';
 
-// Speakers du schedule (src/menu_ui.h, entrees SPEAKER/KEYNOTE, jeu 10 & ven 11 sept 2026)
+// Schedule speakers (src/menu_ui.h, SPEAKER/KEYNOTE entries, Thu Sep 10 & Fri Sep 11 2026)
 const SPEAKERS = [
   ['David', 'threejs.paris'], ['Daniel', ''], ['Kim', ''], ['Robin', ''],
   ['Cassie', 'GSAP'], ['Vincente', ''], ['Celia', ''], ['Thomas', ''],
@@ -116,7 +116,7 @@ const SAVE_KEY = 'stickers-badge-v1';
 let stickers = SPEAKERS.map(s => ({ n: s[0], c: s[1] }));
 const P = { stW: 41, stH: 16, rad: 2.5, bleed: 1.5, gap: 4, margin: 8,
             shW: 210, shH: 297, nameSize: 5.6, compSize: 4.6 };
-try { // restauration de la derniere session
+try { // restore the previous session
   const saved = JSON.parse(localStorage.getItem(SAVE_KEY));
   if (saved && Array.isArray(saved.stickers)) {
     stickers = saved.stickers.filter(s => s && typeof s.n === 'string')
@@ -128,7 +128,7 @@ try { // restauration de la derniere session
 let selected = -1;
 let saveTick = null, fileHandle = null, writeTick = null;
 
-// petite persistance IndexedDB pour retrouver le fichier lie apres rechargement
+// small IndexedDB persistence to recover the linked file after a reload
 function idb() {
   return new Promise((res, rej) => {
     const rq = indexedDB.open('stickers-badge', 1);
@@ -149,7 +149,7 @@ function jsonStatus(msg, ok) {
   const el = document.getElementById('jsonStatus');
   el.textContent = msg; el.style.color = ok ? '#7cf59a' : '#93a394';
 }
-function writeJsonFile() { // debounce : une ecriture au plus toutes les 600 ms
+function writeJsonFile() { // debounce: at most one write every 600 ms
   if (!fileHandle) return;
   clearTimeout(writeTick);
   writeTick = setTimeout(async () => {
@@ -181,7 +181,7 @@ function applyState(saved) {
   return true;
 }
 
-// ---- mesure de texte (canvas, 100px puis mise a l'echelle) ----
+// ---- text measurement (canvas at 100px, then scaled) ----
 const mctx = document.createElement('canvas').getContext('2d');
 function textWidthMM(txt, family, sizeMM, spacingEM) {
   mctx.font = '100px ' + family;
@@ -191,22 +191,22 @@ function textWidthMM(txt, family, sizeMM, spacingEM) {
 }
 function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
-// ---- rendu d'un sticker (contenu SVG, origine = coin haut-gauche du trait de coupe) ----
+// ---- render one sticker (SVG content, origin = top-left corner of the cut line) ----
 function stickerSVG(st, x, y, idx) {
   const { stW, stH, rad, bleed } = P;
-  const pad = 2.6; // marge interieure texte
+  const pad = 2.6; // inner text margin
   let s = '';
-  // fond perdu (deborde du trait de coupe, meme couleur)
+  // bleed (extends past the cut line, same color)
   s += `<rect x="${x - bleed}" y="${y - bleed}" width="${stW + 2 * bleed}" height="${stH + 2 * bleed}"
         rx="${rad + bleed}" fill="${YELLOW}"/>`;
   const hasComp = st.c && st.c.trim().length > 0;
-  // prenom — Dingos Black en CAPITALES (reference Figma 4126-1072)
+  // first name — Dingos Black in CAPITALS (Figma reference 4126-1072)
   let ns = P.nameSize;
   const maxW = stW - 2 * pad;
   const name = st.n.toUpperCase();
   const nw = textWidthMM(name, 'DingosBlack', ns, 0.01);
   if (nw > maxW) ns = ns * maxW / nw;
-  // entreprise — Bebas Neue majuscules, pleine encre, presque aussi haute que le prenom
+  // company — Bebas Neue uppercase, full ink, almost as tall as the first name
   let cs = P.compSize, comp = hasComp ? st.c.toUpperCase() : '';
   if (hasComp) {
     const cw = textWidthMM(comp, 'BebasNeue', cs, 0.02);
@@ -214,7 +214,7 @@ function stickerSVG(st, x, y, idx) {
   }
   const cx = x + stW / 2;
   if (hasComp) {
-    // baselines de la reference : prenom a 47 %, entreprise a 75 % de la hauteur
+    // reference baselines: first name at 47 %, company at 75 % of the height
     const nameBase = y + stH * 0.47, compBase = y + stH * 0.75;
     s += `<text x="${cx}" y="${nameBase}" text-anchor="middle" font-family="DingosBlack"
           font-size="${ns}" letter-spacing="${0.01 * ns}" fill="${INK}">${esc(name)}</text>`;
@@ -224,16 +224,16 @@ function stickerSVG(st, x, y, idx) {
     s += `<text x="${cx}" y="${y + stH * 0.5 + ns * 0.36}" text-anchor="middle" font-family="DingosBlack"
           font-size="${ns}" letter-spacing="${0.01 * ns}" fill="${INK}">${esc(name)}</text>`;
   }
-  // trait de coupe vectoriel vert fin
+  // thin green vector cut line
   s += `<rect x="${x}" y="${y}" width="${stW}" height="${stH}" rx="${rad}"
         fill="none" stroke="${GREEN}" stroke-width="0.1"/>`;
-  // zone cliquable (apercu uniquement)
+  // clickable area (preview only)
   s += `<rect class="sticker-hit" data-idx="${idx}" x="${x - bleed}" y="${y - bleed}"
         width="${stW + 2 * bleed}" height="${stH + 2 * bleed}" fill="transparent"/>`;
   return s;
 }
 
-// ---- rendu des planches ----
+// ---- sheet rendering ----
 function render() {
   const { stW, stH, gap, margin, shW, shH, bleed } = P;
   const cols = Math.max(1, Math.floor((shW - 2 * margin + gap) / (stW + gap)));
@@ -260,12 +260,12 @@ function render() {
     const row = document.querySelectorAll('#list .row')[selected];
     if (row) { row.scrollIntoView({ block: 'center' }); row.querySelector('input').focus(); }
   });
-  // format de page pour l'impression
+  // page size for printing
   document.getElementById('pagesize').textContent =
     `@page { size: ${shW}mm ${shH}mm; margin: 0; }`;
   document.documentElement.style.setProperty('--shw', shW + 'mm');
   document.documentElement.style.setProperty('--shh', shH + 'mm');
-  // avertissements guide MPA pro
+  // MPA pro guide warnings
   const w = [];
   if (stW < 20 || stH < 20)
     w.push(`⚠ Le guide impose un minimum de 20 mm par côté — actuellement ${stW}×${stH} mm.
@@ -280,7 +280,7 @@ function render() {
   save();
 }
 
-// ---- liste editable ----
+// ---- editable list ----
 function renderList() {
   const box = document.getElementById('list');
   box.innerHTML = '';
@@ -327,7 +327,7 @@ document.getElementById('linkJson').onclick = async () => {
     });
     await idbSet('fileHandle', fileHandle);
     writeJsonFile();
-  } catch (e) {} // annulation du selecteur
+  } catch (e) {} // picker canceled
 };
 document.getElementById('exportJson').onclick = () => {
   const a = document.createElement('a');
@@ -345,8 +345,8 @@ document.getElementById('importFile').onchange = async e => {
   } catch (err) { alert('JSON invalide'); }
   e.target.value = '';
 };
-// retrouve le fichier lie de la session precedente (Chrome garde la permission ;
-// sinon un clic sur « Lier » suffit a la redonner)
+// recover the linked file from the previous session (Chrome keeps the
+// permission; otherwise a click on the "Lier" button re-grants it)
 (async () => {
   try {
     const h = await idbGet('fileHandle');
@@ -357,7 +357,7 @@ document.getElementById('importFile').onchange = async e => {
   } catch (e) {}
 })();
 
-// ---- parametres ----
+// ---- parameters ----
 for (const k of Object.keys(P)) {
   const el = document.getElementById('p_' + k);
   el.value = P[k];

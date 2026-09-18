@@ -1,16 +1,16 @@
-// Les mini-jeux du badge (Snake, Pong, et la fournee Three.js : Blaster,
+// Badge mini-games (Snake, Pong, and the Three.js batch: Blaster,
 // FPS Rush, Donut Catcher, Sphere Runner, Render Panic, Shader Simon).
-// Inclus par main.cpp apres le menu ; utilise canvas, rgb565/hsv2rgb565,
-// frand, drawBallSprite, dvdBlit/dvdSprites, prefs et les pins BTN_*.
+// Included by main.cpp after the menu; uses canvas, rgb565/hsv2rgb565,
+// frand, drawBallSprite, dvdBlit/dvdSprites, prefs and the BTN_* pins.
 #pragma once
 
-// Appuis fournis par loop() a chaque frame (debounces / press-down)
+// Button presses provided by loop() each frame (debounced / press-down)
 static bool gBtnCenter = false;
 static bool gBtnLeft = false, gBtnRight = false;
 
-// ------------------------------------------------------------------- jeux
+// ------------------------------------------------------------------ games
 
-// Ecran de fin commun aux deux jeux
+// End screen shared by both games
 static void drawGameOver(const char *title, int score, int best)
 {
   canvas->fillScreen(RGB565_BLACK);
@@ -36,8 +36,8 @@ static void drawGameOver(const char *title, int score, int best)
   canvas->print("center: menu");
 }
 
-// ---- Snake jouable : pilotage continu (maintenir gauche/droite pour tourner),
-// pommes a manger, mort sur le bord ou sur son propre corps. ----
+// ---- Playable Snake: continuous steering (hold left/right to turn),
+// apples to eat, death on the edge or on its own body. ----
 
 #define SNKG_TRAIL 420
 static struct
@@ -47,19 +47,19 @@ static struct
   bool over;
   Vec2 trail[SNKG_TRAIL];
   int trailLen;
-  float ax, ay; // pomme
+  float ax, ay; // apple
   int best;
 } snkg;
 
-// Mini-visage pour les petites spheres (le visage standard, calibre pour des
-// tetes de 54 px, devient un pate illisible a 16 px) : yeux fins + sourire 1 px.
+// Mini face for the small spheres (the standard face, tuned for 54 px heads,
+// turns into an unreadable blob at 16 px): thin eyes + 1 px smile.
 static void drawMiniFace(float cx, float cy, float r)
 {
   uint16_t ink = rgb565(39, 39, 39);
   int er = max(1, (int)(r * 0.11f));
   canvas->fillCircle((int)(cx - r * 0.34f), (int)(cy - r * 0.2f), er, ink);
   canvas->fillCircle((int)(cx + r * 0.34f), (int)(cy - r * 0.2f), er, ink);
-  // sourire : parabole en 4 segments de 1 px (x2 rangees pour la lisibilite)
+  // smile: parabola as 4 segments of 1 px (x2 rows for readability)
   int px = 0, py = 0;
   for (int i = -2; i <= 2; i++)
   {
@@ -77,7 +77,7 @@ static void drawMiniFace(float cx, float cy, float r)
 
 static void snakeGameSpawnApple()
 {
-  // dans l'arene, pas trop pres de la tete
+  // inside the arena, not too close to the head
   for (int tries = 0; tries < 20; tries++)
   {
     float a = frand(0, 2 * PI), r = frand(30, RADIUS - 40);
@@ -119,7 +119,7 @@ static void gameSnake(float dt)
   if (dt > 0.12f)
     dt = 0.12f;
 
-  // pilotage : maintenir gauche/droite pour tourner (lecture directe des pins)
+  // steering: hold left/right to turn (direct pin reads)
   if (digitalRead(BTN_PREV) == LOW)
     snkg.ang -= 3.6f * dt;
   if (digitalRead(BTN_NEXT) == LOW)
@@ -128,13 +128,13 @@ static void gameSnake(float dt)
   snkg.x += cosf(snkg.ang) * snkg.speed * dt;
   snkg.y += sinf(snkg.ang) * snkg.speed * dt;
 
-  // memorise la trajectoire
+  // record the trajectory
   if (snkg.trailLen < SNKG_TRAIL)
     snkg.trailLen++;
   memmove(&snkg.trail[1], &snkg.trail[0], (snkg.trailLen - 1) * sizeof(Vec2));
   snkg.trail[0] = {snkg.x, snkg.y};
 
-  // corps : echantillonnage a pas constant le long de la trajectoire
+  // body: constant-step sampling along the trajectory
   static Vec2 pts[128];
   int np = 1, ti = 0;
   pts[0] = {snkg.x, snkg.y};
@@ -156,7 +156,7 @@ static void gameSnake(float dt)
     }
   }
 
-  // collisions : bord de l'arene / pomme / son propre corps
+  // collisions: arena edge / apple / its own body
   float dc = sqrtf((snkg.x - CX) * (snkg.x - CX) + (snkg.y - CY) * (snkg.y - CY));
   bool dead = dc > Rmax;
   float da = sqrtf((snkg.x - snkg.ax) * (snkg.x - snkg.ax) + (snkg.y - snkg.ay) * (snkg.y - snkg.ay));
@@ -184,14 +184,14 @@ static void gameSnake(float dt)
     return;
   }
 
-  // rendu
+  // render
   canvas->fillScreen(RGB565_BLACK);
-  canvas->drawCircle(CX, CY, (int)(RADIUS - 3), rgb565(70, 70, 90)); // bord arene
-  // pomme : rouge + feuille + reflet
+  canvas->drawCircle(CX, CY, (int)(RADIUS - 3), rgb565(70, 70, 90)); // arena edge
+  // apple: red + leaf + highlight
   canvas->fillCircle((int)snkg.ax, (int)snkg.ay, 9, rgb565(225, 60, 50));
   canvas->fillRect((int)snkg.ax - 1, (int)snkg.ay - 14, 3, 6, rgb565(90, 180, 80));
   canvas->fillCircle((int)snkg.ax - 3, (int)snkg.ay - 3, 2, rgb565(255, 180, 170));
-  // corps (queue -> tete) puis visage
+  // body (tail -> head) then face
   for (int i = np - 1; i >= 0; i--)
   {
     float sr = headR * (1.0f - 0.25f * i / max(1, snkg.len - 1));
@@ -207,8 +207,8 @@ static void gameSnake(float dt)
   canvas->print(buf);
 }
 
-// ---- Pong circulaire : raquette en arc qui orbite sur le bord (maintenir
-// gauche/droite), balle qui accelere a chaque renvoi, 3 vies. ----
+// ---- Circular Pong: arc paddle orbiting the rim (hold left/right),
+// ball speeds up on every return, 3 lives. ----
 
 static struct
 {
@@ -217,8 +217,8 @@ static struct
   int lives, score, best;
   bool over, serving;
   uint32_t serveMs;
-  int palIdx;     // palette de la balle (change a chaque renvoi, comme le DVD)
-  uint32_t hitMs; // feedback visuel de la raquette a l'impact
+  int palIdx;     // ball palette (changes on every return, like the DVD anim)
+  uint32_t hitMs; // paddle visual feedback on impact
 } pong;
 
 static float wrapPi(float a)
@@ -257,9 +257,9 @@ static void pongReset()
 
 static void gamePong(float dt)
 {
-  const float RIM = RADIUS - 10;   // rayon de jeu
-  const float PAD_HALF = 0.42f;    // demi-angle de la raquette
-  const float ballR = 13; // reduit de 30% (etait 18)
+  const float RIM = RADIUS - 10;   // playfield radius
+  const float PAD_HALF = 0.42f;    // paddle half-angle
+  const float ballR = 13; // reduced by 30% (was 18)
 
   if (pong.over)
   {
@@ -269,7 +269,7 @@ static void gamePong(float dt)
   if (dt > 0.12f)
     dt = 0.12f;
 
-  // raquette : maintenir gauche/droite pour orbiter
+  // paddle: hold left/right to orbit
   pong.padPrev = pong.padAng;
   if (digitalRead(BTN_PREV) == LOW)
     pong.padAng -= 4.2f * dt;
@@ -277,7 +277,7 @@ static void gamePong(float dt)
     pong.padAng += 4.2f * dt;
   float padVel = wrapPi(pong.padAng - pong.padPrev) / max(dt, 0.001f);
 
-  // balle (apres le service)
+  // ball (after the serve)
   if (pong.serving && millis() - pong.serveMs > 900)
     pong.serving = false;
   if (!pong.serving)
@@ -292,7 +292,7 @@ static void gamePong(float dt)
       float ballAng = atan2f(dy, dx);
       if (fabsf(wrapPi(ballAng - pong.padAng)) <= PAD_HALF)
       {
-        // renvoi : reflexion radiale + effet tangentiel de la raquette
+        // return: radial reflection + tangential spin from the paddle
         float dot = pong.vx * nx + pong.vy * ny;
         pong.vx -= 2 * dot * nx;
         pong.vy -= 2 * dot * ny;
@@ -305,8 +305,8 @@ static void gamePong(float dt)
         pong.bx = CX + nx * (RIM - ballR - 1);
         pong.by = CY + ny * (RIM - ballR - 1);
         pong.score++;
-        pong.palIdx = (pong.palIdx + 1) % DVD_NPAL; // nouvelle couleur de balle
-        pong.hitMs = millis();                      // flash de la raquette
+        pong.palIdx = (pong.palIdx + 1) % DVD_NPAL; // new ball color
+        pong.hitMs = millis();                      // paddle flash
       }
       else
       {
@@ -326,11 +326,11 @@ static void gamePong(float dt)
     }
   }
 
-  // rendu
+  // render
   canvas->fillScreen(rgb565(6, 8, 18));
-  canvas->drawCircle(CX, CY, (int)RIM + 4, rgb565(60, 65, 95)); // bord
-  // raquette : arc plein a bouts arrondis. A l'impact : flash vers le blanc
-  // + epaississement bref (decroit sur 180 ms).
+  canvas->drawCircle(CX, CY, (int)RIM + 4, rgb565(60, 65, 95)); // rim
+  // paddle: solid arc with rounded ends. On impact: flash towards white
+  // + brief thickening (decays over 180 ms).
   float hitK = 0;
   if (pong.hitMs)
   {
@@ -338,9 +338,9 @@ static void gamePong(float dt)
     if (dh < 180)
       hitK = 1.0f - dh / 180.0f;
   }
-  float thick = 5 + 3 * hitK; // demi-epaisseur
+  float thick = 5 + 3 * hitK; // half thickness
   uint16_t pc = rgb565(255, 213 + (int)(42 * hitK), 48 + (int)(207 * hitK));
-  int steps = (int)(2 * PAD_HALF * (RIM + thick)) + 2; // ~1 trait radial par pixel d'arc
+  int steps = (int)(2 * PAD_HALF * (RIM + thick)) + 2; // ~1 radial line per arc pixel
   for (int i = 0; i <= steps; i++)
   {
     float a = pong.padAng - PAD_HALF + 2 * PAD_HALF * i / steps;
@@ -353,12 +353,12 @@ static void gamePong(float dt)
     float a = pong.padAng + s * PAD_HALF;
     canvas->fillCircle(CX + (int)(cosf(a) * RIM), CY + (int)(sinf(a) * RIM), (int)thick, pc);
   }
-  // balle : sphere dont la palette change a chaque renvoi (comme l'anim DVD) ;
-  // clignote pendant le service
+  // ball: sphere whose palette changes on every return (like the DVD anim);
+  // blinks during the serve
   bool blink = pong.serving && ((millis() / 150) % 2 == 0);
   if (!blink)
     dvdBlit(dvdSprites[pong.palIdx], (int)pong.bx, (int)pong.by, ballR, 255);
-  // score + vies (coeurs)
+  // score + lives (hearts)
   char buf[8];
   snprintf(buf, sizeof(buf), "%d", pong.score);
   canvas->setTextSize(2);
@@ -376,9 +376,9 @@ static void gamePong(float dt)
 }
 
 
-// ==== Fournee Three.js ======================================================
+// ==== Three.js batch ========================================================
 
-// Petites etoiles de fond deterministes (Blaster / FPS Rush)
+// Small deterministic background stars (Blaster / FPS Rush)
 static void drawStars()
 {
   for (int i = 0; i < 40; i++)
@@ -388,7 +388,7 @@ static void drawStars()
   }
 }
 
-// Mini cube wireframe "MeshNormalMaterial" : deux carres decales + aretes
+// Mini "MeshNormalMaterial" wireframe cube: two offset squares + edges
 static void drawWireCube(int cx, int cy, float r, float rot, uint8_t hue)
 {
   uint16_t c1 = hsv2rgb565(hue, 220, 255);
@@ -411,7 +411,7 @@ static void drawWireCube(int cx, int cy, float r, float rot, uint8_t hue)
   }
 }
 
-// Mini donut (torus de face) : anneau plein + trou
+// Mini donut (torus seen head-on): solid ring + hole
 static void drawDonutSprite(int cx, int cy, float r, uint8_t hue, uint16_t bg)
 {
   canvas->fillCircle(cx, cy, (int)r, hsv2rgb565(hue, 200, 255));
@@ -419,10 +419,11 @@ static void drawDonutSprite(int cx, int cy, float r, uint8_t hue, uint16_t bg)
   canvas->drawCircle(cx, cy, (int)r, hsv2rgb565((uint8_t)(hue + 40), 220, 160));
 }
 
-// ---- Sphere Runner v2 : le perso ROULE (de profil) sur la planete wireframe,
-// pics/cubes a sauter, donuts a collecter en l'air, cube-soleil Three.js. ----
+// ---- Sphere Runner v2: the character ROLLS (side view) on the wireframe
+// planet, spikes/cubes to jump over, donuts to collect mid-air,
+// Three.js sun-cube. ----
 
-// Blit du sprite de sphere TOURNE : le perso roule visiblement
+// Blit of the ROTATED sphere sprite: the character visibly rolls
 static void drawBallSpriteRot(int cx, int cy, float rf, float ang)
 {
   int r = (int)rf;
@@ -448,13 +449,13 @@ static void drawBallSpriteRot(int cx, int cy, float rf, float ang)
   }
 }
 
-// Visage de PROFIL (regarde vers la droite, d'ou arrivent les obstacles) —
-// fixe pendant que la texture roule dessous, facon cartoon.
+// PROFILE face (looking right, where the obstacles come from) —
+// stays fixed while the texture rolls underneath, cartoon style.
 static void drawProfileFace(float cx, float cy, float r)
 {
   uint16_t ink = rgb565(39, 39, 39);
   canvas->fillCircle((int)(cx + r * 0.42f), (int)(cy - r * 0.24f), max(1, (int)(r * 0.14f)), ink);
-  // petite bouche souriante sur le bord avant
+  // small smiling mouth on the leading edge
   canvas->drawLine((int)(cx + r * 0.48f), (int)(cy + r * 0.28f),
                    (int)(cx + r * 0.74f), (int)(cy + r * 0.14f), ink);
   canvas->drawLine((int)(cx + r * 0.48f), (int)(cy + r * 0.29f),
@@ -464,8 +465,8 @@ static void drawProfileFace(float cx, float cy, float r)
 static struct
 {
   float h, vh, worldAng, speed, rollAng;
-  struct { float ang; uint8_t type; bool on; } ob[5]; // 0 pic, 1 cube, 2 double pic
-  struct { float ang; bool on; } dn[3];               // donuts a collecter
+  struct { float ang; uint8_t type; bool on; } ob[5]; // 0 spike, 1 cube, 2 double spike
+  struct { float ang; bool on; } dn[3];               // donuts to collect
   struct { float x, y, vx, vy, life; uint16_t c; } dust[8];
   int score, best, milestone;
   bool over;
@@ -492,8 +493,8 @@ static void runnerDust(float x, float y, uint16_t c)
 
 static void gameRunner(float dt)
 {
-  const float RG = RADIUS - 12; // rayon du sol
-  const float PANG = PI / 2;    // le perso est en bas de l'ecran
+  const float RG = RADIUS - 12; // ground radius
+  const float PANG = PI / 2;    // the character sits at the bottom of the screen
   if (rn.over)
   {
     drawGameOver("GAME OVER", rn.score, rn.best);
@@ -503,7 +504,7 @@ static void gameRunner(float dt)
     dt = 0.12f;
   uint32_t ms = millis();
 
-  // saut (bouton central)
+  // jump (center button)
   bool grounded = rn.h <= 0.01f;
   if (gBtnCenter && grounded)
   {
@@ -519,7 +520,7 @@ static void gameRunner(float dt)
   }
   grounded = rn.h <= 0.01f;
 
-  // le monde tourne, ca accelere ; la sphere roule (rotation de la texture)
+  // the world spins, speeding up; the sphere rolls (texture rotation)
   rn.speed = min(1.1f + rn.score * 0.010f, 2.6f);
   rn.worldAng += rn.speed * dt;
   if (grounded)
@@ -528,12 +529,12 @@ static void gameRunner(float dt)
   if (sc / 100 > rn.milestone)
   {
     rn.milestone = sc / 100;
-    rn.milestoneMs = ms; // flash du score aux paliers de 100
+    rn.milestoneMs = ms; // score flash at every 100-point milestone
   }
   if (sc > rn.score)
     rn.score = sc;
 
-  // spawn : obstacles (varies) et donuts a collecter
+  // spawn: obstacles (varied) and donuts to collect
   if (ms - rn.spawnMs > (uint32_t)(1900 / rn.speed))
   {
     rn.spawnMs = ms;
@@ -558,7 +559,7 @@ static void gameRunner(float dt)
           break;
         }
   }
-  // obstacles : collision selon le type
+  // obstacles: collision depending on type
   for (int i = 0; i < 5; i++)
   {
     if (!rn.ob[i].on)
@@ -579,7 +580,7 @@ static void gameRunner(float dt)
       return;
     }
   }
-  // donuts : a attraper en sautant
+  // donuts: caught by jumping
   for (int i = 0; i < 3; i++)
   {
     if (!rn.dn[i].on)
@@ -592,10 +593,10 @@ static void gameRunner(float dt)
       rn.dn[i].on = false;
       rn.score += 5;
       for (int k = 0; k < 3; k++)
-        runnerDust(CX, CY + RG - 50, rgb565(255, 213, 48)); // confettis dores
+        runnerDust(CX, CY + RG - 50, rgb565(255, 213, 48)); // golden confetti
     }
   }
-  // poussiere de roulement
+  // rolling dust
   if (grounded && (ms % 3) == 0)
     runnerDust(CX - 10, CY + RG - 16, rgb565(110, 110, 130));
   for (int i = 0; i < 8; i++)
@@ -606,12 +607,12 @@ static void gameRunner(float dt)
       rn.dust[i].y += rn.dust[i].vy * dt;
     }
 
-  // ---- rendu ----
+  // ---- render ----
   canvas->fillScreen(rgb565(7, 7, 14));
   drawStars();
-  // cube-soleil "MeshNormalMaterial" qui tourne lentement dans le ciel
+  // "MeshNormalMaterial" sun-cube slowly spinning in the sky
   drawWireCube(CX, CY - 34, 16, ms / 1400.0f, (uint8_t)(ms / 60));
-  // planete wireframe : double cercle + graduations qui defilent
+  // wireframe planet: double circle + scrolling tick marks
   canvas->drawCircle(CX, CY, (int)RG, rgb565(110, 110, 140));
   canvas->drawCircle(CX, CY, (int)RG + 4, rgb565(60, 60, 85));
   for (int i = 0; i < 24; i++)
@@ -628,7 +629,7 @@ static void gameRunner(float dt)
       uint16_t c = hsv2rgb565((uint8_t)(i * 60 + 180), 220, 255);
       if (rn.ob[i].type == 1)
       {
-        // cube pose sur le sol
+        // cube sitting on the ground
         drawWireCube(CX + (int)(cosf(a) * (RG - 14)), CY + (int)(sinf(a) * (RG - 14)),
                      12, a, (uint8_t)(i * 60));
       }
@@ -647,7 +648,7 @@ static void gameRunner(float dt)
         }
       }
     }
-  // donuts flottants (teinte qui tourne)
+  // floating donuts (cycling hue)
   for (int i = 0; i < 3; i++)
     if (rn.dn[i].on)
     {
@@ -655,16 +656,16 @@ static void gameRunner(float dt)
       drawDonutSprite(CX + (int)(cosf(a) * (RG - 38)), CY + (int)(sinf(a) * (RG - 38)),
                       10, (uint8_t)(ms / 30 + i * 60), rgb565(7, 7, 14));
     }
-  // poussiere
+  // dust
   for (int i = 0; i < 8; i++)
     if (rn.dust[i].life > 0)
       canvas->fillRect((int)rn.dust[i].x, (int)rn.dust[i].y, 2, 2, rn.dust[i].c);
-  // perso : sphere qui ROULE + visage de profil
+  // character: ROLLING sphere + profile face
   float pr = RG - 15 - rn.h;
   int px = CX + (int)(cosf(PANG) * pr), py = CY + (int)(sinf(PANG) * pr);
   drawBallSpriteRot(px, py, 14, rn.rollAng);
   drawProfileFace(px, py, 14);
-  // score (flash dore aux paliers de 100)
+  // score (golden flash at every 100-point milestone)
   char buf[8];
   snprintf(buf, sizeof(buf), "%d", rn.score);
   canvas->setTextSize(2);
@@ -675,17 +676,17 @@ static void gameRunner(float dt)
 }
 
 
-// ---- Roundtris : Tetris circulaire — le puits est un anneau sans murs
-// lateraux (ca boucle sur 360 degres), les pieces tombent du bord vers le
-// centre, un anneau complet s'efface. Gauche/droite : orbiter ; centre :
-// pivoter. La piece suivante et le score s'affichent dans le noyau. ----
+// ---- Roundtris: circular Tetris — the well is a ring with no side walls
+// (it wraps around 360 degrees), pieces fall from the rim towards the
+// center, a full ring clears. Left/right: orbit; center: rotate.
+// The next piece and the score are shown in the core. ----
 
 #define TT_RINGS 10
 #define TT_SECT 16
-#define TT_R0 26.0f  // rayon du noyau (le "sol")
-#define TT_DR 14.0f  // epaisseur d'un anneau
+#define TT_R0 26.0f  // core radius (the "floor")
+#define TT_DR 14.0f  // thickness of one ring
 
-// tetrominos : offsets (dx = angulaire, dy = radial), pivote par (dx,dy)->(-dy,dx)
+// tetrominoes: offsets (dx = angular, dy = radial), rotated by (dx,dy)->(-dy,dx)
 static const int8_t TT_SHAPES[7][4][2] = {
     {{-1, 0}, {0, 0}, {1, 0}, {2, 0}},  // I
     {{0, 0}, {1, 0}, {0, 1}, {1, 1}},   // O
@@ -697,8 +698,8 @@ static const int8_t TT_SHAPES[7][4][2] = {
 
 static struct
 {
-  uint8_t grid[TT_RINGS][TT_SECT]; // 0 vide, sinon 1 + type (couleur)
-  int type, rot, ring, sect;       // piece qui tombe
+  uint8_t grid[TT_RINGS][TT_SECT]; // 0 empty, else 1 + type (color)
+  int type, rot, ring, sect;       // falling piece
   int nextType;
   int score, best;
   bool over;
@@ -711,7 +712,7 @@ static uint16_t ttColor(uint8_t v)
   return hsv2rgb565(hues[(v - 1) % 7], 220, 235);
 }
 
-// cellules absolues de la piece courante (rot appliquee) ; renvoie false si collision
+// absolute cells of the current piece (rot applied); returns false on collision
 static bool ttCells(int ring, int sect, int rot, int out[4][2])
 {
   for (int i = 0; i < 4; i++)
@@ -761,7 +762,7 @@ static void tetroReset()
   tt.fallMs = millis();
 }
 
-// dessine une cellule (quartier d'anneau) : 2 triangles + liseret sombre
+// draws one cell (ring sector): 2 triangles + dark outline
 static void ttDrawCell(int ring, int sect, uint16_t col)
 {
   float a0 = sect * 2 * PI / TT_SECT - PI / 2;
@@ -787,8 +788,8 @@ static void gameTetro(float dt)
   }
   uint32_t ms = millis();
 
-  // deplacements angulaires : maintien avec repetition (300 ms de debounce
-  // serait trop lent pour un tetris)
+  // angular moves: hold with auto-repeat (a 300 ms debounce would be
+  // too slow for a tetris)
   if (ms - tt.moveMs > 150)
   {
     int d = 0;
@@ -805,7 +806,7 @@ static void gameTetro(float dt)
       tt.moveMs = ms;
     }
   }
-  // rotation (centre)
+  // rotation (center)
   if (gBtnCenter)
   {
     int nr = (tt.rot + 1) % 4;
@@ -813,7 +814,7 @@ static void gameTetro(float dt)
     if (ttCells(tt.ring, tt.sect, nr, c))
       tt.rot = nr;
   }
-  // chute (vers le centre), cadence qui accelere avec le score
+  // fall (towards the center), pace speeds up with the score
   uint32_t interval = (uint32_t)max(280, 750 - tt.score * 4);
   if (ms - tt.fallMs > interval)
   {
@@ -823,7 +824,7 @@ static void gameTetro(float dt)
       tt.ring--;
     else
     {
-      // atterrissage : fige la piece, efface les anneaux complets
+      // landing: lock the piece, clear the completed rings
       if (!ttCells(tt.ring, tt.sect, tt.rot, c))
       {
         tt.over = true;
@@ -844,7 +845,7 @@ static void gameTetro(float dt)
           for (int rr = r; rr < TT_RINGS - 1; rr++)
             memcpy(tt.grid[rr], tt.grid[rr + 1], TT_SECT);
           memset(tt.grid[TT_RINGS - 1], 0, TT_SECT);
-          r--; // recheck le meme anneau (cascade)
+          r--; // recheck the same ring (cascade)
         }
       }
       tt.score += 1 + 10 * cleared * cleared;
@@ -852,23 +853,23 @@ static void gameTetro(float dt)
     }
   }
 
-  // ---- rendu ----
+  // ---- render ----
   canvas->fillScreen(rgb565(8, 8, 16));
-  // guides : cercle exterieur + noyau
+  // guides: outer circle + core
   canvas->drawCircle(CX, CY, (int)(TT_R0 + TT_RINGS * TT_DR) + 2, rgb565(55, 55, 80));
   canvas->fillCircle(CX, CY, (int)TT_R0 - 2, rgb565(16, 16, 30));
   canvas->drawCircle(CX, CY, (int)TT_R0 - 2, rgb565(55, 55, 80));
-  // pile
+  // stack
   for (int r = 0; r < TT_RINGS; r++)
     for (int s = 0; s < TT_SECT; s++)
       if (tt.grid[r][s])
         ttDrawCell(r, s, ttColor(tt.grid[r][s]));
-  // piece qui tombe
+  // falling piece
   int c[4][2];
   if (ttCells(tt.ring, tt.sect, tt.rot, c))
     for (int i = 0; i < 4; i++)
       ttDrawCell(c[i][0], c[i][1], ttColor(1 + tt.type));
-  // noyau : score + piece suivante en mini
+  // core: score + next piece in miniature
   char buf[8];
   snprintf(buf, sizeof(buf), "%d", tt.score);
   canvas->setTextSize(2);
@@ -884,11 +885,11 @@ static void gameTetro(float dt)
 
 #include "tama.h"
 
-// ==== Dispatch commun =======================================================
+// ==== Common dispatch =======================================================
 
 static void gameReset(int gi)
 {
-  if (g_ballDirty) // avatar/buddy change : re-teinte le sprite de boule
+  if (g_ballDirty) // avatar/buddy changed: re-tint the ball sprite
   {
     g_ballDirty = false;
     initBallSprite();
@@ -923,13 +924,13 @@ static bool gameIsOver(int gi)
   case 1: return pong.over;
   case 2: return rn.over;
   case 3: return tt.over;
-  case 4: return false; // le pet ne meurt pas
+  case 4: return false; // the pet never dies
   }
   return false;
 }
 
-// jeux dont le bouton central est une ACTION de jeu (sortie = gauche+droite 0.8 s)
+// games where the center button is a game ACTION (exit = left+right 0.8 s)
 static bool gameCenterIsAction(int gi)
 {
-  return gi == 2 || gi == 3 || gi == 4; // Sphere Run : sauter ; Roundtris : pivoter ; Pet : agir
+  return gi == 2 || gi == 3 || gi == 4; // Sphere Run: jump; Roundtris: rotate; Pet: act
 }

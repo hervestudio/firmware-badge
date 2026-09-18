@@ -1,54 +1,54 @@
-// 40 avatars — variations du perso "idle rainbow", un par badge (speaker ou
-// crew de threejs.paris). L'avatar actif est choisi dans More > Settings
-// (code 39193) et persiste en NVS ("avatar") : il colore la sphere du perso
-// (rotation de teinte + saturation de PAL_RAINBOW dans irGenFrame) et choisit
-// son VISAGE parmi les 9 designs Figma (node 4195-8272).
+// 40 avatars - variations of the "idle rainbow" character, one per badge
+// (threejs.paris speaker or crew). The active avatar is picked in More >
+// Settings (code 39193) and persists in NVS ("avatar"): it colors the
+// character's sphere (hue rotation + saturation of PAL_RAINBOW in
+// irGenFrame) and picks its FACE among the 9 Figma designs (node 4195-8272).
 //
-// Fichier partage firmware / emulateur. A inclure AVANT anims_extra.h
-// (irGenFrame et animIdleRainbow lisent g_avatarIdx / irDirtyMask) et apres
-// la declaration de canvas. Le museau (visage 0) est rendu par la plateforme
-// (drawMouthImg cote firmware, drawMouth cote emulateur) via le wrapper
-// avatarPlatformMouth defini dans chaque TU.
+// File shared firmware / emulator. Include BEFORE anims_extra.h
+// (irGenFrame and animIdleRainbow read g_avatarIdx / irDirtyMask) and after
+// the canvas declaration. The muzzle (face 0) is rendered by the platform
+// (drawMouthImg on firmware, drawMouth on the emulator) via the
+// avatarPlatformMouth wrapper defined in each TU.
 #pragma once
 
-// definis plus loin dans anims_extra.h (utilises par irGenFrame pour la
-// transformation de teinte de l'avatar)
+// defined later in anims_extra.h (used by irGenFrame for the avatar's
+// hue transformation)
 static void rgb2hsl(float r, float g, float b, float *h, float *s, float *l);
 static void hsl2rgb(float h, float s, float l, float *r, float *g, float *b);
-// museau du perso original, rendu par la plateforme (defini apres l'include)
+// original character's muzzle, platform-rendered (defined after the include)
 static void avatarPlatformMouth(float mx, float my, float mw, float mh, uint16_t ink);
-// bouche du visage "rire" (masque SVG noir + blanc), idem par plateforme
+// "laugh" face mouth (black + white SVG mask), also per platform
 static void avatarPlatformLaugh(float mx, float my, float mw, float mh, uint16_t ink);
 
-// Les 9 visages du Figma 4195-8272, de gauche a droite. Geometrie extraite
-// des metadonnees Figma (frames yeux/bouche), echelle calee sur l'ecart des
-// yeux du perso original : 1 px Figma = 0.005712 * fr.
+// The 9 faces from Figma 4195-8272, left to right. Geometry extracted
+// from the Figma metadata (eye/mouth frames), scale calibrated on the
+// original character's eye spacing: 1 Figma px = 0.005712 * fr.
 enum AvatarFace : uint8_t
 {
-  AF_MUSEAU = 0,   // museau + moustache (le perso original)
-  AF_RIRE,         // grande bouche ouverte joyeuse, bas blanc
-  AF_SOURIRE,      // petit sourire fin
-  AF_VAGUE,        // petite bouche ondulee
-  AF_CHAT,         // yeux ovales + bouche de chat (omega)
-  AF_LUNETTES,     // lunettes de soleil (bandeau + verres) + rictus
-  AF_FERMES,       // grands yeux fermes contents ^^ + petit sourire
-  AF_MOUSTACHE,    // grande moustache ondulee
-  AF_ETOILES,      // yeux etoiles a 8 branches relies par une barre
+  AF_MUSEAU = 0,   // muzzle + whiskers (the original character)
+  AF_RIRE,         // big happy open mouth, white lower part
+  AF_SOURIRE,      // small thin smile
+  AF_VAGUE,        // small wavy mouth
+  AF_CHAT,         // oval eyes + cat mouth (omega)
+  AF_LUNETTES,     // sunglasses (bar + lenses) + smirk
+  AF_FERMES,       // big happy closed eyes ^^ + small smile
+  AF_MOUSTACHE,    // big wavy mustache
+  AF_ETOILES,      // 8-pointed star eyes linked by a bar
 };
 
 struct AvatarDef
 {
-  const char *name; // personne (protege par le code, sert aussi au social)
-  const char *comp; // societe (prereemplit "bcomp" comme le nom, carte QR)
-  int16_t hue;      // rotation de teinte (deg) appliquee a PAL_RAINBOW
-  float sat;        // multiplicateur de saturation
+  const char *name; // person (PIN-protected, also used by the social layer)
+  const char *comp; // company (prefills "bcomp" like the name, QR card)
+  int16_t hue;      // hue rotation (deg) applied to PAL_RAINBOW
+  float sat;        // saturation multiplier
   uint8_t face;     // AvatarFace
-  uint8_t extra;    // 0 rien, 1 joues roses, 2 etincelle
+  uint8_t extra;    // 0 none, 1 pink cheeks, 2 sparkle
 };
 
-// 39 personnes de "stickers-badges (5).json" (releve 2026-09-08) :
-// n = nom, c = societe. Teintes reparties sur la roue (pas de 83 deg),
-// visages varies pour que deux badges voisins ne se ressemblent pas.
+// 39 people from "stickers-badges (5).json" (snapshot 2026-09-08):
+// n = name, c = company. Hues spread over the wheel (83 deg steps),
+// varied faces so that two neighboring badges do not look alike.
 static const AvatarDef AVATARS[] = {
     {"Makio64", "", 0, 1.00f, AF_MUSEAU, 0},
     {"Kim", "", 83, 1.05f, AF_LUNETTES, 0},
@@ -92,27 +92,27 @@ static const AvatarDef AVATARS[] = {
 };
 #define AVATAR_N ((int)(sizeof(AVATARS) / sizeof(AVATARS[0])))
 
-static uint8_t g_avatarIdx = 0;     // avatar SAUVE (NVS) : colore la sphere
-static uint8_t g_avatarFaceIdx = 0; // avatar AFFICHE par le visage (= sauve,
-                                    // sauf pendant la preview des Settings)
-static bool g_ballDirty = false; // ballSprite (snake/DVD/jeux) a regenerer
-static uint32_t irDirtyMask = 0; // bit i = frame de rotation idle i a
-                                 // regenerer (avatar/buddy change) ; les
-                                 // frames AFFICHEES sont refaites en priorite
-// pilotes par la reaction sociale (social_ui.h) pendant une rencontre :
-// gel de la rotation de la sphere (les triggers du visualiseur figent le
-// regard) et rebond vertical du blit (bounce Happy/Wow)
-static float g_lookFreeze = 0.0f;  // 0 = libre, 1 = regard gele
-static int g_sphereYOff = 0;       // decalage vertical de la sphere (px)
-static float g_sphereScale = 1.0f; // scale de la sphere (battement Love)
+static uint8_t g_avatarIdx = 0;     // SAVED avatar (NVS): colors the sphere
+static uint8_t g_avatarFaceIdx = 0; // avatar SHOWN by the face (= saved,
+                                    // except during the Settings preview)
+static bool g_ballDirty = false; // ballSprite (snake/DVD/games) to regen
+static uint32_t irDirtyMask = 0; // bit i = idle rotation frame i to
+                                 // regenerate (avatar/buddy changed); the
+                                 // DISPLAYED frames are redone first
+// driven by the social reaction (social_ui.h) during an encounter:
+// sphere rotation freeze (the visualizer triggers freeze the gaze) and
+// vertical bounce of the blit (Happy/Wow bounce)
+static float g_lookFreeze = 0.0f;  // 0 = free, 1 = gaze frozen
+static int g_sphereYOff = 0;       // vertical offset of the sphere (px)
+static float g_sphereScale = 1.0f; // sphere scale (Love heartbeat)
 
-// ---- buddy CUSTOM (parcours Setup sur telephone) : quand actif, il remplace
-// l'avatar de la table pour la couleur de la sphere ET le visage. Persiste en
-// NVS (bcust/bhue/bsat/bface) ; choisir un avatar dans Settings le desactive.
+// ---- CUSTOM buddy (phone Setup flow): when active, it replaces the table
+// avatar for both the sphere color AND the face. Persists in NVS
+// (bcust/bhue/bsat/bface); picking an avatar in Settings disables it.
 static bool g_buddyCustom = false;
 static AvatarDef g_buddyCustomDef = {"Custom", "", 0, 1.00f, AF_MUSEAU, 0};
-static int g_faceForce = -1; // >=0 : force un avatar de la table (preview
-                             // Settings, meme si le custom est actif)
+static int g_faceForce = -1; // >=0: forces a table avatar (Settings
+                             // preview, even when custom is active)
 static inline const AvatarDef &avatarCurrent()
 {
   if (g_faceForce >= 0)
@@ -120,15 +120,15 @@ static inline const AvatarDef &avatarCurrent()
   return g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarFaceIdx];
 }
 
-// ---- rendu du visage --------------------------------------------------
+// ---- face rendering ----------------------------------------------------
 
-// contexte de projection sphere (rempli par avatarDrawFace, utilise par les
-// helpers) : rotation du regard autour de Y
+// sphere projection context (filled by avatarDrawFace, used by the
+// helpers): gaze rotation around Y
 static float avCosT = 1, avSinT = 0, avCx = 0, avCy = 0, avFr = 1;
 static float avBreathe = 0, avYShift = 0;
 
-// projette un point (nx, ny) du disque unite : x ecran, squish lateral,
-// visibilite (z tourne)
+// projects a point (nx, ny) of the unit disc: screen x, lateral squish,
+// visibility (rotated z)
 static void avProject(float nx, float ny, float *sx, float *scale, float *vis)
 {
   float nzsq = 1 - nx * nx - ny * ny;
@@ -139,14 +139,14 @@ static void avProject(float nx, float ny, float *sx, float *scale, float *vis)
   *scale = nzr > 0.3f ? nzr : 0.3f;
   *vis = nzr;
 }
-static float avY(float ny) // y ecran d'un point du visage
+static float avY(float ny) // screen y of a face point
 {
   return avCy + ny * avFr + avBreathe * 0.4f + avYShift;
 }
 
-// ---- anticrenelage (revue Romain 2026-09-07 : visages creneles) ----
-// melange un pixel avec l'encre selon une couverture 0..1 (lecture du
-// framebuffer : API canvas-> des deux plateformes)
+// ---- anti-aliasing (review 2026-09-07 (Romain): jagged faces) ----
+// blends a pixel with the ink for a 0..1 coverage (framebuffer read:
+// canvas-> API on both platforms)
 static inline void avBlend(int x, int y, uint16_t ink, float a)
 {
   if (x < 0 || x >= W || y < 0 || y >= H || a <= 0.003f)
@@ -166,7 +166,7 @@ static inline void avBlend(int x, int y, uint16_t ink, float a)
   fb[y * W + x] = (uint16_t)((r << 11) | (g << 5) | b);
 }
 
-// ellipse pleine anticrenelee (bord adouci sur ~1 px)
+// anti-aliased filled ellipse (edge softened over ~1 px)
 static void avFillEllipseAA(float cx, float cy, float rx, float ry, uint16_t ink)
 {
   if (rx < 0.5f || ry < 0.5f)
@@ -186,10 +186,10 @@ static void avFillEllipseAA(float cx, float cy, float rx, float ry, uint16_t ink
     }
 }
 
-// trace epais le long d'une courbe : serie de disques (pas d'arc natif).
-// mode : 0 = arc doux vers le bas (sourire), 1 = onde sin 1.5 periode,
-// 2 = omega chat (2 bosses vers le bas), 3 = arc vers le haut (oeil ferme),
-// 4 = rictus incline (monte a droite)
+// thick stroke along a curve: series of discs (no native arc).
+// mode: 0 = soft downward arc (smile), 1 = 1.5-period sine wave,
+// 2 = cat omega (2 downward bumps), 3 = upward arc (closed eye),
+// 4 = tilted smirk (rises to the right)
 static void avStroke(int mode, float x0, float w, float yBase, float amp,
                      float r, uint16_t ink)
 {
@@ -201,7 +201,7 @@ static void avStroke(int mode, float x0, float w, float yBase, float amp,
     {
     case 0: y = yBase + amp * (0.25f - (u - 0.5f) * (u - 0.5f)) * 4.0f; break;
     case 1: y = yBase + amp * sinf(u * 3.0f * (float)PI); break;
-    case 2: y = yBase + amp * fabsf(sinf(u * 2.0f * (float)PI)); break; // 2 bosses
+    case 2: y = yBase + amp * fabsf(sinf(u * 2.0f * (float)PI)); break; // 2 bumps
     case 3: y = yBase - amp * sinf(u * (float)PI); break;
     case 4: y = yBase - amp * u + amp * 0.5f * (0.25f - (u - 0.5f) * (u - 0.5f)) * 4.0f; break;
     }
@@ -209,7 +209,7 @@ static void avStroke(int mode, float x0, float w, float yBase, float amp,
   }
 }
 
-// etoile a 8 branches (yeux AF_ETOILES) : disque central + 8 lobes
+// 8-pointed star (AF_ETOILES eyes): central disc + 8 lobes
 static void avStar(float cx, float cy, float R, uint16_t ink)
 {
   avFillEllipseAA(cx, cy, R * 0.72f, R * 0.72f, ink);
@@ -221,9 +221,9 @@ static void avStar(float cx, float cy, float R, uint16_t ink)
   }
 }
 
-// Visage complet de l'avatar affiche, projete sur la sphere (cx, cy, fr).
-// breathe/yShift : micro-mouvements de l'idle ; cosT/sinT : rotation du
-// regard ; openness : clignement (1 = ouvert).
+// Full face of the displayed avatar, projected on the sphere (cx, cy, fr).
+// breathe/yShift: idle micro-movements; cosT/sinT: gaze rotation;
+// openness: blink (1 = open).
 static void avatarDrawFace(float cx, float cy, float fr, float breathe,
                            float yShift, float cosT, float sinT,
                            float openness, uint16_t ink)
@@ -237,9 +237,9 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
 
   switch (av.face)
   {
-  // Geometrie extraite du board Figma 4197-8511 (visages poses sur spheres
-  // 310 px -> cotes en unites de rayon, symetrisees).
-  // ------------------------------------------------ museau (perso original)
+  // Geometry extracted from Figma board 4197-8511 (faces laid on 310 px
+  // spheres -> dimensions in radius units, symmetrized).
+  // -------------------------------------------- muzzle (original character)
   case AF_MUSEAU:
   {
     avProject(-0.381f, -0.210f, &exl, &scl, &visl);
@@ -254,14 +254,14 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
     avatarPlatformMouth(mxx, avY(0.074f), fr * 0.316f * scm, fr * 0.342f, ink);
     break;
   }
-  // ------------------------------------------- rire : grande bouche ouverte
+  // ---------------------------------------------- laugh: big open mouth
   case AF_RIRE:
   {
-    // recale sur le rendu de reference (image Romain 2026-09-07) : bouche
-    // CARREE-ARRONDIE (plus un ellipse), blanc en bol qui demarre juste
-    // au-dessus du centre, lisere noir conserve en bas et sur les cotes
-    // echelle/position : 2e reference Romain 2026-09-07 (bouche agrandie,
-    // yeux recales)
+    // realigned on the reference render (image Romain 2026-09-07): mouth
+    // is ROUNDED-SQUARE (no longer an ellipse), white bowl starting just
+    // above the center, black edging kept at the bottom and on the sides
+    // scale/position: 2nd reference Romain 2026-09-07 (mouth enlarged,
+    // eyes realigned)
     avProject(-0.465f, -0.215f, &exl, &scl, &visl);
     avProject(0.465f, -0.215f, &exr, &scr, &visr);
     avProject(0, 0.085f, &mxx, &scm, &vism);
@@ -271,12 +271,12 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
       avFillEllipseAA(exl, avY(-0.255f), er * scl, ryf, ink);
     if (visr > 0)
       avFillEllipseAA(exr, avY(-0.255f), er * scr, ryf, ink);
-    // bouche = masque tessele de l'export SVG Mouth_visage2.svg (73x59),
-    // rendu par la plateforme — voir initLaughMask (ratio du SVG conserve)
+    // mouth = tessellated mask from the SVG export Mouth_visage2.svg
+    // (73x59), platform-rendered - see initLaughMask (SVG ratio kept)
     avatarPlatformLaugh(mxx, avY(0.085f), fr * 0.485f * scm, fr * 0.392f, ink);
     break;
   }
-  // ------------------------------------------------------ petit sourire fin
+  // ------------------------------------------------------ small thin smile
   case AF_SOURIRE:
   {
     avProject(-0.431f, -0.213f, &exl, &scl, &visl);
@@ -293,7 +293,7 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
              fr * 0.026f, ink);
     break;
   }
-  // -------------------------------------------------------- petite vague
+  // -------------------------------------------------------- small wave
   case AF_VAGUE:
   {
     avProject(-0.431f, -0.194f, &exl, &scl, &visl);
@@ -309,7 +309,7 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
     avStroke(1, mxx - w / 2, w, avY(0.032f), fr * 0.018f, fr * 0.028f, ink);
     break;
   }
-  // -------------------------------------- chat : yeux ovales + omega large
+  // --------------------------------------- cat: oval eyes + wide omega
   case AF_CHAT:
   {
     avProject(-0.316f, -0.204f, &exl, &scl, &visl);
@@ -325,7 +325,7 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
     avStroke(2, mxx - w / 2, w, avY(0.100f), amp, fr * 0.035f, ink);
     break;
   }
-  // ---------------------------- lunettes de soleil : bandeau + verres + rictus
+  // ------------------------------- sunglasses: bar + lenses + smirk
   case AF_LUNETTES:
   {
     avProject(-0.200f, -0.213f, &exl, &scl, &visl);
@@ -350,7 +350,7 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
              fr * 0.030f, ink);
     break;
   }
-  // ------------------------------ grands yeux fermes ^^ + petit sourire
+  // ------------------------------ big closed eyes ^^ + small smile
   case AF_FERMES:
   {
     avProject(-0.271f, -0.184f, &exl, &scl, &visl);
@@ -364,7 +364,7 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
              fr * 0.027f, ink);
     break;
   }
-  // ------------------------------------------------- grande moustache ondulee
+  // ------------------------------------------------- big wavy mustache
   case AF_MOUSTACHE:
   {
     avProject(-0.342f, -0.168f, &exl, &scl, &visl);
@@ -380,7 +380,7 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
     avStroke(1, mxx - w / 2, w, avY(0.103f), fr * 0.033f, fr * 0.035f, ink);
     break;
   }
-  // --------------------------- yeux etoiles a 8 branches relies par une barre
+  // --------------------------- 8-pointed star eyes linked by a bar
   case AF_ETOILES:
   {
     avProject(-0.248f, -0.129f, &exl, &scl, &visl);
@@ -388,7 +388,7 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
     avProject(0.052f, 0.168f, &mxx, &scm, &vism);
     float ey = avY(-0.129f), R = fr * 0.142f;
     canvas->fillRect((int)exl, (int)(ey - fr * 0.035f), (int)(exr - exl),
-                     (int)(fr * 0.070f), ink); // barre de liaison
+                     (int)(fr * 0.070f), ink); // linking bar
     avStar(exl, ey, R * (0.7f + 0.3f * scl), ink);
     avStar(exr, ey, R * (0.7f + 0.3f * scr), ink);
     float w = fr * 0.374f * scm;
@@ -399,15 +399,15 @@ static void avatarDrawFace(float cx, float cy, float fr, float breathe,
   }
 }
 
-// Extras dessines apres le visage. Les JOUES suivent la projection sphere
-// (regard + yShift), comme les yeux/bouche — corrige 2026-08-17 (video
-// Romain : elles restaient fixes pendant l'anim). L'ETINCELLE reste fixe a
-// l'ecran, coherente avec les highlights cuits de la sphere.
-// (Reutilise le contexte av* rempli par avatarDrawFace juste avant.)
+// Extras drawn after the face. The CHEEKS follow the sphere projection
+// (gaze + yShift), like the eyes/mouth - fixed 2026-08-17 (video from
+// Romain: they stayed static during the anim). The SPARKLE stays fixed
+// on screen, consistent with the sphere's baked highlights.
+// (Reuses the av* context filled by avatarDrawFace just before.)
 static void avatarDrawExtras(float cx, float cy, float fr, float breathe)
 {
   const AvatarDef &av = avatarCurrent();
-  if (av.extra == 1) // joues roses sous les yeux
+  if (av.extra == 1) // pink cheeks under the eyes
   {
     uint16_t blush = rgb565(246, 148, 168);
     float sxl, sxr, scl, scr, visl, visr;
@@ -421,7 +421,7 @@ static void avatarDrawExtras(float cx, float cy, float fr, float breathe)
       canvas->fillEllipse((int)sxr, (int)by, (int)(fr * 0.085f * scr),
                           (int)(fr * 0.05f), blush);
   }
-  else if (av.extra == 2) // etincelle haut-droite (fixe a l'ecran)
+  else if (av.extra == 2) // top-right sparkle (fixed on screen)
   {
     uint16_t w = rgb565(255, 252, 240);
     int sx = (int)(cx + fr * 0.47f), sy = (int)(cy - fr * 0.47f), s = (int)(fr * 0.075f);

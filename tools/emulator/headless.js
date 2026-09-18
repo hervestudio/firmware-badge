@@ -1,6 +1,6 @@
-// Driver headless de l'emulateur (node) : joue une sequence de boutons et
-// exporte des captures PPM. Usage : node headless.js <dossier_sortie>
-// Boutons : 1 = prev, 2 = next, 4 = centre.
+// Headless driver for the emulator (node): plays a button sequence and
+// exports PPM captures. Usage: node headless.js <output_dir>
+// Buttons: 1 = prev, 2 = next, 4 = center.
 const fs = require("fs");
 const out = process.argv[2] || ".";
 
@@ -33,17 +33,17 @@ const EmuModule = {
     };
 
     frame(0, 90);  // boot splash 4 s
-    frame(0, 40);  // idle rainbow (avatar par defaut)
+    frame(0, 40);  // idle rainbow (default avatar)
     snap("idle_defaut");
-    press(4);      // -> home bulles
+    press(4);      // -> home bubbles
     frame(0, 30);
     press(2); press(2); press(2); // focus More
     frame(0, 20);
-    press(4);      // -> liste More
+    press(4);      // -> More list
     frame(0, 10);
     press(2); press(2); press(2); press(2); // -> Settings
     frame(0, 5);
-    press(4);      // -> ecran code
+    press(4);      // -> PIN code screen
     frame(0, 5);
     snap("pin_vide");
     // code 39193
@@ -51,35 +51,35 @@ const EmuModule = {
     press(1); press(4);                               // 9
     press(2); press(4);                               // 1
     press(1); press(4);                               // 9
-    press(2); press(2); press(2); press(4);           // 3 -> valide
+    press(2); press(2); press(2); press(4);           // 3 -> submit
     frame(0, 10);
-    // parcourt les 11 premiers avatars (couvre les 9 visages Figma)
+    // walk the first 11 avatars (covers the 9 Figma faces)
     for (let a = 0; a < (parseInt(process.argv[3]) || 11); a++) {
       frame(0, 8);
       snap(`av_${a}`);
       press(2);
     }
     press(1); press(1); press(1); press(1); press(1);
-    press(1); press(1); press(1); press(1); // retour avatar 2 (Kim)
+    press(1); press(1); press(1); press(1); // back to avatar 2 (Kim)
     frame(0, 8);
     press(4);      // save -> menu
     frame(0, 10);
     press(2); press(2); // -> Back
     press(4);      // -> home
     frame(0, 10);
-    press(1);      // focus Meet -> ... (retour arriere)
+    press(1);      // focus Meet -> ... (stepping back)
     press(1);      // focus Watch
-    press(4);      // -> liste Watch
+    press(4);      // -> Watch list
     frame(0, 5);
-    press(4);      // item 0 -> anim idle
-    frame(0, 60);  // le temps de regenerer les 11 frames + tourner
+    press(4);      // item 0 -> idle anim
+    frame(0, 60);  // time to regenerate the 11 frames + spin
     snap("idle_avatar_kim");
     console.log("done");
   },
 };
-// emu.js (non modularise) attend un `Module` dans sa portee : on l'injecte
-// en evaluant le fichier comme une fonction (le `var Module` interne serait
-// sinon hoiste et masquerait un global).
+// emu.js (non-modularized) expects a `Module` in its scope: inject it by
+// evaluating the file as a function (the internal `var Module` would
+// otherwise be hoisted and shadow a global).
 const code = fs.readFileSync(require.resolve("./emu.js"), "utf8");
 new Function("Module", "require", "__dirname", "__filename",
   code + "\n;return Module;")(EmuModule, require, __dirname, __filename);

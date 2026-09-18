@@ -1,28 +1,28 @@
-// Reaction "un ami est la" — PARTAGE firmware / emulateur. Quand un autre
-// badge est detecte a proximite (ESP-NOW cote firmware, export de test cote
-// emulateur), le Conf Buddy joue une des trois expressions portees du
-// visualiseur speaker-badge-anims (triggers Happy / Wow / Love de
-// screen-anims.js), tiree au hasard, pendant qu'une pilule "<Nom> 👋"
-// glisse du haut de l'ecran.
-//   HAPPY : yeux en arcs ^ + etoiles qui tournent a cote + rebond du visage
-//   WOW   : etoiles qui tournent DANS les yeux + petite bouche en O
-//   LOVE  : yeux en coeur rouges + anneaux "battement de coeur" (lub-dub)
-//           + petits coeurs qui montent
-// (la sphere plein ecran est blittee par tables precalculees : le
-// scale/bounce du JS est traduit en mouvement du visage et en effets.)
-// Depend de : canvas, rgb565, RGB565_WHITE, CX/CY, millis, avStroke,
+// "A friend is here" reaction — SHARED firmware / emulator. When another
+// badge is detected nearby (ESP-NOW on firmware, test export on the
+// emulator), the Conf Buddy plays one of the three expressions ported from
+// the speaker-badge-anims visualizer (Happy / Wow / Love triggers of
+// screen-anims.js), picked at random, while a "<Name> 👋" pill slides
+// down from the top of the screen.
+//   HAPPY: arc ^ eyes + spinning stars beside them + face bounce
+//   WOW  : stars spinning INSIDE the eyes + small O-shaped mouth
+//   LOVE : red heart eyes + "heartbeat" rings (lub-dub)
+//          + small hearts floating up
+// (the full-screen sphere is blitted via precomputed tables: the JS
+// scale/bounce is translated into face motion and effects.)
+// Depends on: canvas, rgb565, RGB565_WHITE, CX/CY, millis, avStroke,
 // mxPrint/mxTextW (emoji_text.h), sinf/cosf/expf.
 #pragma once
 #include "emoji_text.h"
 
 static char socialReactName[24] = "";
-static uint32_t socialReactUntil = 0; // millis() de fin de la reaction
+static uint32_t socialReactUntil = 0; // millis() when the reaction ends
 static uint8_t socialReactType = 0;   // 0 happy, 1 wow, 2 love
 
 #define SOCIAL_REACT_MS 5000
 
-// incremente le compteur de rencontres de la table partagee (menu_ui.h) —
-// la persistance NVS est geree cote firmware (social.h)
+// increments the encounter counter of the shared table (menu_ui.h) —
+// NVS persistence is handled on the firmware side (social.h)
 static void socialMetAdd(const char *name)
 {
   for (int i = 0; i < metN; i++)
@@ -49,9 +49,9 @@ static void socialReactTrigger(const char *name, uint32_t now)
   socialMetAdd(name);
 }
 
-// ---- helpers de dessin -------------------------------------------------
+// ---- drawing helpers ---------------------------------------------------
 
-// etoile 5 branches qui tourne (etoiles des triggers Happy/Wow)
+// spinning 5-point star (stars of the Happy/Wow triggers)
 static void socialStar(float cx, float cy, float R, float ang, uint16_t col)
 {
   canvas->fillCircle((int)cx, (int)cy, (int)(R * 0.45f), col);
@@ -63,7 +63,7 @@ static void socialStar(float cx, float cy, float R, float ang, uint16_t col)
   }
 }
 
-// coeur plein (yeux Love + particules)
+// solid heart (Love eyes + particles)
 static void socialHeart(float cx, float cy, float s, uint16_t col)
 {
   canvas->fillCircle((int)(cx - s * 0.35f), (int)(cy - s * 0.22f),
@@ -75,8 +75,8 @@ static void socialHeart(float cx, float cy, float s, uint16_t col)
                        (int)cx, (int)(cy + s * 0.80f), col);
 }
 
-// anneau "pulse ring" du mode Love : nait au bord de la sphere et s'etend en
-// palissant (ease-out), 3 cercles concentriques pour l'epaisseur
+// Love mode "pulse ring": born at the sphere's edge, expands while fading
+// (ease-out), 3 concentric circles for thickness
 static void socialRing(float age, float life, float fr)
 {
   if (age <= 0 || age >= life)
@@ -90,17 +90,17 @@ static void socialRing(float age, float life, float fr)
     canvas->drawCircle(CX, CY, rad + k, col);
 }
 
-// Remplace le visage de l'avatar pendant la reaction (appele en tete de
-// drawIdleFaceLook). fr > 100 = seulement le buddy plein ecran (RADIUS 180,
-// jusqu'a ~120 avec le battement Love), pas les previews a 78 et moins
-// (Settings, Setup, QR). Retourne true si l'expression a dessine.
+// Replaces the avatar's face during the reaction (called at the top of
+// drawIdleFaceLook). fr > 100 = only the full-screen buddy (RADIUS 180,
+// down to ~120 with the Love heartbeat), not the previews at 78 and below
+// (Settings, Setup, QR). Returns true if the expression was drawn.
 static bool socialExprFace(float cx, float cy, float fr)
 {
   uint32_t now = millis();
   if (!socialReactName[0] || now >= socialReactUntil || fr < 100)
     return false;
   float tA = (SOCIAL_REACT_MS - (int)(socialReactUntil - now)) / 1000.0f;
-  float pop = tA < 0.3f ? tA / 0.3f : 1.0f; // pop-in des elements
+  float pop = tA < 0.3f ? tA / 0.3f : 1.0f; // element pop-in
   pop = 1 - (1 - pop) * (1 - pop);
   const uint16_t ink = rgb565(39, 39, 39);
   const uint16_t star = rgb565(255, 224, 102);
@@ -111,8 +111,8 @@ static bool socialExprFace(float cx, float cy, float fr)
 
   switch (socialReactType)
   {
-  case 0: // HAPPY — arcs ^, etoiles a cote (le rebond est porte par la
-          // sphere entiere via g_sphereYOff, visage compris)
+  case 0: // HAPPY — ^ arcs, stars beside them (the bounce is carried by
+          // the whole sphere via g_sphereYOff, face included)
   {
     avStroke(3, cx - ex - er * 1.1f, er * 2.2f, cy + ey + er * 0.35f,
              er * 0.85f, er * 0.30f, ink);
@@ -125,7 +125,7 @@ static bool socialExprFace(float cx, float cy, float fr)
     socialStar(cx + ex + er * 1.6f, cy + ey - er * 0.9f, sz, -spin, star);
     break;
   }
-  case 1: // WOW — etoiles qui tournent dans les yeux, petite bouche en O
+  case 1: // WOW — stars spinning in the eyes, small O-shaped mouth
   {
     canvas->fillCircle((int)(cx - ex), (int)(cy + ey), (int)er, ink);
     canvas->fillCircle((int)(cx + ex), (int)(cy + ey), (int)er, ink);
@@ -135,24 +135,24 @@ static bool socialExprFace(float cx, float cy, float fr)
     canvas->fillCircle((int)cx, (int)(cy + fr * 0.13f), (int)(fr * 0.070f), ink);
     break;
   }
-  default: // LOVE — yeux coeur, lub-dub d'anneaux, petits coeurs qui montent
+  default: // LOVE — heart eyes, lub-dub rings, small hearts floating up
   {
-    // battement lub-dub (56 bpm comme le JS) : deux anneaux par cycle
+    // lub-dub beat (56 bpm like the JS): two rings per cycle
     const float T = 60.0f / 56.0f;
     float base = floorf(tA / T) * T;
-    for (int b = -1; b <= 0; b++) // battement courant + precedent
+    for (int b = -1; b <= 0; b++) // current + previous beat
     {
       float tb = base + b * T;
       if (tb < 0)
         continue;
       socialRing(tA - tb, 1.3f, fr);          // lub
-      socialRing(tA - tb - 0.20f, 1.0f, fr);  // dub, plus court
+      socialRing(tA - tb - 0.20f, 1.0f, fr);  // dub, shorter
     }
     socialHeart(cx - ex, cy + ey, er * 1.5f * pop, red);
     socialHeart(cx + ex, cy + ey, er * 1.5f * pop, red);
     avStroke(0, cx - fr * 0.14f, fr * 0.28f, cy + fr * 0.11f, fr * 0.045f,
              fr * 0.028f, ink);
-    // petits coeurs qui montent sur les cotes (spawn regulier, vie 1,6 s)
+    // small hearts floating up on the sides (regular spawn, 1.6 s life)
     for (int i = 0; i < 8; i++)
     {
       float born = i * 0.55f;
@@ -174,10 +174,10 @@ static bool socialExprFace(float cx, float cy, float fr)
   return true;
 }
 
-// Pilule "<Nom> 👋" qui glisse du haut (par-dessus l'anim idle, avant flush).
-// Met aussi a jour, pour la frame SUIVANTE, le gel de rotation et le rebond
-// de la sphere (g_lookFreeze / g_sphereYOff, lus par animIdleRainbow) : la
-// sphere suit le mouvement de la reaction comme dans le visualiseur.
+// "<Name> 👋" pill sliding down from the top (over the idle anim, before
+// flush). Also updates, for the NEXT frame, the look freeze and the sphere
+// bounce (g_lookFreeze / g_sphereYOff, read by animIdleRainbow): the
+// sphere follows the reaction's motion just like in the visualizer.
 static void socialReactDraw(uint32_t now)
 {
   bool active = socialReactName[0] && now < socialReactUntil;
@@ -189,12 +189,12 @@ static void socialReactDraw(uint32_t now)
   if (active)
   {
     float tA = (SOCIAL_REACT_MS - (int)(socialReactUntil - now)) / 1000.0f;
-    if (socialReactType == 0) // HAPPY : bounce 5,5 Hz (0.045 R)
+    if (socialReactType == 0) // HAPPY: 5.5 Hz bounce (0.045 R)
       g_sphereYOff = (int)(-fabsf(sinf(tA * 5.5f * (float)PI)) * 8.0f * g_lookFreeze);
-    else if (socialReactType == 1) // WOW : bounce leger 3 Hz (0.03 R)
+    else if (socialReactType == 1) // WOW: light 3 Hz bounce (0.03 R)
       g_sphereYOff = (int)(-fabsf(sinf(tA * 3.0f * (float)PI)) * 5.0f * g_lookFreeze);
-    else // LOVE : la sphere bat au rythme du coeur (heartbeatScale du JS :
-    {    // ressorts lub-dub amortis + micro-respiration, base reduite)
+    else // LOVE: the sphere beats with the heart (heartbeatScale from the
+    {    // JS: damped lub-dub springs + micro-breathing, reduced base)
       const float T = 60.0f / 56.0f;
       float x = fmodf(tA, T);
       float lub = expf(-5.0f * x) * sinf(15.0f * x);
@@ -208,7 +208,7 @@ static void socialReactDraw(uint32_t now)
     return;
   float tIn = (SOCIAL_REACT_MS - (int)(socialReactUntil - now)) / 1000.0f;
   float tOut = (socialReactUntil - now) / 1000.0f;
-  // position verticale : ease-out a l'entree (0,35 s), ease-in a la sortie
+  // vertical position: ease-out on entry (0.35 s), ease-in on exit
   float k = 1.0f;
   if (tIn < 0.35f)
     k = tIn / 0.35f;
@@ -219,8 +219,8 @@ static void socialReactDraw(uint32_t now)
   char msg[40];
   snprintf(msg, sizeof(msg), "%s \xF0\x9F\x91\x8B", socialReactName);
   int tw = mxTextW(msg), total = tw + 2 * pad;
-  int y0 = (int)(-40 + k * (34 + 40)); // -40 (hors ecran) -> 34
-  // corde du cercle au niveau de la pilule (bord haut le plus contraint)
+  int y0 = (int)(-40 + k * (34 + 40)); // -40 (off screen) -> 34
+  // circle chord at the pill's level (top edge is the most constrained)
   int dy = 181 - y0;
   if (dy > 179)
     dy = 179;
@@ -228,7 +228,7 @@ static void socialReactDraw(uint32_t now)
   if (half < 40)
     half = 40;
   int xmin = 181 - half + 4, xmax = 181 + half - 4;
-  int L = CX - total / 2; // centree
+  int L = CX - total / 2; // centered
   if (L + total > xmax)
     L = xmax - total;
   if (L < xmin)

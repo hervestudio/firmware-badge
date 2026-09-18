@@ -1,9 +1,9 @@
-// Mode dessin live : le badge cree un AP Wi-Fi (memes identifiants que l'OTA),
-// sert la webapp de dessin (draw_page.h, gzippee) sur http://192.168.4.1 et
-// recoit les traits en WebSocket binaire (port 81). Chaque segment fait
-// 12 octets LE : x0,y0,x1,y1 (int16), couleur 565 (uint16), rayon (uint8),
-// reserve (uint8). Message d'un octet 0x01 = effacer l'ecran.
-// Suppose definis avant inclusion : canvas, W/H, rgb565, Serial0,
+// Live drawing mode: the badge creates a Wi-Fi AP (same credentials as
+// OTA), serves the drawing webapp (draw_page.h, gzipped) at
+// http://192.168.4.1 and receives strokes over binary WebSocket (port 81).
+// Each segment is 12 bytes LE: x0,y0,x1,y1 (int16), 565 color (uint16),
+// radius (uint8), reserved (uint8). One-byte message 0x01 = clear screen.
+// Assumed defined before inclusion: canvas, W/H, rgb565, Serial0,
 // OTA_SSID/OTA_PASS.
 #pragma once
 #include <WebServer.h>
@@ -12,11 +12,11 @@
 
 static WebServer *drawHttp = nullptr;
 static WebSocketsServer *drawWs = nullptr;
-static bool drawDirty = false;   // le framebuffer a change depuis le dernier flush
-static bool drawStarted = false; // premier client connecte -> toile noire
+static bool drawDirty = false;   // framebuffer changed since the last flush
+static bool drawStarted = false; // first client connected -> black canvas
 static uint8_t drawClients = 0;
-// rectangle englobant des modifs depuis le dernier flush (flush partiel :
-// un trait = quelques ms de SPI au lieu des ~52 ms du plein ecran)
+// bounding box of the changes since the last flush (partial flush:
+// one stroke = a few ms of SPI instead of ~52 ms for the full screen)
 static int drawMinX, drawMinY, drawMaxX, drawMaxY;
 
 static void drawRectReset()
@@ -34,30 +34,30 @@ static void drawRectGrow(int x0, int y0, int x1, int y1)
   drawDirty = true;
 }
 
-// ---- pinceaux animes : les points de ces traits sont memorises et repeints
-// en continu (paillettes, irisation...). Le pinceau 0 (plain) reste "stampe
-// et oublie" : cout zero, latence minimale.
+// ---- animated brushes: the points of these strokes are stored and
+// repainted continuously (glitter, iridescence...). Brush 0 (plain) stays
+// "stamp and forget": zero cost, minimal latency.
 enum DrawBrush : uint8_t { BR_PLAIN = 0, BR_GLITTER, BR_IRIS, BR_NEON, BR_FIRE };
 
 struct DrawPt
 {
   int16_t x, y;
-  uint16_t col; // couleur choisie (glitter/neon)
+  uint16_t col; // chosen color (glitter/neon)
   uint8_t r, brush;
-  uint16_t seed; // phase aleatoire propre au point
+  uint16_t seed; // per-point random phase
 };
 #define DRAW_MAXPTS 4096
 static DrawPt *drawPts = nullptr;
-static int drawNPts = 0, drawPtHead = 0; // ring : au-dela du cap, ecrase les anciens
+static int drawNPts = 0, drawPtHead = 0; // ring: past the cap, overwrites old ones
 
-// Peint un point anime a l'instant t (appele au stamp ET a chaque tick d'anim)
+// Paints an animated point at time t (called at stamp AND every anim tick)
 static void drawPtPaint(const DrawPt &p, float t)
 {
   switch (p.brush)
   {
   case BR_GLITTER:
   {
-    // fond : couleur assombrie ; dessus : paillettes qui scintillent
+    // base: darkened color; on top: twinkling glitter
     uint16_t r5 = (p.col >> 11) & 31, g6 = (p.col >> 5) & 63, b5 = p.col & 31;
     uint16_t base = ((r5 * 9 >> 4) << 11) | ((g6 * 9 >> 4) << 5) | (b5 * 9 >> 4);
     canvas->fillCircle(p.x, p.y, p.r, base);
@@ -76,14 +76,14 @@ static void drawPtPaint(const DrawPt &p, float t)
   }
   case BR_IRIS:
   {
-    // nappe irisee : teinte fonction de la position + du temps (vague fluide)
+    // iridescent sheet: hue driven by position + time (fluid wave)
     uint8_t hue = (uint8_t)((int)(p.x * 0.55f + p.y * 0.35f + t * 70) & 255);
     canvas->fillCircle(p.x, p.y, p.r, hsv2rgb565(hue, 230, 255));
     break;
   }
   case BR_NEON:
   {
-    // pulsation de luminosite, dephasee par point pour un effet de vague
+    // brightness pulse, phase-shifted per point for a wave effect
     float pulse = 0.62f + 0.38f * sinf(t * 3.2f + (p.seed & 63) * 0.1f);
     uint16_t r5 = (p.col >> 11) & 31, g6 = (p.col >> 5) & 63, b5 = p.col & 31;
     canvas->fillCircle(p.x, p.y, p.r,
@@ -93,12 +93,12 @@ static void drawPtPaint(const DrawPt &p, float t)
   }
   case BR_FIRE:
   {
-    // braises : couleurs chaudes tirees au hasard, crepitement permanent
+    // embers: warm colors picked at random, constant crackling
     static const uint16_t FIRE_COLS[5] = {
-        0xF800 /*rouge*/, 0xFB20 /*orange*/, 0xFE60 /*jaune-orange*/,
-        0xFFE0 /*jaune*/, 0x9800 /*rouge sombre*/};
+        0xF800 /*red*/, 0xFB20 /*orange*/, 0xFE60 /*yellow-orange*/,
+        0xFFE0 /*yellow*/, 0x9800 /*dark red*/};
     canvas->fillCircle(p.x, p.y, p.r, FIRE_COLS[rand() % 5]);
-    if (p.r > 3) // coeur plus clair qui danse
+    if (p.r > 3) // brighter dancing core
       canvas->fillCircle(p.x + rand() % 3 - 1, p.y + rand() % 3 - 1, p.r / 3,
                          FIRE_COLS[1 + rand() % 3]);
     break;
@@ -108,8 +108,8 @@ static void drawPtPaint(const DrawPt &p, float t)
   }
 }
 
-// Trait epais : estampe des disques le long du segment (pas de trait epais
-// natif dans Arduino_GFX), pas de r/2 pour un rendu plein sans surcout inutile
+// Thick stroke: stamps discs along the segment (no native thick line in
+// Arduino_GFX), step of r/2 for a solid look without needless overhead
 static void drawStamp(int x0, int y0, int x1, int y1, uint16_t col, int r,
                       uint8_t brush)
 {
@@ -123,8 +123,8 @@ static void drawStamp(int x0, int y0, int x1, int y1, uint16_t col, int r,
       canvas->fillCircle(x, y, r, col);
     else
     {
-      // points animes enregistres plus espaces (r au lieu de r/2) : le
-      // chevauchement reste suffisant et ca economise le ring
+      // animated points recorded more sparsely (r instead of r/2):
+      // overlap stays sufficient and it saves ring capacity
       if (i % 2 == 0 || steps < 2)
       {
         DrawPt p = {(int16_t)x, (int16_t)y, col, (uint8_t)r, brush,
@@ -137,7 +137,7 @@ static void drawStamp(int x0, int y0, int x1, int y1, uint16_t col, int r,
       }
     }
   }
-  // gomme (noir, pinceau plain) : oublie les points animes recouverts
+  // eraser (black, plain brush): forgets the covered animated points
   if (brush == BR_PLAIN && col == RGB565_BLACK && drawNPts)
   {
     int rr = r + 2;
@@ -146,22 +146,22 @@ static void drawStamp(int x0, int y0, int x1, int y1, uint16_t col, int r,
       DrawPt &p = drawPts[i];
       if (!p.r)
         continue;
-      // distance point-segment approximee par les deux extremites + milieu
+      // point-segment distance approximated by both endpoints + midpoint
       int mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
       int d0x = p.x - x0, d0y = p.y - y0, d1x = p.x - x1, d1y = p.y - y1;
       int dmx = p.x - mx, dmy = p.y - my;
       int lim = (rr + p.r) * (rr + p.r);
       if (d0x * d0x + d0y * d0y < lim || d1x * d1x + d1y * d1y < lim ||
           dmx * dmx + dmy * dmy < lim)
-        p.r = 0; // point desactive
+        p.r = 0; // point disabled
     }
   }
   drawRectGrow(min(x0, x1) - r - 1, min(y0, y1) - r - 1,
                max(x0, x1) + r + 1, max(y0, y1) + r + 1);
 }
 
-// Tick d'animation : repeint les points animes ~12x/s (les traits en cours
-// restent flushes immediatement entre deux ticks)
+// Animation tick: repaints the animated points ~12x/s (in-progress strokes
+// are still flushed immediately between two ticks)
 static void drawAnimTick(uint32_t now)
 {
   static uint32_t lastTick = 0;
@@ -179,8 +179,8 @@ static void drawAnimTick(uint32_t now)
   }
 }
 
-// Flush de la seule zone modifiee (l'ecran garde le reste inchange) ;
-// bascule en flush complet si la zone couvre plus du tiers de l'ecran
+// Flushes only the modified area (the screen keeps the rest unchanged);
+// falls back to a full flush if the area covers more than a third of it
 static void drawFlushDirty()
 {
   int x0 = drawMinX < 0 ? 0 : drawMinX, y0 = drawMinY < 0 ? 0 : drawMinY;
@@ -198,8 +198,8 @@ static void drawFlushDirty()
   uint16_t *fb = canvas->getFramebuffer();
   if (dmafOk)
   {
-    // fenetre partielle via le driver DMA (bloquant : latence minimale et le
-    // framebuffer reste libre pour le trait suivant)
+    // partial window via the DMA driver (blocking: minimal latency and
+    // the framebuffer stays free for the next stroke)
     dmafFlush(x0, y0, w, h, fb + y0 * W + x0, W, true);
     return;
   }
@@ -219,32 +219,32 @@ static void drawWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t len
     drawClients++;
     if (!drawStarted)
     {
-      drawStarted = true; // efface l'ecran d'infos, place a la toile
+      drawStarted = true; // clears the info screen, make way for the canvas
       canvas->fillScreen(RGB565_BLACK);
       drawRectGrow(0, 0, W - 1, H - 1);
     }
-    Serial0.printf("draw : client %u connecte\n", num);
+    Serial0.printf("draw: client %u connected\n", num);
     break;
   case WStype_DISCONNECTED:
     if (drawClients)
       drawClients--;
-    Serial0.printf("draw : client %u parti\n", num);
+    Serial0.printf("draw: client %u left\n", num);
     break;
   case WStype_TEXT:
-    // "T<epoch local en secondes>" envoye par la webapp a la connexion :
-    // synchronise la RTC (heure LOCALE stockee telle quelle, decodee en gmtime)
+    // "T<local epoch in seconds>" sent by the webapp on connection:
+    // syncs the RTC (LOCAL time stored as-is, decoded with gmtime)
     if (len > 1 && payload[0] == 'T')
     {
       struct timeval tv = {(time_t)strtoul((const char *)payload + 1, nullptr, 10), 0};
       settimeofday(&tv, nullptr);
-      Serial0.println("draw : heure synchronisee par le telephone");
+      Serial0.println("draw: time synced by the phone");
     }
     break;
   case WStype_BIN:
     if (len == 1 && payload[0] == 1)
     {
       canvas->fillScreen(RGB565_BLACK);
-      drawNPts = drawPtHead = 0; // oublie tous les points animes
+      drawNPts = drawPtHead = 0; // forgets all animated points
       drawRectGrow(0, 0, W - 1, H - 1);
       break;
     }
@@ -278,13 +278,13 @@ static void drawModeEnter()
     drawHttp->sendHeader("Content-Encoding", "gzip");
     drawHttp->send_P(200, "text/html", (PGM_P)DRAW_PAGE_GZ, DRAW_PAGE_LEN);
   });
-  // toute autre URL (detection de portail captif iOS...) renvoie vers la page
+  // any other URL (iOS captive portal detection...) redirects to the page
   drawHttp->onNotFound([]() {
     drawHttp->sendHeader("Location", "http://192.168.4.1/");
     drawHttp->send(302, "text/plain", "");
   });
   drawHttp->begin();
-  badgeDnsStart(); // portail captif : la page s'ouvre seule a la connexion
+  badgeDnsStart(); // captive portal: the page opens by itself on connect
   drawWs = new WebSocketsServer(81);
   drawWs->onEvent(drawWsEvent);
   drawWs->begin();
@@ -294,7 +294,7 @@ static void drawModeEnter()
   if (!drawPts)
     drawPts = (DrawPt *)ps_malloc(DRAW_MAXPTS * sizeof(DrawPt));
   drawNPts = drawPtHead = 0;
-  Serial0.printf("MODE DRAW : AP %s / %s, http://%s\n", badgeSsid(), OTA_PASS,
+  Serial0.printf("DRAW MODE: AP %s / %s, http://%s\n", badgeSsid(), OTA_PASS,
                  WiFi.softAPIP().toString().c_str());
 }
 
@@ -316,5 +316,5 @@ static void drawModeExit()
   drawHttp = nullptr;
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_OFF);
-  Serial0.println("draw : fin, WiFi coupe");
+  Serial0.println("draw: done, WiFi off");
 }

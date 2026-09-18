@@ -1,20 +1,20 @@
-// Emulateur navigateur du badge threejs.paris (WebAssembly).
+// Browser emulator of the threejs.paris badge (WebAssembly).
 //
-// Le rendu utilise les VRAIES sources du firmware : src/anims_extra.h (toutes
-// les anims + photos speakers) et src/games.h + src/tama.h (les 5 jeux) sont
-// compiles tels quels — ce que tu vois ici est ce que tu verras sur l'ESP32.
-// Le menu, le splash de boot et l'extinction CRT sont des COPIES de main.cpp
-// (a resynchroniser si tu modifies ces sections-la du firmware).
+// Rendering uses the REAL firmware sources: src/anims_extra.h (all the
+// anims + speaker photos) and src/games.h + src/tama.h (the 5 games) are
+// compiled as-is -- what you see here is what you will see on the ESP32.
+// The menu, the boot splash and the CRT power-off are COPIES of main.cpp
+// (resync them if you change those sections of the firmware).
 //
-// Build : ./build.sh (emcc). Sortie : emu.js (wasm embarque) + index.html.
+// Build: ./build.sh (emcc). Output: emu.js (embedded wasm) + index.html.
 #define EMU_BUILD 1
-#include "emu_core.cpp" // Canvas (+ police glcdfont du firmware) + anims
+#include "emu_core.cpp" // Canvas (+ firmware glcdfont font) + anims
 
 #include <emscripten.h>
 #include <map>
 #include <string>
 
-// ------------------------------------------------------------ stubs Arduino
+// ------------------------------------------------------------ Arduino stubs
 static double emuNowMs = 0;
 static uint32_t millis() { return (uint32_t)emuNowMs; }
 
@@ -31,10 +31,10 @@ static int digitalRead(int pin)
   return 1;
 }
 
-// (Vec2 est deja defini par emu_core.cpp)
+// (Vec2 is already defined by emu_core.cpp)
 static long random(long n) { return rand() % n; }
 
-// remise a zero du visage idle (copie de main.cpp)
+// reset of the idle face (copy of main.cpp)
 static void resetIdle()
 {
   idleSt.lookCX = idleSt.lookCY = idleSt.lookPX = idleSt.lookPY = 0;
@@ -45,7 +45,7 @@ static void resetIdle()
   idleSt.nextBlink = 2.5f;
 }
 
-// NVS simule (records des jeux — persiste tant que l'onglet est ouvert)
+// simulated NVS (game records -- persists while the tab stays open)
 struct Preferences
 {
   std::map<std::string, uint16_t> m;
@@ -63,21 +63,22 @@ static Preferences prefs;
 #define RGB565_WHITE 0xFFFF
 #endif
 
-// ------------------------------------------------- les jeux du firmware
-#include "menu_font.h" // Dingos ExtraBold pour le menu
-#include "menu_font_med.h" // Dingos Medium (pourcentage batterie)
+// ------------------------------------------------- the firmware's games
+#include "menu_font.h" // Dingos ExtraBold for the menu
+#include "menu_font_med.h" // Dingos Medium (battery percentage)
 #include "menu_font_bebas.h"
 #include "menu_font_title.h"
 #include "games.h"
 
-// ---------------------------------------------- menu / UI (copie de main.cpp)
+// ---------------------------------------------- menu / UI (copy of main.cpp)
 #define ANIM_DURATION_MS 15000
 static const uint8_t ACTIVE[] = {8, 4, 5, 6, 7, 9, 10, 14, 15, 16};
 static const int NACTIVE = (int)sizeof(ACTIVE);
-// (tables du menu : voir menu_ui.h, partage avec le firmware)
+// (menu tables: see menu_ui.h, shared with the firmware)
 
-// ATTENTION : le JS d'index.html teste ces numeros en dur (UI_DRAW=5,
-// UI_SET=14, UI_SETUP=15) — tout NOUVEL etat s'ajoute EN FIN d'enum.
+// WARNING: the JS in index.html hard-codes these numbers (UI_DRAW=5,
+// UI_SET=14, UI_SETUP=15) -- any NEW state MUST be appended at the END
+// of the enum, never inserted before existing ones.
 enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW,
                         UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_FLASH, UI_OFF,
                         UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX, UI_LB,
@@ -85,40 +86,40 @@ enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW,
 static UiMode uiMode = UI_ANIM;
 static int menuSel = 0, slot = 0, menuCat = 0, schedIdx = 0;
 
-// etat des Settings (code + choix d'avatar) — copie de main.cpp
+// Settings state (PIN code + avatar choice) -- copy of main.cpp
 static uint8_t pinDigits[5];
 static int pinPos = 0;
 static bool pinRedraw = true;
 static double pinErrorUntil = 0;
 static int setSel = 0, setShown = -1;
-static int metScroll = 0; // ecran Encounters
-static int lbGame = 0;    // ecran Leaderboard (jeu affiche)
-static uint16_t lbMine[4]; // mes records, relus a l'entree de l'ecran
-static int setMenuSel = 0;   // menu Settings
-static int proxLevel = 2;    // reglage proximite (pas de radio en WASM)
+static int metScroll = 0; // Encounters screen
+static int lbGame = 0;    // Leaderboard screen (displayed game)
+static uint16_t lbMine[4]; // my records, re-read on screen entry
+static int setMenuSel = 0;   // Settings menu
+static int proxLevel = 2;    // proximity setting (no radio in WASM)
 static uint16_t *setSpr = nullptr;
 static bool autoCycle = false;
 static uint32_t slotStartMs = 0, animStartMs = 0;
 static int lastAnim = -1;
-static int batPct = 76; // jauge simulee (pas d'ADC dans le navigateur)
-static uint32_t batMvRaw = 3780; // tension simulee
-static int16_t vbatCal = 1000;   // calibration jauge (session)
-// ---- Enregistreur d'autonomie (Settings > Batt log) : echantillons du
-// niveau batterie pendant que le badge tourne, pour MESURER la decharge
-// reelle sur l'appareil (revue Romain 2026-09-01). Quand le tampon est
-// plein, decimation par 2 et intervalle double (la fenetre couverte double).
+static int batPct = 76; // simulated gauge (no ADC in the browser)
+static uint32_t batMvRaw = 3780; // simulated voltage
+static int16_t vbatCal = 1000;   // gauge calibration (session)
+// ---- Battery-life recorder (Settings > Batt log): samples the battery
+// level while the badge runs, to MEASURE the real discharge on the
+// device (review 2026-09-01 (Romain)). When the buffer is full,
+// decimate by 2 and double the interval (the covered window doubles).
 #define BLOG_MAX 240
 static uint8_t blogPct[BLOG_MAX];
 static uint16_t blogMv[BLOG_MAX];
 static int blogN = 0;
-static uint32_t blogIvlMs = 120000; // 2 min au depart -> 8 h de fenetre
-static uint32_t blogT0 = 0;         // millis() du premier echantillon
+static uint32_t blogIvlMs = 120000; // 2 min at start -> 8 h window
+static uint32_t blogT0 = 0;         // millis() of the first sample
 
 static void blogPush(uint8_t pct, uint16_t mv, uint32_t now)
 {
   if (blogN == 0)
     blogT0 = now;
-  if (blogN >= BLOG_MAX) // plein : decimation par 2, intervalle double
+  if (blogN >= BLOG_MAX) // full: decimate by 2, double the interval
   {
     for (int i = 0; i < BLOG_MAX / 2; i++)
     {
@@ -135,8 +136,8 @@ static void blogPush(uint8_t pct, uint16_t mv, uint32_t now)
 
 static bool batCharging = false;
 
-// ---- photo uploadee (Watch > My Photo) : buffer alimente par la page via
-// les exports emu_photo_px / emu_photo_done ----
+// ---- uploaded photo (Watch > My Photo): buffer fed by the page via
+// the emu_photo_px / emu_photo_done exports ----
 static uint16_t *g_myPhoto = nullptr;
 static bool g_hasPhoto = false;
 static void animMyPhoto(float)
@@ -147,11 +148,11 @@ static void animMyPhoto(float)
     canvas->fillScreen(RGB565_BLACK);
 }
 
-#include "menu_ui.h" // menu bulles + listes (partage avec le firmware)
-#include "qr_screen.h" // ecran Meet > QR Code (partage avec le firmware)
-#include "social_ui.h" // reaction "un ami est la" (partage avec le firmware)
+#include "menu_ui.h" // bubble menu + lists (shared with the firmware)
+#include "qr_screen.h" // Meet > QR Code screen (shared with the firmware)
+#include "social_ui.h" // "a friend is here" reaction (shared with firmware)
 
-// splash de boot (copie de main.cpp)
+// boot splash (copy of main.cpp)
 static void drawBootLoader(float p, float t)
 {
   const int NB = 12, bw = 14, bh = 14, gap = 4;
@@ -236,14 +237,14 @@ static void drawFlashScreen()
   canvas->print("center: exit");
 }
 
-// Ecran du mode Setup — sur le vrai badge, le telephone se connecte en WiFi ;
-// ici c'est le telephone de la page qui pilote (emu_setup_*). Infos de
-// connexion tant que le panneau n'est pas ouvert, puis preview live du buddy
-// (etape 3 = le QR en direct, "en construction" pendant la saisie de l'URL).
-static bool setupEmuConnected = false; // le panneau telephone est ouvert
-static int setupEmuStep = 0;           // etape affichee sur le telephone
-static bool setupEmuBuilding = false;  // URL en cours de saisie
-static bool setupEmuQrDirty = true;    // l'URL a change -> re-encoder
+// Setup mode screen -- on the real badge the phone connects over WiFi;
+// here the page's phone drives it (emu_setup_*). Connection info until
+// the panel is opened, then live preview of the buddy (step 3 = the live
+// QR, "under construction" while the URL is being typed).
+static bool setupEmuConnected = false; // the phone panel is open
+static int setupEmuStep = 0;           // step shown on the phone
+static bool setupEmuBuilding = false;  // URL being typed
+static bool setupEmuQrDirty = true;    // URL changed -> re-encode
 static void drawSetupScreen(float t)
 {
   if (!setupEmuConnected)
@@ -251,8 +252,8 @@ static void drawSetupScreen(float t)
     drawWaitScreen("SETUP", rgb565(0xfb, 0xd9, 0x75));
     return;
   }
-  // etape photo (2) : apercu plein ecran de la photo recue, sinon
-  // emplacement en pointilles
+  // photo step (2): full-screen preview of the received photo, else
+  // a dashed placeholder
   if (setupEmuStep == 2)
   {
     if (g_hasPhoto && g_myPhoto)
@@ -261,10 +262,10 @@ static void drawSetupScreen(float t)
       uiDrawPhotoPlaceholder();
     return;
   }
-  // etape QR (3) : le QR en direct sur le badge pendant la config
+  // QR step (3): the live QR on the badge during configuration
   if (setupEmuStep == 3)
   {
-    if (setupEmuQrDirty) // (re)genere aussi le sprite du buddy du medaillon
+    if (setupEmuQrDirty) // also (re)generates the medallion buddy sprite
     {
       qrScreenPrepare();
       setupEmuQrDirty = false;
@@ -272,8 +273,8 @@ static void drawSetupScreen(float t)
     qrScreenDraw(t, setupEmuBuilding);
     return;
   }
-  // etapes 1-2 : carte d'identite (buddy + message + nom + entreprise) —
-  // sprite regenere seulement quand les parametres changent
+  // steps 1-2: identity card (buddy + message + name + company) --
+  // sprite regenerated only when the parameters change
   static uint16_t *spr = nullptr;
   static int lastHue = -1000, lastSat = -1, lastCust = -1, lastAv = -1;
   const AvatarDef &av = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
@@ -292,8 +293,8 @@ static void drawSetupScreen(float t)
   badgeCardDraw(t, spr);
 }
 
-// Extinction CRT de main.cpp, refaite en machine a etats (pas de boucle
-// bloquante dans le navigateur) — memes constantes, meme rendu.
+// CRT power-off from main.cpp, redone as a state machine (no blocking
+// loop in the browser) -- same constants, same rendering.
 static uint16_t *offSnap = nullptr;
 static double offT0 = 0;
 static bool offDone = false;
@@ -311,7 +312,7 @@ static void powerOffFrame()
 {
   uint16_t *fb = canvas->getFramebuffer();
   double el = emuNowMs - offT0;
-  if (el < 550) // phase 1 : contraction verticale + flash blanc
+  if (el < 550) // phase 1: vertical squeeze + white flash
   {
     float p = (float)(el / 550.0);
     float e = p * p;
@@ -336,7 +337,7 @@ static void powerOffFrame()
       }
     }
   }
-  else if (el < 1150) // phase 2 : point chaud qui se dissipe
+  else if (el < 1150) // phase 2: hot spot fading away
   {
     float fade = 1 - (float)((el - 550) / 600.0);
     canvas->fillScreen(RGB565_BLACK);
@@ -348,11 +349,11 @@ static void powerOffFrame()
   else
   {
     canvas->fillScreen(RGB565_BLACK);
-    offDone = true; // ecran eteint — reveil par le bouton central
+    offDone = true; // screen off -- wake via the center button
   }
 }
 
-// -------------------------------------------------------------- boot + boucle
+// ---------------------------------------------------------------- boot + loop
 static double bootT0 = -1;
 
 extern "C" {
@@ -368,7 +369,7 @@ EMSCRIPTEN_KEEPALIVE uint16_t *emu_fb()
   return emuRotBuf;
 }
 
-// horloge de conf simulee (jour 1/2 + minutes) — voir index.html
+// simulated conference clock (day 1/2 + minutes) -- see index.html
 EMSCRIPTEN_KEEPALIVE void emu_set_now(int day, int minutes)
 {
   uiNowDay = day;
@@ -392,12 +393,12 @@ EMSCRIPTEN_KEEPALIVE void emu_init()
   slot = 0;
 }
 
-// dtMs : temps ecoule depuis le dernier frame ; held : bit0 prev (haut),
-// bit1 next (bas), bit2 centre.
+// dtMs: time elapsed since the last frame; held: bit0 prev (up),
+// bit1 next (down), bit2 center.
 
-// ---- Draw mode FONCTIONNEL (port de src/draw_mode.h sans le WiFi) ----
-// Le "telephone" est rendu par la page (index.html) : elle envoie les
-// segments via emu_draw_seg(), exactement comme la webapp reelle en WS.
+// ---- FUNCTIONAL draw mode (port of src/draw_mode.h without WiFi) ----
+// The "phone" is rendered by the page (index.html): it sends segments
+// via emu_draw_seg(), exactly like the real webapp does over WS.
 enum DrawBrush : uint8_t { BR_PLAIN = 0, BR_GLITTER, BR_IRIS, BR_NEON, BR_FIRE };
 struct DrawPt
 {
@@ -513,7 +514,7 @@ static void drawEmuEnter()
 
 static void drawEmuTick()
 {
-  // repeint les points animes (paillettes, neon, iris, feu)
+  // repaint the animated points (glitter, neon, iris, fire)
   float t = millis() / 1000.0f;
   for (int i = 0; i < drawNPts; i++)
     if (drawPts[i].r)
@@ -523,8 +524,8 @@ static void drawEmuTick()
 extern "C"
 {
   EMSCRIPTEN_KEEPALIVE int emu_mode() { return (int)uiMode; }
-  // vrai quand l'anim Conf Buddy est a l'ecran : la sphere (overscan +13 %)
-  // remplit tout le cercle — le favicon de la page ne se met a jour que la
+  // true while the Conf Buddy anim is on screen: the sphere (+13 %
+  // overscan) fills the whole circle -- the page favicon only updates then
   EMSCRIPTEN_KEEPALIVE int emu_idle_on()
   {
     return uiMode == UI_ANIM && ACTIVE[slot] == 8;
@@ -548,13 +549,13 @@ extern "C"
     canvas->fillScreen(RGB565_BLACK);
   }
 
-  // ---- parcours Setup depuis le telephone de la page (equivalent du WS du
-  // vrai badge) : etat courant en JSON + application live des reglages
+  // ---- Setup flow from the page's phone (equivalent of the real
+  // badge's WS): current state as JSON + live application of settings
   EMSCRIPTEN_KEEPALIVE const char *emu_setup_json()
   {
     static char buf[220];
-    // couleur/visage effectifs : custom si actif, sinon l'avatar de la table
-    // (les sliders du panneau refletent l'avatar choisi dans Settings)
+    // effective color/face: custom if active, else the table avatar
+    // (the panel sliders reflect the avatar chosen in Settings)
     const AvatarDef &av = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
     snprintf(buf, sizeof(buf),
              "{\"name\":\"%s\",\"comp\":\"%s\",\"msg\":\"%s\",\"url\":\"%s\","
@@ -567,8 +568,8 @@ extern "C"
   {
     setupEmuConnected = on != 0;
   }
-  // translitteration accents latins -> ASCII (les polices badge : 32..126),
-  // meme comportement que setupCopyAscii du firmware
+  // transliteration of Latin accents -> ASCII (badge fonts: 32..126),
+  // same behavior as the firmware's setupCopyAscii
   static void emuCopyAscii(char *dst, size_t cap, const char *src)
   {
     static const char *FOLD =
@@ -615,9 +616,9 @@ extern "C"
     setupEmuBuilding = true;
     setupEmuConnected = true;
   }
-  // simulateur de rencontre : un "badge ami" passe a proximite (le vrai
-  // badge detecte ca via les beacons ESP-NOW)
-  // photo uploadee : la page pousse les pixels 565 un a un puis valide
+  // encounter simulator: a "friend badge" passes nearby (the real
+  // badge detects this via ESP-NOW beacons)
+  // uploaded photo: the page pushes the 565 pixels one by one, then commits
   EMSCRIPTEN_KEEPALIVE void emu_photo_px(int i, int c)
   {
     if (!g_myPhoto)
@@ -633,9 +634,9 @@ extern "C"
   {
     const char *who = (name && name[0]) ? name : "Kim";
     socialReactTrigger(who, (uint32_t)emuNowMs);
-    // le badge simule annonce aussi ses records (beacon ESP-NOW du vrai
-    // firmware) : scores pseudo-aleatoires stables par nom, qui montent
-    // legerement a chaque rencontre — alimente Meet > Leaderboard
+    // the simulated badge also announces its records (real firmware's
+    // ESP-NOW beacon): pseudo-random scores, stable per name, rising
+    // slightly at each encounter -- feeds Meet > Leaderboard
     uint32_t h = 2166136261u;
     for (const char *c = who; *c; c++)
       h = (h ^ (uint8_t)*c) * 16777619u;
@@ -657,9 +658,9 @@ extern "C"
       g_buddyCustomDef.face = (uint8_t)(face < 0 ? 0 : (face > 8 ? 8 : face));
     }
     g_buddyCustom = custom != 0;
-    irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
-      g_ballDirty = true;    // + le sprite de boule (snake/DVD/jeux)
-    setupEmuQrDirty = true; // le sprite du medaillon QR aussi
+    irDirtyMask = 0xFFFFFFFFu; // all idle frames to regenerate
+      g_ballDirty = true;    // + the ball sprite (snake/DVD/games)
+    setupEmuQrDirty = true; // the QR medallion sprite too
     setupEmuConnected = true;
   }
 }
@@ -667,12 +668,12 @@ extern "C"
 EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
 {
   if (dtMs > 100)
-    dtMs = 100; // onglet en arriere-plan : pas de saut de temps geant
+    dtMs = 100; // background tab: no giant time jump
   emuNowMs += dtMs;
   uint32_t now = millis();
   float dt = dtMs / 1000.0f;
 
-  // ---- boutons : fronts + appui long (meme semantique que le firmware)
+  // ---- buttons: edges + long press (same semantics as the firmware)
   static bool pPrev = false, pNext = false, pCtr = false;
   static double ctrDownAt = 0;
   static bool ctrConsumed = true;
@@ -694,7 +695,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
   pNext = emuHeldNext;
   pCtr = emuHeldCtr;
 
-  // ---- splash de boot : Three Conf + loader pendant 4 s
+  // ---- boot splash: Three Conf + loader for 4 s
   if (bootT0 < 0)
     bootT0 = emuNowMs;
   if (emuNowMs - bootT0 < 4000)
@@ -705,13 +706,13 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
     return;
   }
 
-  // ---- extinction / reveil
+  // ---- power off / wake up
   if (uiMode == UI_OFF)
   {
     if (offDone && centerDown)
     {
       ctrConsumed = true;
-      bootT0 = emuNowMs; // reboot : splash puis idle rainbow
+      bootT0 = emuNowMs; // reboot: splash then idle rainbow
       uiMode = UI_ANIM;
       slot = 0;
       slotStartMs = now;
@@ -757,8 +758,8 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
       uiScreenRot++;
     if (autoShort)
     {
-      prefs.putUShort("rotDeg", (uint16_t)(uiScreenRot + 128)); // persiste (session)
-      uiMode = UI_SETMENU; // Rotate vit dans Settings desormais
+      prefs.putUShort("rotDeg", (uint16_t)(uiScreenRot + 128)); // persist (session)
+      uiMode = UI_SETMENU; // Rotate lives in Settings now
       uiDrawSetMenu(setMenuSel);
       return;
     }
@@ -768,7 +769,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
 
   if (uiMode == UI_PIN)
   {
-    // code d'acces des Settings — copie de main.cpp
+    // Settings access code -- copy of main.cpp
     if (navPrev)
       pinDigits[pinPos] = (pinDigits[pinPos] + 9) % 10;
     if (navNext)
@@ -791,7 +792,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
           uiMode = UI_SETMENU;
           return;
         }
-        pinErrorUntil = now + 900; // "wrong code" puis retour au menu
+        pinErrorUntil = now + 900; // "wrong code" then back to the menu
       }
     }
     if (pinErrorUntil > 0)
@@ -810,7 +811,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
 
   if (uiMode == UI_SET)
   {
-    // choix de l'avatar/personne — copie de main.cpp
+    // avatar/person choice -- copy of main.cpp
     if (navPrev)
       setSel = (setSel + AVATAR_N - 1) % AVATAR_N;
     if (navNext)
@@ -821,13 +822,13 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
       g_avatarIdx = (uint8_t)setSel;
       g_avatarFaceIdx = g_avatarIdx;
       g_faceForce = -1;
-      g_buddyCustom = false; // l'avatar de la table remplace le custom
-      // l'avatar choisi devient l'identite du badge (nom + SSID), comme
-      // sur le vrai badge
+      g_buddyCustom = false; // the table avatar replaces the custom one
+      // the chosen avatar becomes the badge identity (name + SSID),
+      // as on the real badge
       snprintf(qrName, sizeof(qrName), "%s", AVATARS[setSel].name);
       snprintf(qrCompany, sizeof(qrCompany), "%s", AVATARS[setSel].comp);
-      irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
-      g_ballDirty = true;    // + le sprite de boule (snake/DVD/jeux)
+      irDirtyMask = 0xFFFFFFFFu; // all idle frames to regenerate
+      g_ballDirty = true;    // + the ball sprite (snake/DVD/games)
       if (setSpr)
       {
         free(setSpr);
@@ -847,7 +848,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
       setSpr = dvdGenSprite(PAL_RAINBOW, PAL_N, av.hue, av.sat);
     }
     g_avatarFaceIdx = (uint8_t)setSel;
-    g_faceForce = setSel; // preview de la table meme si un custom est actif
+    g_faceForce = setSel; // table preview even if a custom is active
     uiDrawAvatarFrame(setSel, AVATAR_N, AVATARS[setSel].name);
     dvdBlit(setSpr, CX, CY - 26, 78, 255);
     drawIdleFaceLook(CX, CY - 26, 78, 0, 0, 0, 1.0f);
@@ -861,7 +862,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
     if (navPrev)
       schedIdx = (schedIdx + UI_NEVENTS - 1) % UI_NEVENTS;
     if (autoShort)
-      uiMode = UI_MENU; // retour a la liste Meet
+      uiMode = UI_MENU; // back to the Meet list
     if (uiMode == UI_SCHED)
       uiDrawSchedule(schedIdx);
     else
@@ -891,7 +892,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
         uiMode = (UiMode)(UI_SNAKE + arg);
         break;
       case UIA_DRAW:
-        uiMode = UI_DRAW; // dessin fonctionnel : la page affiche le telephone
+        uiMode = UI_DRAW; // functional drawing: the page shows the phone
         drawEmuEnter();
         break;
       case UIA_AUTO:
@@ -944,7 +945,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
     else if (uiMode == UI_HOME)
       uiDrawHome(dt, batPct, batCharging);
     else if (uiMode == UI_DRAW)
-      ; // ecran de dessin deja efface par drawEmuEnter()
+      ; // draw screen already cleared by drawEmuEnter()
     else if (uiMode == UI_FLASH)
       drawFlashScreen();
     else if (uiMode == UI_SETUP)
@@ -1014,12 +1015,12 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
       }
       if (setMenuSel == 4)
       {
-        uiMode = UI_VCAL; // calibration de la jauge (simulee)
+        uiMode = UI_VCAL; // gauge calibration (simulated)
         return;
       }
       if (setMenuSel == 5)
       {
-        // Batt log : donnees de demo si vide (pas de vraie batterie ici)
+        // Batt log: demo data if empty (no real battery here)
         if (blogN < 2)
         {
           blogIvlMs = 120000;
@@ -1080,7 +1081,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
       uiMode = UI_SETMENU;
       return;
     }
-    uiDrawProx(proxLevel, -100.0f); // pas de radio dans le navigateur
+    uiDrawProx(proxLevel, -100.0f); // no radio in the browser
     return;
   }
 
@@ -1148,7 +1149,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
     return;
   }
 
-  // ---- mode animations
+  // ---- animations mode
   if (navNext)
   {
     slot = (slot + 1) % NACTIVE;
@@ -1201,7 +1202,7 @@ EMSCRIPTEN_KEEPALIVE void emu_frame(float dtMs, int held)
   case 15: animSolar(t, dt); break;
   case 16: animMyPhoto(t); break;
   }
-  if (anim == 8) // Conf Buddy : reaction "un ami est la" par-dessus l'anim
+  if (anim == 8) // Conf Buddy: "a friend is here" reaction over the anim
     socialReactDraw((uint32_t)emuNowMs);
 }
 

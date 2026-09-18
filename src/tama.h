@@ -1,14 +1,14 @@
-// Sphere Pet : tamagotchi isometrique noir & blanc pixel-art — seul le perso
-// (la sphere arc-en-ciel) est en couleur. Trois jauges (faim / humeur /
-// energie), actions FEED / PLAY / SLEEP / CLEAN au bouton central, crottes a
-// nettoyer, sieste qui eteint la piece. Stats persistees en NVS.
-// Inclus par games.h (canvas, rgb565, hsv2rgb565, frand, drawBallSpriteRot,
-// prefs, gBtn*). Compile aussi dans le harnais avec TAMA_HARNESS defini.
+// Sphere Pet: black & white pixel-art isometric tamagotchi — only the
+// character (the rainbow sphere) is in color. Three gauges (hunger / mood /
+// energy), FEED / PLAY / SLEEP / CLEAN actions on the center button, poops
+// to clean up, nap that dims the room. Stats persisted in NVS.
+// Included by games.h (canvas, rgb565, hsv2rgb565, frand, drawBallSpriteRot,
+// prefs, gBtn*). Also compiles in the harness with TAMA_HARNESS defined.
 #pragma once
 
 #ifdef TAMA_HARNESS
 static bool gBtnCenter = false, gBtnLeft = false, gBtnRight = false;
-// copie du blit tourne de games.h (le harnais n'inclut pas games.h)
+// copy of the rotated blit from games.h (the harness does not include games.h)
 static void drawBallSpriteRot(int cx, int cy, float rf, float ang)
 {
   int r = (int)rf;
@@ -38,14 +38,14 @@ static void drawBallSpriteRot(int cx, int cy, float rf, float ang)
 #define TAMA_NPOOP 3
 static struct
 {
-  float food, fun, energy; // jauges 0..100
+  float food, fun, energy; // gauges 0..100
   bool sleeping;
-  float t;                        // horloge locale
-  int sel;                        // action selectionnee (0..3)
-  float eatT, playT, cleanT;      // anims d'action en cours (s restantes)
-  float poopTimer;                // prochaine crotte apres un repas
+  float t;                        // local clock
+  int sel;                        // selected action (0..3)
+  float eatT, playT, cleanT;      // running action anims (seconds left)
+  float poopTimer;                // next poop after a meal
   bool poop[TAMA_NPOOP];
-  float bx, prevBx, rollAng;      // perso : offset + roulis pendant PLAY
+  float bx, prevBx, rollAng;      // character: offset + roll during PLAY
   float saveT;
 } tama;
 
@@ -76,7 +76,7 @@ static void tamaReset()
 
 // ------------------------------------------------------------ pixel helpers
 
-// Glyphe "Z" en 3 traits (pas de moteur de texte : pixel-art oblige)
+// "Z" glyph as 3 strokes (no text engine: pixel-art only)
 static void tamaZ(int x, int y, int s, uint16_t c)
 {
   canvas->drawLine(x, y, x + s, y, c);
@@ -84,7 +84,7 @@ static void tamaZ(int x, int y, int s, uint16_t c)
   canvas->drawLine(x, y + s, x + s, y + s, c);
 }
 
-// Donut en fil de fer (blanc : seul le perso a droit a la couleur)
+// Wireframe donut (white: only the character is allowed color)
 static void tamaDonutIcon(int x, int y, int r, uint16_t c)
 {
   canvas->drawCircle(x, y, r, c);
@@ -110,79 +110,79 @@ static void tamaPoopDraw(int x, int y, uint16_t c)
   canvas->drawLine(x - 5, y + 4, x + 5, y + 4, c);
 }
 
-// ---------------------------------------------------------------- la piece
+// ---------------------------------------------------------------- the room
 
-// Piece isometrique (2:1) facon pixel-art : coin de murs, fenetre a stores,
-// meuble TV, plante, table basse, tapis sous le perso.
+// Pixel-art style isometric room (2:1): wall corner, window with blinds,
+// TV stand, plant, coffee table, rug under the character.
 static void tamaRoom(uint16_t ink, uint16_t dim)
 {
-  // coins : A haut du coin, A' pied du coin, B/C extremites hautes des murs,
-  // B'/C' pieds, D coin avant du sol
+  // corners: A top of the corner, A' foot of the corner, B/C upper wall
+  // ends, B'/C' feet, D front corner of the floor
   const int Ax = 180, Ay = 52, Afy = 124;
   const int Bx = 66, By = 109, Bfy = 181;
   const int Cx2 = 294, Cy2 = 109, Cfy = 181;
   const int Dx = 180, Dy = 238;
 
-  // murs
+  // walls
   canvas->drawLine(Ax, Ay, Bx, By, ink);
   canvas->drawLine(Ax, Ay, Cx2, Cy2, ink);
   canvas->drawLine(Ax, Ay, Ax, Afy, ink);
   canvas->drawLine(Bx, By, Bx, Bfy, ink);
   canvas->drawLine(Cx2, Cy2, Cx2, Cfy, ink);
-  // plinthes (jonction mur/sol)
+  // baseboards (wall/floor junction)
   canvas->drawLine(Ax, Afy, Bx, Bfy, dim);
   canvas->drawLine(Ax, Afy, Cx2, Cfy, dim);
-  // sol
+  // floor
   canvas->drawLine(Bx, Bfy, Dx, Dy, ink);
   canvas->drawLine(Dx, Dy, Cx2, Cfy, ink);
-  // rebord avant "plateforme flottante" (marches pixel du bas de la ref)
+  // "floating platform" front ledge (pixel steps at the ref's bottom)
   canvas->drawLine(Bx, Bfy + 8, Dx, Dy + 8, dim);
   canvas->drawLine(Dx, Dy + 8, Cx2, Cfy + 8, dim);
   canvas->drawLine(Bx, Bfy, Bx, Bfy + 8, dim);
   canvas->drawLine(Dx, Dy, Dx, Dy + 8, dim);
   canvas->drawLine(Cx2, Cfy, Cx2, Cfy + 8, dim);
 
-  // fenetre a stores sur le mur gauche
+  // window with blinds on the left wall
   const int W1x = 152, W1y = 74, W2x = 95, W2y = 103, wh = 32;
   canvas->drawLine(W1x, W1y, W2x, W2y, ink);
   canvas->drawLine(W2x, W2y, W2x, W2y + wh, ink);
   canvas->drawLine(W2x, W2y + wh, W1x, W1y + wh, ink);
   canvas->drawLine(W1x, W1y + wh, W1x, W1y, ink);
-  for (int k = 1; k <= 4; k++) // stores
+  for (int k = 1; k <= 4; k++) // blinds
     canvas->drawLine(W1x - 2, W1y + k * 6, W2x + 2, W2y + k * 6, dim);
 
-  // meuble TV contre le mur gauche (boite iso) + ecran
-  canvas->drawLine(84, 144, 136, 118, ink);  // haut arriere
-  canvas->drawLine(136, 118, 156, 128, ink); // haut droit
-  canvas->drawLine(156, 128, 104, 154, ink); // haut avant
-  canvas->drawLine(104, 154, 84, 144, ink);  // haut gauche
-  canvas->drawLine(84, 144, 84, 168, ink);   // aretes verticales
+  // TV stand against the left wall (iso box) + screen
+  canvas->drawLine(84, 144, 136, 118, ink);  // top back
+  canvas->drawLine(136, 118, 156, 128, ink); // top right
+  canvas->drawLine(156, 128, 104, 154, ink); // top front
+  canvas->drawLine(104, 154, 84, 144, ink);  // top left
+  canvas->drawLine(84, 144, 84, 168, ink);   // vertical edges
   canvas->drawLine(104, 154, 104, 178, ink);
   canvas->drawLine(156, 128, 156, 152, ink);
-  canvas->drawLine(84, 168, 104, 178, ink); // bas
+  canvas->drawLine(84, 168, 104, 178, ink); // bottom
   canvas->drawLine(104, 178, 156, 152, ink);
-  canvas->drawLine(120, 146, 120, 168, dim); // porte du meuble
-  // televiseur pose dessus
+  canvas->drawLine(120, 146, 120, 168, dim); // cabinet door
+  // TV set on top
   canvas->drawLine(108, 116, 134, 103, ink);
   canvas->drawLine(134, 103, 134, 125, ink);
   canvas->drawLine(134, 125, 108, 138, ink);
   canvas->drawLine(108, 138, 108, 116, ink);
-  canvas->drawLine(112, 119, 130, 110, dim); // reflets d'ecran
+  canvas->drawLine(112, 119, 130, 110, dim); // screen glints
   canvas->drawLine(112, 125, 130, 116, dim);
 
-  // plante en pot (mur droit)
+  // potted plant (right wall)
   canvas->drawLine(240, 152, 252, 152, ink);
   canvas->drawLine(240, 152, 242, 164, ink);
   canvas->drawLine(252, 152, 250, 164, ink);
   canvas->drawLine(242, 164, 250, 164, ink);
-  canvas->drawLine(246, 152, 246, 130, ink); // tige
+  canvas->drawLine(246, 152, 246, 130, ink); // stem
   canvas->drawLine(246, 140, 237, 128, ink);
   canvas->drawLine(246, 136, 255, 126, ink);
   canvas->drawCircle(236, 124, 4, ink);
   canvas->drawCircle(256, 122, 4, ink);
   canvas->drawCircle(246, 116, 5, ink);
 
-  // table basse (droite)
+  // coffee table (right)
   canvas->drawLine(236, 186, 280, 208, ink);
   canvas->drawLine(280, 208, 236, 230, ink);
   canvas->drawLine(236, 230, 192, 208, ink);
@@ -192,11 +192,11 @@ static void tamaRoom(uint16_t ink, uint16_t dim)
   canvas->drawLine(280, 208, 280, 220, ink);
   canvas->drawLine(192, 220, 236, 242, ink);
   canvas->drawLine(236, 242, 280, 220, ink);
-  canvas->drawCircle(246, 203, 4, dim); // bol
+  canvas->drawCircle(246, 203, 4, dim); // bowl
   canvas->drawLine(220, 210, 230, 215, dim); // zine
   canvas->drawLine(230, 215, 236, 212, dim);
 
-  // tapis sous le perso
+  // rug under the character
   canvas->drawLine(120, 196, 172, 170, dim);
   canvas->drawLine(172, 170, 224, 196, dim);
   canvas->drawLine(224, 196, 172, 222, dim);
@@ -215,7 +215,7 @@ static void tamaBar(int x, int y, float v, uint16_t ink)
 
 static void tamaHud(uint16_t ink)
 {
-  // faim (donut) / humeur (coeur) / energie (Z)
+  // hunger (donut) / mood (heart) / energy (Z)
   tamaDonutIcon(88, 34, 5, ink);
   tamaBar(98, 30, tama.food, ink);
   tamaHeart(160, 33, 4, ink);
@@ -239,21 +239,21 @@ static void tamaActionBar(uint16_t ink)
     int cx = x + bw / 2, cy = y + bh / 2;
     switch (i)
     {
-    case 0: // FEED : donut
+    case 0: // FEED: donut
       tamaDonutIcon(cx, cy, 7, ic);
       break;
-    case 1: // PLAY : balle qui rebondit
+    case 1: // PLAY: bouncing ball
       canvas->drawCircle(cx, cy - 2, 6, ic);
       canvas->drawLine(cx - 6, cy + 9, cx + 6, cy + 9, ic);
       canvas->drawPixel(cx - 8, cy + 5, ic);
       canvas->drawPixel(cx + 8, cy + 5, ic);
       break;
-    case 2: // SLEEP : lune + Z
+    case 2: // SLEEP: moon + Z
       canvas->drawCircle(cx - 3, cy, 7, ic);
       canvas->fillCircle(cx + 1, cy - 2, 6, on ? ink : RGB565_BLACK);
       tamaZ(cx + 5, cy - 8, 4, ic);
       break;
-    case 3: // CLEAN : balai
+    case 3: // CLEAN: broom
       canvas->drawLine(cx + 7, cy - 10, cx - 2, cy + 4, ic);
       canvas->drawLine(cx - 2, cy + 4, cx - 8, cy + 10, ic);
       canvas->drawLine(cx - 5, cy + 3, cx - 2, cy + 10, ic);
@@ -263,7 +263,7 @@ static void tamaActionBar(uint16_t ink)
   }
 }
 
-// ------------------------------------------------------------------ perso
+// -------------------------------------------------------------- character
 
 static void tamaFace(float cx, float cy, float r, int mood, bool closedEyes,
                      bool eating)
@@ -288,14 +288,14 @@ static void tamaFace(float cx, float cy, float r, int mood, bool closedEyes,
     return;
   }
   int px = 0, py = 0;
-  for (int i = -2; i <= 2; i++) // bouche : sourire, ou parabole inversee si triste
+  for (int i = -2; i <= 2; i++) // mouth: smile, or inverted parabola when sad
   {
     int xx = (int)(cx + i * r * 0.14f);
     float arc = (2 * 2 - i * i) * r * 0.045f;
     int yy = mood > 0 ? (int)(cy + r * 0.18f + arc)
                       : (int)(cy + r * 0.30f - arc);
     if (mood == 0)
-      yy = (int)(cy + r * 0.26f); // neutre : trait droit
+      yy = (int)(cy + r * 0.26f); // neutral: straight line
     if (i > -2)
     {
       canvas->drawLine(px, py, xx, yy, ink);
@@ -306,14 +306,14 @@ static void tamaFace(float cx, float cy, float r, int mood, bool closedEyes,
   }
 }
 
-// ------------------------------------------------------------------- jeu
+// ------------------------------------------------------------------ game
 
 static void tamaDoAction()
 {
   if (tama.eatT > 0 || tama.playT > 0 || tama.cleanT > 0)
-    return; // une anim a la fois
+    return; // one anim at a time
   if (tama.sleeping && tama.sel != 2)
-    return; // il dort : seul SLEEP (reveil) repond
+    return; // asleep: only SLEEP (wake-up) responds
   switch (tama.sel)
   {
   case 0:
@@ -337,7 +337,7 @@ static void gameTama(float dt)
 {
   tama.t += dt;
 
-  // ---- entrees
+  // ---- inputs
   if (gBtnLeft)
     tama.sel = (tama.sel + 3) % 4;
   if (gBtnRight)
@@ -349,15 +349,15 @@ static void gameTama(float dt)
   int npoop = 0;
   for (int i = 0; i < TAMA_NPOOP; i++)
     npoop += tama.poop[i];
-  tama.food -= dt * 100 / 480;                       // vide en ~8 min
-  tama.fun -= dt * 100 / 360 * (npoop ? 2.2f : 1);   // ~6 min, x2 si sale
+  tama.food -= dt * 100 / 480;                       // empty in ~8 min
+  tama.fun -= dt * 100 / 360 * (npoop ? 2.2f : 1);   // ~6 min, x2 if dirty
   if (tama.sleeping)
   {
-    tama.energy += dt * 100 / 45; // sieste : plein en 45 s
+    tama.energy += dt * 100 / 45; // nap: full in 45 s
     if (tama.energy >= 100)
     {
       tama.energy = 100;
-      tama.sleeping = false; // reveil naturel
+      tama.sleeping = false; // natural wake-up
     }
   }
   else
@@ -418,7 +418,7 @@ static void gameTama(float dt)
     tamaSave();
   }
 
-  // ---- rendu
+  // ---- render
   float low = tama.food < tama.fun ? tama.food : tama.fun;
   if (tama.energy < low)
     low = tama.energy;
@@ -432,7 +432,7 @@ static void gameTama(float dt)
     if (tama.poop[i])
       tamaPoopDraw(TAMA_POOP_XY[i][0], TAMA_POOP_XY[i][1], ink);
 
-  // perso : ombre, sphere COLOREE (la seule du tableau), visage
+  // character: shadow, COLORED sphere (the only one in the scene), face
   int bx = TAMA_BALL_X + (int)tama.bx, by = TAMA_BALL_Y;
   float squash = tama.playT > 0 ? fabsf(sinf((1 - tama.playT / 2.4f) * 2 * PI * 4)) * 3 : 0;
   canvas->fillEllipse(bx, by + TAMA_BALL_R - 2, 20, 6, rgb565(70, 70, 70));
@@ -441,13 +441,13 @@ static void gameTama(float dt)
   tamaFace(bx, by + squash, TAMA_BALL_R, mood, tama.sleeping || blink,
            tama.eatT > 0 && fmodf(tama.t, 0.4f) < 0.2f);
 
-  // ---- overlays d'action
-  if (tama.eatT > 0) // donut qui retrecit a chaque bouchee
+  // ---- action overlays
+  if (tama.eatT > 0) // donut shrinking with every bite
   {
     int dr = 2 + (int)(tama.eatT / 1.8f * 7);
     tamaDonutIcon(bx + TAMA_BALL_R + 14, by + 4, dr, ink);
   }
-  if (tama.playT > 0) // petits coeurs qui montent
+  if (tama.playT > 0) // small hearts floating up
   {
     float pr = 1 - tama.playT / 2.4f;
     for (int i = 0; i < 3; i++)
@@ -457,7 +457,7 @@ static void gameTama(float dt)
         tamaHeart(bx - 20 + i * 20, (int)(by - TAMA_BALL_R - 6 - ph * 26), 4, ink);
     }
   }
-  if (tama.cleanT > 0) // balai qui balaie le sol
+  if (tama.cleanT > 0) // broom sweeping the floor
   {
     int broomX = 84 + (int)((1 - tama.cleanT / 1.3f) * 192);
     int sw = (int)(sinf(tama.t * 18) * 5);
@@ -466,14 +466,14 @@ static void gameTama(float dt)
     canvas->drawLine(broomX + sw + 5, 209, broomX + sw + 1, 222, ink);
     canvas->drawLine(broomX + sw - 7, 222, broomX + sw + 4, 224, ink);
   }
-  if (tama.sleeping) // Zzz flottants
+  if (tama.sleeping) // floating Zzz
   {
     float zf = fmodf(tama.t, 2.0f) / 2;
     tamaZ(bx + 26, by - TAMA_BALL_R - 8 - (int)(zf * 10), 5, ink);
     tamaZ(bx + 36, by - TAMA_BALL_R - 20 - (int)(zf * 8), 7, ink);
     tamaZ(bx + 48, by - TAMA_BALL_R - 34 - (int)(zf * 6), 9, dim);
   }
-  if (low < 18 && fmodf(tama.t, 0.8f) < 0.4f) // alerte "!"
+  if (low < 18 && fmodf(tama.t, 0.8f) < 0.4f) // "!" alert
   {
     canvas->fillRect(bx - 2, by - TAMA_BALL_R - 30, 4, 14, rgb565(255, 255, 255));
     canvas->fillRect(bx - 2, by - TAMA_BALL_R - 12, 4, 4, rgb565(255, 255, 255));

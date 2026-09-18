@@ -1,25 +1,26 @@
-// Badge threejs.paris - animations sur ecran GC9B72 2.1" 360x360 (SPI 4 fils) ESP32-S3.
-// Rendu via framebuffer (Arduino_Canvas, ~253 Ko en PSRAM) puis flush() complet en SPI :
-// pas de scintillement, tout est dessine hors ecran.
+// threejs.paris badge - animations on a GC9B72 2.1" 360x360 screen (4-wire
+// SPI), ESP32-S3.
+// Rendered via framebuffer (Arduino_Canvas, ~253 KB in PSRAM) then full
+// flush() over SPI: no flicker, everything is drawn off-screen.
 //
-// 4 animations style Three.js, cyclees toutes les 15 s :
-//   0. cube wireframe 3D
-//   1. starfield (vol a travers les etoiles)
-//   2. plasma (LUT sinus + palette, calcule en demi-resolution)
-//   3. tore en nuage de points
+// 4 Three.js-style animations, cycled every 15 s:
+//   0. 3D wireframe cube
+//   1. starfield (flight through the stars)
+//   2. plasma (sine LUT + palette, computed at half resolution)
+//   3. torus as a point cloud
 //
-// Le debit SPI limite le framerate : un flush 360x360x16bits = ~2 Mbits.
-//   20 MHz -> ~9 fps max ; 40 MHz -> ~19 fps max.
-// 20 MHz est annonce fiable par la lib sur fils courts. Essaie 40000000 ;
-// redescends a 20000000 / 10000000 si tu vois du bruit ou des artefacts.
+// SPI throughput caps the framerate: one 360x360x16bit flush = ~2 Mbits.
+//   20 MHz -> ~9 fps max; 40 MHz -> ~19 fps max.
+// 20 MHz is what the lib deems reliable on short wires. Try 40000000;
+// drop back to 20000000 / 10000000 if you see noise or artifacts.
 
 #include <Arduino_GFX_Library.h>
 #include <Arduino_GC9B72.h>
 #include <math.h>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
-// inclus ici (avant les #define W/H...) : WebSockets tire mbedtls, qui
-// utilise des identifiants nommes W — les macros les casseraient
+// included here (before the #define W/H...): WebSockets pulls in mbedtls,
+// which uses identifiers named W - the macros would break them
 #include <WebServer.h>
 #include <WebSocketsServer.h>
 #include <time.h>
@@ -28,20 +29,20 @@
 #include <driver/gpio.h>
 #include <Preferences.h>
 #include <LittleFS.h>
-#include <esp_mac.h> // MAC eFuse (tirage du buddy aleatoire) // photo du speaker uploadee via Setup (partition spiffs)
+#include <esp_mac.h> // eFuse MAC (random buddy draw) // speaker photo uploaded via Setup (spiffs partition)
 
-// ---- Cablage (module : GND VCC SCL SDA RST DC CS BL SDO TE) ----
+// ---- Wiring (module: GND VCC SCL SDA RST DC CS BL SDO TE) ----
 // VCC -> 3V3   GND -> GND
-// SDO : non connecte (tombe en face de GPIO 46, laisse vide)
-// Mapping NAPPE (revue 2026-08-14) : les GPIO sont choisis pour que la nappe
-// arc-en-ciel 10 fils tombe dans l'ordre EXACT du peigne du devkit, lignes
-// 13..20 contigues, zero croisement (noir TE=3, [46 vide], gris BL=9,
-// violet CS=10, bleu DC=11, vert RST=12, jaune MOSI=13, orange SCLK=14 ;
-// marron GND 2 lignes plus bas, rouge 3V3 remonte seul en haut du peigne).
-// Badges cables AVANT le 2026-08-14 (fils volants) : ancien mapping
-// SCLK 12 / MOSI 11 / DC 13 / RST 14 -> reprendre ces 4 fils cote ESP,
-// OU flasher avec l'env "proto" (pio run -e proto -t upload) qui garde
-// l'ancien cablage — utilise pour le premier prototype de Romain.
+// SDO: not connected (lands opposite GPIO 46, left empty)
+// RIBBON mapping (review 2026-08-14): the GPIOs are chosen so the 10-wire
+// rainbow ribbon lands in the EXACT order of the devkit header, rows
+// 13..20 contiguous, zero crossings (black TE=3, [46 empty], gray BL=9,
+// purple CS=10, blue DC=11, green RST=12, yellow MOSI=13, orange SCLK=14;
+// brown GND 2 rows lower, red 3V3 goes up alone to the top of the header).
+// Badges wired BEFORE 2026-08-14 (flying wires): old mapping
+// SCLK 12 / MOSI 11 / DC 13 / RST 14 -> redo those 4 wires on the ESP side,
+// OR flash with the "proto" env (pio run -e proto -t upload) which keeps
+// the old wiring - used for Romain's first prototype.
 #ifdef PROTO_V1_WIRING
 #define TFT_SCLK 12
 #define TFT_MOSI 11
@@ -54,49 +55,49 @@
 #define TFT_RST 12  // <- RST  (vert)
 #endif
 #define TFT_CS 10   // <- CS   (violet)
-#define TFT_TE 3    // <- TE (impulsion a chaque debut de balayage, TEON active par le driver)
-#define TFT_BL 9        // <- BL (retroeclairage) : pilote par GPIO pour pouvoir le couper.
-                        // GPIO 9 = broche VOISINE du bloc ecran 10-14 sur le peigne du
-                        // devkit (cablage nappe contigu). Les premiers badges etaient
-                        // cables sur GPIO 4 (haut du peigne) : les deux broches sont
-                        // pilotees en parallele, aucun recablage necessaire.
-#define TFT_BL_LEGACY 4 // <- BL des premiers badges (laisse en l'air sur les nouveaux)
-                    //    a l'extinction — ne plus le cabler en direct sur le 3V3 !
+#define TFT_TE 3    // <- TE (pulse at each scan start, TEON enabled by the driver)
+#define TFT_BL 9        // <- BL (backlight): driven by GPIO so it can be cut.
+                        // GPIO 9 = pin NEXT TO the 10-14 screen block on the
+                        // devkit header (contiguous ribbon wiring). The first
+                        // badges were wired on GPIO 4 (top of the header): both
+                        // pins are driven in parallel, no rewiring needed.
+#define TFT_BL_LEGACY 4 // <- BL of the first badges (left floating on new ones)
+                    //    at power-off - never wire it straight to 3V3 anymore!
 
-// Boutons de navigation (entre GPIO et GND, pull-up interne, actifs LOW).
-// 19/20/21 : coin haut-gauche du devkit, a cote d'un GND — cablage court.
-// NB : 19/20 = D-/D+ de l'USB natif, libres car ARDUINO_USB_CDC_ON_BOOT est
-// desactive (platformio.ini) ; flash et logs passent par le pont CH343.
-#define BTN_NEXT 19 // suivante / descendre dans le menu
-#define BTN_PREV 20 // precedente / monter dans le menu ; maintenu au BOOT -> mode flash OTA
-#define BTN_AUTO 21 // appui court : ouvre le menu / selectionne ; appui long 2 s : extinction
-#define BTN_BOOT 0  // bouton BOOT de la carte : aussi "suivante" (pratique en test)
-#define PIN_RGB 48  // LED RGB WS2812 du devkit : jamais utilisee, mais sa broche
-                    // data flottante peut lui faire "latcher" une couleur qui
-                    // reste allumee (lueur visible a travers la dalle, badge
-                    // eteint compris — revue Romain 2026-09-05). On l'eteint
-                    // explicitement au boot et avant le deep sleep.
+// Navigation buttons (between GPIO and GND, internal pull-up, active LOW).
+// 19/20/21: top-left corner of the devkit, next to a GND - short wiring.
+// NB: 19/20 = D-/D+ of native USB, free because ARDUINO_USB_CDC_ON_BOOT is
+// disabled (platformio.ini); flash and logs go through the CH343 bridge.
+#define BTN_NEXT 19 // next / move down in the menu
+#define BTN_PREV 20 // previous / move up in the menu; held at BOOT -> OTA flash mode
+#define BTN_AUTO 21 // short press: open menu / select; long press 2 s: power off
+#define BTN_BOOT 0  // board BOOT button: also "next" (handy for testing)
+#define PIN_RGB 48  // devkit WS2812 RGB LED: never used, but its floating
+                    // data pin can make it "latch" a color that stays lit
+                    // (glow visible through the panel, even with the badge
+                    // off - review 2026-09-05 (Romain)). We turn it off
+                    // explicitly at boot and before deep sleep.
 
-// Jauge batterie (menu) : pont diviseur 100k/100k B+ -> GPIO5 -> GND, et
-// detection de charge par le VBUS du TP4056 via 100k/100k -> GPIO6.
-// Firmware tolerant : sans ces fils, le menu affiche "--%" sans eclair.
+// Battery gauge (menu): 100k/100k divider B+ -> GPIO5 -> GND, plus charge
+// detection from the TP4056's VBUS via 100k/100k -> GPIO6.
+// Firmware is tolerant: without these wires the menu shows "--%", no bolt.
 #ifdef PROTO_V1_WIRING
-#define PIN_VBAT 5 // premier proto : pont batterie sur 5/6 (tolerant si absent)
+#define PIN_VBAT 5 // first proto: battery divider on 5/6 (tolerant if absent)
 #define PIN_VBUS 6
 #else
-#define PIN_VBAT 1 // pont batterie (etait GPIO 5 — 1/2 simplifient le cablage)
-#define PIN_VBUS 2 // detection charge (etait GPIO 6)
+#define PIN_VBAT 1 // battery divider (was GPIO 5 - 1/2 simplify the wiring)
+#define PIN_VBUS 2 // charge detection (was GPIO 6)
 #endif
 
-// Mode flash OTA (bouton PREV maintenu a l'allumage) : le badge cree son
-// propre point d'acces Wi-Fi et attend le televersement (pio run -e ota -t upload).
+// OTA flash mode (PREV button held at power-on): the badge creates its own
+// Wi-Fi access point and waits for the upload (pio run -e ota -t upload).
 #define OTA_SSID "badge-threejs"
 #define OTA_PASS "threejs2026"
 static bool otaMode = false;
 
-#define SPI_FREQ 80000000 // 80 MHz : flush ~26 ms au lieu de ~52 (valide sur
-                          // nappe courte soudee ; repasser a 40 MHz si
-                          // artefacts sur fils volants)
+#define SPI_FREQ 80000000 // 80 MHz: flush ~26 ms instead of ~52 (validated on
+                          // short soldered ribbon; go back to 40 MHz if
+                          // artifacts appear on flying wires)
 
 #define W 360
 #define H 360
@@ -105,16 +106,16 @@ static bool otaMode = false;
 
 #define ANIM_COUNT 17
 #define ANIM_DURATION_MS 15000
-#define RADIUS 180 // rayon utile de l'ecran rond
+#define RADIUS 180 // usable radius of the round screen
 
 Arduino_DataBus *bus = new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCLK, TFT_MOSI, GFX_NOT_DEFINED /*MISO*/);
 Arduino_GFX *panel = new Arduino_GC9B72(bus, TFT_RST, 0 /*rotation*/, false /*IPS*/, W, H);
 Arduino_Canvas *canvas = new Arduino_Canvas(W, H, panel);
 
-#include "dma_flush.h" // flush asynchrone SPI3+DMA (remplace canvas->flush)
+#include "dma_flush.h" // async SPI3+DMA flush (replaces canvas->flush)
 static bool dmafOk = false;
 
-// ---------------------------------------------------------------- utilitaires
+// -------------------------------------------------------------------- helpers
 
 static uint16_t hsv2rgb565(uint8_t h, uint8_t s, uint8_t v)
 {
@@ -141,21 +142,21 @@ static float frand(float lo, float hi)
   return lo + (hi - lo) * (float)random(10000) / 10000.0f;
 }
 
-// Compteur d'impulsions TE (diagnostic) : permet de verifier que le signal
-// arrive bien et de mesurer la frequence de balayage du panneau.
+// TE pulse counter (diagnostic): lets us check that the signal actually
+// arrives and measure the panel's scan frequency.
 static volatile uint32_t teCount = 0;
 static void IRAM_ATTR teIsr() { teCount++; }
 
-// Appuis boutons captures par interruption : la boucle ne tourne qu'a ~10 Hz,
-// un appui bref serait rate en polling. L'anti-rebond est fait dans loop().
+// Button presses captured by interrupt: the loop only runs at ~10 Hz, a
+// brief press would be missed by polling. Debouncing is done in loop().
 static volatile bool btnNextFlag = false;
 static volatile bool btnPrevFlag = false;
 static void IRAM_ATTR btnNextIsr() { btnNextFlag = true; }
 static void IRAM_ATTR btnPrevIsr() { btnPrevFlag = true; }
 
-// Bouton central : l'appui COURT est detecte au RELACHEMENT (30-600 ms), pour
-// ne pas se declencher au debut d'un appui long (extinction). L'appui long est
-// surveille par polling dans loop() via autoPressMs.
+// Center button: a SHORT press is detected on RELEASE (30-600 ms), so it
+// does not trigger at the start of a long press (power off). The long press
+// is monitored by polling in loop() via autoPressMs.
 static volatile uint32_t autoPressMs = 0;
 static volatile bool btnAutoShort = false;
 static void IRAM_ATTR btnAutoIsr()
@@ -171,10 +172,10 @@ static void IRAM_ATTR btnAutoIsr()
   }
 }
 
-// Attend le prochain front montant de TE pour demarrer le flush en debut de
-// balayage : le point de dechirure devient fixe au lieu de defiler.
-// Si aucune impulsion TE n'est vue pendant 2 s (fil debranche/faux contact),
-// on passe en bypass : plus d'attente, jusqu'au retour du signal.
+// Waits for the next rising edge of TE so the flush starts at the beginning
+// of a scan: the tearing point becomes fixed instead of scrolling.
+// If no TE pulse is seen for 2 s (wire unplugged/bad contact), switch to
+// bypass: no more waiting, until the signal comes back.
 static bool teAlive = true;
 static void waitTE()
 {
@@ -189,9 +190,9 @@ static void waitTE()
       return;
 }
 
-static void powerOff(); // definie apres les animations
+static void powerOff(); // defined after the animations
 
-// ------------------------------------------------------------- 0. cube 3D
+// ------------------------------------------------------------- 0. 3D cube
 
 static void animCube(float t)
 {
@@ -214,7 +215,7 @@ static void animCube(float t)
   for (int i = 0; i < 8; i++)
   {
     float x = V[i][0], y = V[i][1], z = V[i][2];
-    // rotation X puis Y puis Z
+    // rotation X then Y then Z
     float y1 = y * cax - z * sax, z1 = y * sax + z * cax;
     float x2 = x * cay + z1 * say, z2 = -x * say + z1 * cay;
     float x3 = x2 * caz - y1 * saz, y3 = x2 * saz + y1 * caz;
@@ -262,7 +263,7 @@ static void animStars(float dt)
     if (sx < 0 || sx >= W || sy < 0 || sy >= H)
       continue;
     uint8_t v = (uint8_t)constrain(280.0f * (1.05f - s.z), 40.0f, 255.0f);
-    uint16_t c = hsv2rgb565(150, 60, v); // blanc bleute
+    uint16_t c = hsv2rgb565(150, 60, v); // bluish white
     if (s.z < 0.35f)
       canvas->fillRect(sx, sy, 2, 2, c);
     else
@@ -293,10 +294,10 @@ static void initPlasma()
 
 static void animPlasma(float t)
 {
-  // calcule en 180x180, chaque valeur remplit un bloc 2x2 du framebuffer
-  // Mouvement volontairement lent : le flush (~52 ms) croise 3x le balayage
-  // du panneau (60 Hz) ; si deux frames consecutives sont proches, les points
-  // de croisement (tearing) deviennent invisibles.
+  // computed at 180x180, each value fills a 2x2 block of the framebuffer
+  // Deliberately slow motion: the flush (~52 ms) crosses the panel scan
+  // (60 Hz) 3x; if two consecutive frames are close, the crossing points
+  // (tearing) become invisible.
   uint16_t *fb = canvas->getFramebuffer();
   uint16_t ti = (uint16_t)(t * 18.0f);
   for (int y = 0; y < 180; y++)
@@ -318,7 +319,7 @@ static void animPlasma(float t)
   }
 }
 
-// --------------------------------------------------------------- 3. tore
+// -------------------------------------------------------------- 3. torus
 
 #define TOR_RINGS 26
 #define TOR_SEGS 15
@@ -357,7 +358,7 @@ static void animTorus(float t)
     float s = 165.0f / (z2 + 2.6f);
     int16_t sx = CX + (int16_t)(x2 * s);
     int16_t sy = CY + (int16_t)(y1 * s);
-    // teinte selon la position sur l'anneau, luminosite selon la profondeur
+    // hue from the position on the ring, brightness from depth
     uint8_t hue = (uint8_t)(i * 255 / TOR_PTS + (uint8_t)(t * 25.0f));
     uint8_t val = (uint8_t)constrain(190.0f - z2 * 90.0f, 70.0f, 255.0f);
     uint16_t c = hsv2rgb565(hue, 230, val);
@@ -368,22 +369,22 @@ static void animTorus(float t)
   }
 }
 
-// ---- Portages depuis speaker-badge-anims (screen-anims.js) ----
+// ---- Ports from speaker-badge-anims (screen-anims.js) ----
 
 static inline uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b)
 {
   return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
 }
 
-#include "avatars.h" // 40 avatars (table + visage) — avant anims_extra.h
+#include "avatars.h" // 40 avatars (table + face) - before anims_extra.h
 
-// ---- Texture de sphere "rainbow" : blend gaussien des points colores de
-// PAL_RAINBOW (screen-anims.js), vibrance + grain, pre-calculee au boot. ----
+// ---- "Rainbow" sphere texture: Gaussian blend of the colored points of
+// PAL_RAINBOW (screen-anims.js), vibrance + grain, precomputed at boot. ----
 
-#define SPR 112 // taille du sprite (le plus gros usage : tete du snake, 108 px)
+#define SPR 112 // sprite size (biggest use: snake head, 108 px)
 static uint16_t *ballSprite = nullptr;
 
-// {px, py, r, g, b} — points de couleur sur le disque unite
+// {px, py, r, g, b} - color points on the unit disk
 static const float PAL_RAINBOW[][5] = {
     {-0.65, -0.65, 250, 209, 228}, {-0.43, -0.65, 248, 229, 157}, {-0.22, -0.65, 244, 213, 121},
     {0.00, -0.65, 228, 170, 144}, {0.22, -0.65, 214, 135, 150}, {0.43, -0.65, 185, 100, 129},
@@ -409,11 +410,11 @@ static const float PAL_RAINBOW[][5] = {
 
 static void initBallSprite()
 {
-  if (!ballSprite) // regenerable au changement d'avatar (g_ballDirty)
+  if (!ballSprite) // regenerated on avatar change (g_ballDirty)
     ballSprite = (uint16_t *)malloc(SPR * SPR * sizeof(uint16_t));
-  // couleurs transformees par l'avatar actif / le buddy custom (meme
-  // transformation que la sphere idle) : le snake, la palette rainbow de la
-  // DVD et Sphere Run suivent la couleur configuree du badge
+  // colors transformed by the active avatar / custom buddy (same transform
+  // as the idle sphere): the snake, the DVD rainbow palette and Sphere Run
+  // follow the badge's configured color
   const AvatarDef &avB = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
   float PC[PAL_N][3];
   for (unsigned k = 0; k < PAL_N; k++)
@@ -449,7 +450,7 @@ static void initBallSprite()
       float nx = (x - SPR / 2.0f) / r, ny = (y - SPR / 2.0f) / r;
       if (nx * nx + ny * ny > 1.0f)
       {
-        ballSprite[y * SPR + x] = 0; // hors disque (jamais lu au blit)
+        ballSprite[y * SPR + x] = 0; // outside the disk (never read at blit)
         continue;
       }
       float tw = 0, pr = 0, pg = 0, pb = 0;
@@ -482,7 +483,7 @@ static void initBallSprite()
     }
 }
 
-// Blit du sprite de sphere, redimensionne au rayon r (nearest, masque disque)
+// Blit of the sphere sprite, resized to radius r (nearest, disk mask)
 static void drawBallSprite(int cx, int cy, float rf)
 {
   int r = (int)rf;
@@ -505,8 +506,8 @@ static void drawBallSprite(int cx, int cy, float rf)
   }
 }
 
-// ---- Bouche SVG de la mascotte (MOUTH_SVG de screen-anims.js), rasterisee
-// au boot dans un masque, puis blittee a l'echelle. ----
+// ---- Mascot SVG mouth (MOUTH_SVG from screen-anims.js), rasterized at
+// boot into a mask, then blitted to scale. ----
 
 #define MOUTH_MW 142 // 71 x 2
 #define MOUTH_MH 146 // 73 x 2
@@ -567,7 +568,7 @@ static void initMouthMask()
     poly[np][0] = x * SC;
     poly[np++][1] = y * SC;
   }
-  // remplissage scanline pair-impair du contour
+  // even-odd scanline fill of the outline
   for (int yy = 0; yy < MOUTH_MH; yy++)
   {
     float fy = yy + 0.5f;
@@ -592,7 +593,7 @@ static void initMouthMask()
         if (xx >= 0 && xx < MOUTH_MW)
           mouthMask[yy * MOUTH_MW + xx] = 1;
   }
-  // les deux "virgules" : cubiques tracees en cercles epais (stroke 12.29, round cap)
+  // the two "commas": cubics drawn as thick circles (stroke 12.29, round cap)
   const float SW = 12.2881f * SC / 2;
   for (int i = 0; i <= 32; i++)
   {
@@ -605,16 +606,16 @@ static void initMouthMask()
 }
 
 
-// ---- Bouche du visage "rire" (AF_RIRE) : masque 0/1/2 (transparent/encre/
-// blanc) tessele depuis l'export SVG Mouth_visage2.svg (viewBox 73x59,
-// reference Romain 2026-09-07) — meme technique que le museau.
+// ---- Mouth of the "laugh" face (AF_RIRE): 0/1/2 mask (transparent/ink/
+// white) tessellated from the SVG export Mouth_visage2.svg (viewBox 73x59,
+// reference 2026-09-07 (Romain)) - same technique as the muzzle.
 #define LAUGH_MW 146 // 73 x 2
 #define LAUGH_MH 118 // 59 x 2
 static uint8_t *laughMask = nullptr;
 
 static void laughFillPath(const float *pts, int ncub, uint8_t val)
 {
-  // pts : x0,y0 puis ncub cubiques (c1x,c1y,c2x,c2y,px,py), contour ferme
+  // pts: x0,y0 then ncub cubics (c1x,c1y,c2x,c2y,px,py), closed outline
   const float SC = 2.0f;
   float poly[220][2];
   int np = 0;
@@ -679,7 +680,7 @@ static void initLaughMask()
   laughFillPath(WHITE, 3, 2);
 }
 
-// Blit du rire : masque redimensionne (nearest), encre + blanc
+// Laugh blit: resized mask (nearest), ink + white
 static void drawLaughImg(float cx, float cy, float wpx, float hpx, uint16_t ink)
 {
   int iw = (int)wpx, ih = (int)hpx;
@@ -687,7 +688,7 @@ static void drawLaughImg(float cx, float cy, float wpx, float hpx, uint16_t ink)
     return;
   int x0 = (int)(cx - iw / 2.0f), y0 = (int)(cy - ih / 2.0f);
   uint16_t wht = rgb565(255, 255, 255);
-  // surechantillonnage 2x2 du masque -> couverture encre/blanc, melange AA
+  // 2x2 supersampling of the mask -> ink/white coverage, AA blend
   for (int yy = 0; yy < ih; yy++)
   {
     int mya = (yy * 2) * LAUGH_MH / (ih * 2);
@@ -712,14 +713,14 @@ static void drawLaughImg(float cx, float cy, float wpx, float hpx, uint16_t ink)
   }
 }
 
-// Blit de la bouche : masque redimensionne (nearest), couleur unie
+// Mouth blit: resized mask (nearest), solid color
 static void drawMouthImg(float cx, float cy, float wpx, float hpx, uint16_t ink)
 {
   int iw = (int)wpx, ih = (int)hpx;
   if (iw < 2 || ih < 2 || !mouthMask)
     return;
   int x0 = (int)(cx - iw / 2.0f), y0 = (int)(cy - ih / 2.0f);
-  // surechantillonnage 2x2 -> couverture, melange AA (voir avBlend)
+  // 2x2 supersampling -> coverage, AA blend (see avBlend)
   for (int yy = 0; yy < ih; yy++)
   {
     int mya = (yy * 2) * MOUTH_MH / (ih * 2);
@@ -736,8 +737,8 @@ static void drawMouthImg(float cx, float cy, float wpx, float hpx, uint16_t ink)
   }
 }
 
-// ---- Etat "idle" du visage : regard vagabond + clignements (port de
-// getIdleState / pickNewLookTarget / drawFaceElements de screen-anims.js) ----
+// ---- Face "idle" state: wandering gaze + blinks (port of getIdleState /
+// pickNewLookTarget / drawFaceElements from screen-anims.js) ----
 
 static struct
 {
@@ -771,7 +772,7 @@ static void pickNewLookTarget(float *tx, float *ty)
   }
 }
 
-// Renvoie lookX, lookY [-1..1] et openness [0..1]
+// Returns lookX, lookY [-1..1] and openness [0..1]
 static void getIdle(float t, float *lookX, float *lookY, float *openness)
 {
   if (t >= idleSt.lookHold)
@@ -802,7 +803,7 @@ static void getIdle(float t, float *lookX, float *lookY, float *openness)
   if (idleSt.blinkStart >= 0)
   {
     float bt = (t - idleSt.blinkStart) / idleSt.blinkDur;
-    if (bt >= 1 || bt < 0) // bt < 0 : le temps local est reparti en arriere
+    if (bt >= 1 || bt < 0) // bt < 0: local time jumped backwards
     {
       idleSt.blinkStart = -1;
       idleSt.nextBlink = t + (frand(0, 1) < 0.25f ? 0.15f : 1.8f + frand(0, 3.5f));
@@ -812,35 +813,35 @@ static void getIdle(float t, float *lookX, float *lookY, float *openness)
   }
 }
 
-// Visage anime projete sur une sphere de rayon fr centree (cx, cy) :
-// yeux ronds qui suivent le regard (squish lateral), clignement, bouche SVG.
-// Variante "Look" : le regard est fourni par l'appelant (partage avec la
-// rotation de texture d'Idle Rainbow).
-// museau du perso original (visage AF_MUSEAU), rendu par la plateforme
+// Animated face projected onto a sphere of radius fr centered at (cx, cy):
+// round eyes following the gaze (lateral squish), blink, SVG mouth.
+// "Look" variant: the gaze is supplied by the caller (shared with the
+// Idle Rainbow texture rotation).
+// muzzle of the original character (AF_MUSEAU face), drawn by the platform
 static void avatarPlatformMouth(float mx, float my, float mw, float mh, uint16_t ink)
 {
   drawMouthImg(mx, my, mw, mh, ink);
 }
-// bouche du visage "rire", meme principe (masque SVG noir + blanc)
+// mouth of the "laugh" face, same principle (black + white SVG mask)
 static void avatarPlatformLaugh(float mx, float my, float mw, float mh, uint16_t ink)
 {
   drawLaughImg(mx, my, mw, mh, ink);
 }
 
-// reaction sociale (social_ui.h, inclus plus bas) : remplace le visage
-// pendant les 5 s d'une rencontre entre badges
+// social reaction (social_ui.h, included below): replaces the face during
+// the 5 s of a badge-to-badge encounter
 static bool socialExprFace(float cx, float cy, float fr);
 
 static void drawIdleFaceLook(float cx, float cy, float fr, float t,
                              float lookX, float lookY, float openness)
 {
   if (socialExprFace(cx, cy, fr))
-    return; // expression Happy/Wow/Love a la place du visage normal
+    return; // Happy/Wow/Love expression instead of the normal face
   uint16_t ink = rgb565(39, 39, 39); // #272727
   float breathe = sinf(t * 1.8f) * 0.5f;
   float theta = lookX * 30.0f * PI / 180.0f;
-  // visage de l'avatar affiche (9 designs Figma) : projection et rendu
-  // entierement dans avatars.h (partage firmware/emulateur)
+  // face of the displayed avatar (9 Figma designs): projection and render
+  // entirely in avatars.h (shared firmware/emulator)
   avatarDrawFace(cx, cy, fr, breathe, lookY * fr * 0.18f, cosf(theta),
                  sinf(theta), openness, ink);
   avatarDrawExtras(cx, cy, fr, breathe);
@@ -853,7 +854,7 @@ static void drawIdleFace(float cx, float cy, float fr, float t)
   drawIdleFaceLook(cx, cy, fr, t, lookX, lookY, openness);
 }
 
-// Visage du perso (yeux + sourire, clignement periodique), proportions du JS.
+// Character face (eyes + smile, periodic blink), proportions from the JS.
 static void drawFace(float cx, float cy, float r, float t)
 {
   uint16_t ink = rgb565(39, 39, 39); // #272727
@@ -870,8 +871,8 @@ static void drawFace(float cx, float cy, float r, float t)
     canvas->fillCircle((int16_t)(cx - ex), (int16_t)(cy + ey), (int16_t)er, ink);
     canvas->fillCircle((int16_t)(cx + ex), (int16_t)(cy + ey), (int16_t)er, ink);
   }
-  // sourire : bezier quadratique (-0.26r,0.02r) -> (0,0.26r) -> (0.26r,0.02r),
-  // trace en pastilles rondes (equivalent trait epais a bouts ronds)
+  // smile: quadratic bezier (-0.26r,0.02r) -> (0,0.26r) -> (0.26r,0.02r),
+  // drawn as round dots (equivalent to a thick round-capped stroke)
   float p0x = -r * 0.26f, p0y = r * 0.02f, pcx = 0, pcy = r * 0.26f;
   float p1x = r * 0.26f, p1y = r * 0.02f;
   int16_t dotR = max(2, (int)(r * 0.030f));
@@ -884,7 +885,7 @@ static void drawFace(float cx, float cy, float r, float t)
   }
 }
 
-// ------------------------------------------------- 4. snake (trail de spheres)
+// --------------------------------------------------- 4. snake (sphere trail)
 
 #define SNAKE_N 13
 #define TRAIL_MAX 160
@@ -899,7 +900,7 @@ static bool snakeInit = false;
 
 static void animSnake(float t, float dt)
 {
-  if (g_ballDirty) // avatar/buddy change : re-teinte le sprite de boule
+  if (g_ballDirty) // avatar/buddy changed: re-tint the ball sprite
   {
     g_ballDirty = false;
     initBallSprite();
@@ -918,7 +919,7 @@ static void animSnake(float t, float dt)
     snakeTrailLen = 1;
   }
 
-  // virage sinusoidal lisse + rebond billard sur le bord du disque
+  // smooth sinusoidal turning + billiard bounce on the disk edge
   if (dt > 0.09f)
     dt = 0.09f;
   float turn = sinf(t * 0.8f) * 1.2f + sinf(t * 0.33f + 2.1f) * 0.7f;
@@ -943,7 +944,7 @@ static void animSnake(float t, float dt)
   memmove(&snakeTrail[1], &snakeTrail[0], (snakeTrailLen - 1) * sizeof(Vec2));
   snakeTrail[0] = {nx, ny};
 
-  // echantillonnage du corps a pas constant le long de la trainee
+  // body sampled at constant spacing along the trail
   const float spacing = headR * 0.52f;
   Vec2 pts[SNAKE_N];
   pts[0] = {snakeX, snakeY};
@@ -972,15 +973,14 @@ static void animSnake(float t, float dt)
   }
 
   canvas->fillScreen(RGB565_BLACK);
-  // queue -> tete (la tete passe au-dessus), leger fuselage vers la queue
+  // tail -> head (head drawn on top), slight taper toward the tail
   for (int i = SNAKE_N - 1; i >= 0; i--)
   {
     float sr = headR * (1.0f - 0.25f * i / (SNAKE_N - 1));
     drawBallSprite((int)pts[i].x, (int)pts[i].y, sr);
   }
-  // le visage regarde dans la direction du deplacement (angle lisse pour
-  // que le rebond sur les bords ne fasse pas claquer le regard) ; le
-  // clignement vient toujours de getIdle
+  // the face looks in the direction of travel (smoothed angle so bounces
+  // on the edges do not snap the gaze); blinking still comes from getIdle
   {
     static float lkx = 0, lky = 0;
     float tx = cosf(snakeAngle), ty = sinf(snakeAngle) * 0.7f;
@@ -992,7 +992,7 @@ static void animSnake(float t, float dt)
   }
 }
 
-// ------------------------------------------------- 5. disco (boule a facettes)
+// ---------------------------------------------------- 5. disco (mirror ball)
 
 static const uint8_t DISCO_PALS[5][3] = {
     {158, 197, 240}, {255, 167, 254}, {255, 203, 138}, {159, 146, 243}, {128, 219, 188}};
@@ -1002,14 +1002,14 @@ static void animDisco(float t)
   const float Rb = RADIUS * 0.74f;
   const int NLAT = 15, NLON = 26;
   const float rot = t * 0.6f;
-  const float Lx = -0.45f, Ly = -0.52f, Lz = 0.72f; // lumiere haut-gauche-avant
+  const float Lx = -0.45f, Ly = -0.52f, Lz = 0.72f; // light top-left-front
 
   canvas->fillScreen(rgb565(8, 6, 16)); // #080610
 
-  // halo discret derriere la boule (avant les lumieres pour ne pas les couvrir)
+  // subtle halo behind the ball (before the lights so it does not cover them)
   canvas->fillCircle(CX, CY, (int16_t)(Rb * 1.12f), rgb565(20, 22, 42));
 
-  // points de lumiere colores qui balayent le fond (scintillants)
+  // colored light dots sweeping the background (twinkling)
   for (int i = 0; i < 42; i++)
   {
     float a = i * 2.39996f + t * 0.35f;
@@ -1025,7 +1025,7 @@ static void animDisco(float t)
     canvas->fillRect(x - s / 2, y - s / 2, s, s, hsv2rgb565(hue, 200, val));
   }
 
-  // facettes : grille lat/long projetee, hemisphere avant uniquement
+  // facets: projected lat/long grid, front hemisphere only
   for (int i = 0; i < NLAT; i++)
   {
     float f0 = -PI / 2 + (float)i / NLAT * PI;
@@ -1038,7 +1038,7 @@ static void animDisco(float t)
       float lc = (l0 + l1) / 2;
       float nx = cosf(fc) * sinf(lc), ny = sinf(fc), nz = cosf(fc) * cosf(lc);
       if (nz <= 0.04f)
-        continue; // face arriere
+        continue; // back face
       float b = nx * Lx + ny * Ly + nz * Lz;
       if (b < 0)
         b = 0;
@@ -1046,7 +1046,7 @@ static void animDisco(float t)
       float tw = 0.5f + 0.5f * sinf(t * 3 + seed);
       const uint8_t *base = DISCO_PALS[(i * 7 + j * 3) % 5];
       float sf = 0.28f + b * 1.05f;
-      float gm = (b > 0.55f && tw > 0.8f) ? 0.82f : 0; // glint -> vers le blanc
+      float gm = (b > 0.55f && tw > 0.8f) ? 0.82f : 0; // glint -> toward white
       float fr = min(255.0f, base[0] * sf), fg = min(255.0f, base[1] * sf), fb = min(255.0f, base[2] * sf);
       uint8_t cr = (uint8_t)(fr + (255 - fr) * gm);
       uint8_t cg = (uint8_t)(fg + (255 - fg) * gm);
@@ -1070,12 +1070,12 @@ static void animDisco(float t)
     }
   }
 
-  // visage anime du perso, face camera, a l'echelle de la boule
+  // animated character face, facing the camera, scaled to the ball
   drawIdleFace(CX, CY, Rb, t);
 }
 
-// Remise a zero de l'etat du visage idle (au changement d'animation, le temps
-// local repart de 0 : sans reset, les timers de regard/clignement seraient faux)
+// Reset of the idle face state (on animation change, local time restarts at
+// 0: without a reset, the gaze/blink timers would be wrong)
 static void resetIdle()
 {
   idleSt.lookCX = idleSt.lookCY = idleSt.lookPX = idleSt.lookPY = 0;
@@ -1086,70 +1086,71 @@ static void resetIdle()
   idleSt.nextBlink = 2.5f;
 }
 
-// ---------------------- 6. three globe / 7. three conf (fichier partage) ----
+// ---------------------- 6. three globe / 7. three conf (shared file) ----
 #include "anims_extra.h"
-#include "menu_font.h" // Dingos ExtraBold pour le menu
-#include "menu_font_med.h" // Dingos Medium (pourcentage batterie)
-#include "menu_font_bebas.h" // Bebas Neue (types d'events du Schedule)
-#include "menu_font_title.h" // Dingos ExtraBold 30 (titres du Schedule)
+#include "menu_font.h" // Dingos ExtraBold for the menu
+#include "menu_font_med.h" // Dingos Medium (battery percentage)
+#include "menu_font_bebas.h" // Bebas Neue (Schedule event types)
+#include "menu_font_title.h" // Dingos ExtraBold 30 (Schedule titles)
 
 // ------------------------------------------------------------------- menu
 
-// Anims actives (les autres restent dispo dans le code) + noms affiches.
-// Photos speaker (11..13) retirees avec les entrees Meet (revue 2026-08-29).
+// Active anims (the others stay available in the code) + display names.
+// Speaker photos (11..13) removed along with the Meet entries (review
+// 2026-08-29).
 static const uint8_t ACTIVE[] = {8, 4, 5, 6, 7, 9, 10, 14, 15, 16};
-// (16 = My Photo : entree cachee et slot saute tant que g_hasPhoto est faux)
+// (16 = My Photo: hidden entry, slot skipped while g_hasPhoto is false)
 static const int NACTIVE = (int)sizeof(ACTIVE);
-// (les tables du menu vivent dans menu_ui.h, partage avec l'emulateur)
+// (the menu tables live in menu_ui.h, shared with the emulator)
 
-// Demande de mode OTA depuis le menu : survit au redemarrage logiciel (RTC RAM)
+// OTA mode request from the menu: survives a software restart (RTC RAM)
 #define OTA_MAGIC 0x07A07A17
 RTC_NOINIT_ATTR uint32_t otaRequest;
 
-// Etat de l'interface : animations / menu / jeux
+// UI state: animations / menu / games
 enum UiMode : uint8_t { UI_ANIM, UI_MENU, UI_HOME, UI_SCHED, UI_ROT, UI_DRAW, UI_SNAKE, UI_PONG, UI_RUN, UI_TETRIS, UI_PET, UI_PIN, UI_SET, UI_SETUP, UI_QR, UI_MET, UI_SETMENU, UI_PROX, UI_LB, UI_VCAL, UI_BLOG };
 static UiMode uiMode = UI_ANIM;
 
-// ---- etat des Settings (code d'acces + choix d'avatar, voir menu_ui.h) ----
-static uint8_t pinDigits[5]; // = UI_PIN_LEN (menu_ui.h, inclus plus bas)
+// ---- Settings state (access code + avatar choice, see menu_ui.h) ----
+static uint8_t pinDigits[5]; // = UI_PIN_LEN (menu_ui.h, included below)
 static int pinPos = 0;
 static bool pinError = false, pinRedraw = true;
-static int setSel = 0, setShown = -1;   // avatar en cours de choix / affiche
-static uint16_t *setSpr = nullptr;      // sprite de preview (dvdGenSprite)
-static int metScroll = 0, metShown = -1; // ecran Encounters (Meet)
-static int lbGame = 0, lbShown = -1;     // ecran Leaderboard (Meet)
-static uint16_t lbMine[4];               // mes records (LB_GAMES, declare
-                                         // plus bas dans menu_ui.h)
-static int setMenuSel = 0, setMenuShown = -1; // menu Settings
-static int proxLevel = 2;                     // reglage proximite (Normal)
+static int setSel = 0, setShown = -1;   // avatar being picked / displayed
+static uint16_t *setSpr = nullptr;      // preview sprite (dvdGenSprite)
+static int metScroll = 0, metShown = -1; // Encounters screen (Meet)
+static int lbGame = 0, lbShown = -1;     // Leaderboard screen (Meet)
+static uint16_t lbMine[4];               // my records (LB_GAMES, declared
+                                         // further down in menu_ui.h)
+static int setMenuSel = 0, setMenuShown = -1; // Settings menu
+static int proxLevel = 2;                     // proximity setting (Normal)
 static int menuSel = 0;
-static int menuCat = 0; // categorie de la liste affichee (UIC_*)
-static int schedIdx = 0; // event affiche dans le Schedule
+static int menuCat = 0; // category of the displayed list (UIC_*)
+static int schedIdx = 0; // event shown in the Schedule
 static bool autoCycle = false;
-static Preferences prefs; // records des jeux, persistants en flash (NVS)
+static Preferences prefs; // game records, persisted in flash (NVS)
 
-// Jauge batterie : lecture du pont diviseur (x2) lissee, courbe LiPo approchee.
-static int batPct = -1; // -1 : pont diviseur absent
-static int16_t vbatCal = 1000; // calibration du pont, pour-mille (NVS "vcal")
-static uint32_t batMvRaw = 0; // tension lissee (mV), pour l'info du menu More
+// Battery gauge: smoothed divider reading (x2), approximated LiPo curve.
+static int batPct = -1; // -1: no divider bridge present
+static int16_t vbatCal = 1000; // bridge calibration, per-mille (NVS "vcal")
+static uint32_t batMvRaw = 0; // smoothed voltage (mV), for the More menu info
 static bool batCharging = false;
 
-// ---- Enregistreur d'autonomie (Settings > Batt log) : echantillons du
-// niveau batterie pendant que le badge tourne, pour MESURER la decharge
-// reelle sur l'appareil (revue Romain 2026-09-01). Quand le tampon est
-// plein, decimation par 2 et intervalle double (la fenetre couverte double).
+// ---- Runtime logger (Settings > Batt log): battery level samples taken
+// while the badge runs, to MEASURE the real on-device discharge
+// (review 2026-09-01 (Romain)). When the buffer is full, decimate by 2
+// and double the interval (the covered window doubles).
 #define BLOG_MAX 240
 static uint8_t blogPct[BLOG_MAX];
 static uint16_t blogMv[BLOG_MAX];
 static int blogN = 0;
-static uint32_t blogIvlMs = 120000; // 2 min au depart -> 8 h de fenetre
-static uint32_t blogT0 = 0;         // millis() du premier echantillon
+static uint32_t blogIvlMs = 120000; // 2 min to start -> 8 h window
+static uint32_t blogT0 = 0;         // millis() of the first sample
 
 static void blogPush(uint8_t pct, uint16_t mv, uint32_t now)
 {
   if (blogN == 0)
     blogT0 = now;
-  if (blogN >= BLOG_MAX) // plein : decimation par 2, intervalle double
+  if (blogN >= BLOG_MAX) // full: decimate by 2, double the interval
   {
     for (int i = 0; i < BLOG_MAX / 2; i++)
     {
@@ -1171,20 +1172,20 @@ static void updateBattery(uint32_t now)
   if (now - lastRead < 500)
     return;
   lastRead = now;
-  // Lecture ANALOGIQUE de la detection de charge (seuil 0.7 V ; en charge le
-  // pont donne ~1.2-2.5 V, non branche ~0 V). PURGE d'abord : l'echantillonneur
-  // ADC est partage entre les canaux et garde la charge de la broche batterie
-  // (~1.7 V) — avec un pont 100k, une lecture isolee heriterait de ce residu
-  // et allumerait un eclair fantome (vu en test le 2026-08-06).
+  // ANALOG read of the charging detection (0.7 V threshold; while charging
+  // the divider gives ~1.2-2.5 V, unplugged ~0 V). FLUSH first: the ADC
+  // sampler is shared between channels and keeps the charge of the battery
+  // pin (~1.7 V) -- with a 100k divider, a single reading would inherit that
+  // residue and light a phantom bolt (seen in test on 2026-08-06).
   analogReadMilliVolts(PIN_VBUS);
   analogReadMilliVolts(PIN_VBUS);
   uint32_t vbus = 0;
   for (int i = 0; i < 4; i++)
     vbus += analogReadMilliVolts(PIN_VBUS);
   batCharging = (vbus / 4) > 700;
-  // Rafale de 12 lectures, min et max ecartes : l'ADC de l'ESP32 est bruyant
-  // et le pont 100k/100k est haute impedance (~50k) — une lecture isolee
-  // danse de plusieurs dizaines de mV, soit plusieurs % sur la courbe LiPo.
+  // Burst of 12 readings, min and max discarded: the ESP32 ADC is noisy and
+  // the 100k/100k divider is high impedance (~50k) -- a single reading
+  // wanders by tens of mV, i.e. several % on the LiPo curve.
   uint32_t sum = 0, lo = UINT32_MAX, hi = 0;
   for (int i = 0; i < 12; i++)
   {
@@ -1195,11 +1196,11 @@ static void updateBattery(uint32_t now)
     if (s > hi)
       hi = s;
   }
-  uint32_t mv = (sum - lo - hi) / 10 * 2; // pont 100k/100k
-  // Compensation de charge DEGRESSIVE : ~200 mV sous 1 A (phase CC, jusqu'a
-  // ~3.9 V), puis le courant decroit en phase CV -> la surtension reelle
-  // fond aussi. Un forfait fixe sur-corrigerait la fin de charge (le %
-  // semblait bloque sous 100 %).
+  uint32_t mv = (sum - lo - hi) / 10 * 2; // 100k/100k divider
+  // TAPERING charge compensation: ~200 mV at 1 A (CC phase, up to ~3.9 V),
+  // then the current drops in CV phase -> the real overvoltage melts away
+  // too. A fixed offset would over-correct the end of charge (the % looked
+  // stuck below 100 %).
   if (batCharging && mv > 200)
   {
     uint32_t off = mv < 3900 ? 200 : (mv >= 4150 ? 40 : 200 - (mv - 3900) * 160 / 250);
@@ -1207,22 +1208,22 @@ static void updateBattery(uint32_t now)
   }
   if (mv < 2500)
   {
-    batPct = -1; // pas de capteur cable (ou batterie hors plage)
+    batPct = -1; // no sensor wired (or battery out of range)
     ema = 0;
     batMvRaw = 0;
     return;
   }
-  // lissage LENT (~10 s de constante de temps a 2 lectures/s) : les creux de
-  // tension sous charge (anims, WiFi) ne doivent pas faire plonger la jauge.
-  // L'EMA porte sur la tension BRUTE ; la calibration par badge (tolerance
-  // des ponts 100k, ecran Settings > Batt) s'applique apres — l'ecran de
-  // calibration repond ainsi instantanement au reglage.
+  // SLOW smoothing (~10 s time constant at 2 readings/s): the voltage dips
+  // under load (anims, WiFi) must not make the gauge plunge.
+  // The EMA runs on the RAW voltage; the per-badge calibration (100k divider
+  // tolerance, Settings > Batt screen) is applied afterwards -- that way the
+  // calibration screen reacts instantly to the setting.
   ema = (ema == 0) ? mv : ema * 0.95f + mv * 0.05f;
   batMvRaw = (uint32_t)(ema * vbatCal / 1000.0f);
   static const struct { uint16_t mv; uint8_t pct; } C[] = {
       {3300, 0}, {3500, 10}, {3600, 20}, {3700, 40}, {3800, 60},
       {3900, 75}, {4000, 88}, {4100, 96}, {4200, 100}};
-  float v = ema * vbatCal / 1000.0f; // courbe sur la tension CALIBREE
+  float v = ema * vbatCal / 1000.0f; // curve on the CALIBRATED voltage
   int pct = 100;
   if (v <= C[0].mv)
     pct = 0;
@@ -1233,10 +1234,11 @@ static void updateBattery(uint32_t now)
         pct = C[i - 1].pct + (int)((v - C[i - 1].mv) * (C[i].pct - C[i - 1].pct) / (C[i].mv - C[i - 1].mv));
         break;
       }
-  // Fin de charge : tension compensee haute (>=4.06 V) SOUTENUE 15 min en
-  // charge -> pleine. Le seuil instantane sautait a 100 % des le branchement
-  // d'une batterie a 90 % (la tension bondit a 4.2 V en phase CV bien avant
-  // la fin reelle — sans mesure de courant, seule la duree discrimine).
+  // End of charge: compensated voltage high (>=4.06 V) SUSTAINED 15 min
+  // while charging -> full. The instantaneous threshold jumped to 100 % as
+  // soon as a 90 % battery was plugged in (the voltage leaps to 4.2 V in CV
+  // phase long before the real end -- without a current measurement, only
+  // duration discriminates).
   static uint32_t fullSince = 0;
   if (batCharging && batMvRaw >= 4060)
   {
@@ -1248,11 +1250,12 @@ static void updateBattery(uint32_t now)
   else
     fullSince = 0;
 
-  // hysteresis d'affichage : le % ne bouge que d'1 point par lecture (2/s) —
-  // fini les sauts 40 -> 20 -> 38, la jauge glisse doucement vers la mesure.
-  // EN CHARGE, la montee est de plus limitee a ~1 %/min : c'est le rythme
-  // physique max (2000 mAh a 1 A) — la tension de charge surestime toujours
-  // le niveau (saut 60 -> 74 % observe au branchement), le temps ne ment pas.
+  // display hysteresis: the % only moves by 1 point per reading (2/s) --
+  // no more 40 -> 20 -> 38 jumps, the gauge slides gently to the measure.
+  // WHILE CHARGING, the rise is further limited to ~1 %/min: that is the max
+  // physical rate (2000 mAh at 1 A) -- the charge voltage always
+  // overestimates the level (60 -> 74 % jump seen when plugging in), time
+  // does not lie.
   static uint32_t lastChargeUp = 0;
   if (batPct < 0)
     batPct = pct;
@@ -1267,9 +1270,9 @@ static void updateBattery(uint32_t now)
   else if (pct < batPct)
     batPct--;
 
-  // enregistreur d'autonomie (Settings > Batt log) : un echantillon toutes
-  // les blogIvlMs tant que la jauge est valide et qu'on decharge (les points
-  // en charge fausseraient la pente)
+  // runtime logger (Settings > Batt log): one sample every blogIvlMs while
+  // the gauge is valid and we are discharging (points taken while charging
+  // would skew the slope)
   static uint32_t blogLast = 0;
   if (batPct >= 0 && !batCharging &&
       (blogLast == 0 || now - blogLast >= blogIvlMs))
@@ -1279,17 +1282,17 @@ static void updateBattery(uint32_t now)
   }
 }
 
-// ---- Photo du speaker uploadee via Setup (Watch > My Photo) ----
-// RGB565 360x360 brut dans /photo.565 (LittleFS, partition spiffs 3.4 MB),
-// recadree/reduite COTE TELEPHONE, chargee ici en PSRAM au boot.
+// ---- Speaker photo uploaded via Setup (Watch > My Photo) ----
+// Raw RGB565 360x360 in /photo.565 (LittleFS, spiffs partition 3.4 MB),
+// cropped/downscaled ON THE PHONE SIDE, loaded here into PSRAM at boot.
 static uint16_t *g_myPhoto = nullptr;
-static bool g_hasPhoto = false; // pilote l'entree de menu (menu_ui.h)
+static bool g_hasPhoto = false; // drives the menu entry (menu_ui.h)
 
 static void myPhotoLoad()
 {
   if (!LittleFS.begin(true))
   {
-    Serial0.println("photo : LittleFS indisponible");
+    Serial0.println("photo: LittleFS unavailable");
     return;
   }
   File f = LittleFS.open("/photo.565", "r");
@@ -1305,7 +1308,7 @@ static void myPhotoLoad()
   if (g_myPhoto && f.read((uint8_t *)g_myPhoto, (size_t)W * H * 2) == (size_t)W * H * 2)
   {
     g_hasPhoto = true;
-    Serial0.println("photo : chargee (Watch > My Photo)");
+    Serial0.println("photo: loaded (Watch > My Photo)");
   }
   f.close();
 }
@@ -1318,10 +1321,10 @@ static void animMyPhoto(float)
     canvas->fillScreen(RGB565_BLACK);
 }
 
-#include "menu_ui.h" // menu bulles + listes (partage firmware/emulateur)
+#include "menu_ui.h" // bubble menu + lists (shared firmware/emulator)
 
-// Flush avec rotation logicielle optionnelle (compense les dalles de travers).
-// La rotation (~4 ms) ne s'applique que si un angle est regle.
+// Flush with optional software rotation (compensates crooked panels).
+// The rotation (~4 ms) only applies if an angle is set.
 static uint16_t *rotBuf = nullptr;
 static void badgeFlush()
 {
@@ -1338,28 +1341,28 @@ static void badgeFlush()
   }
   if (dmafOk)
   {
-    // asynchrone : la fin du transfert part en DMA pendant le rendu suivant
+    // async: the end of the transfer runs on DMA during the next render
     dmafFlush(0, 0, W, H, src, W, false);
     return;
   }
-  // secours : chemin Arduino_GFX bloquant d'origine
+  // fallback: original blocking Arduino_GFX path
   if (src == rotBuf)
     panel->draw16bitRGBBitmap(0, 0, rotBuf, W, H);
   else
     canvas->flush();
 }
 
-// ----------------------------------------------------------------- jeux
+// ---------------------------------------------------------------- games
 #include "games.h"
-#include "qr_screen.h"  // ecran Meet > QR Code (partage avec l'emulateur) —
-                        // fournit badgeSsid(), utilise par draw/setup/OTA
-#include "setup_mode.h" // parcours de config sur telephone (More > Setup) —
-                        // fournit le DNS captif badgeDns*, utilise par Draw
+#include "qr_screen.h"  // Meet > QR Code screen (shared with the emulator) --
+                        // provides badgeSsid(), used by draw/setup/OTA
+#include "setup_mode.h" // phone config flow (More > Setup) -- provides the
+                        // captive DNS badgeDns*, used by Draw
 #include "draw_mode.h"
-#include "social.h"     // rencontres entre badges (ESP-NOW, Conf Buddy)
+#include "social.h"     // badge-to-badge encounters (ESP-NOW, Conf Buddy)
 
-// Ecran d'attente du mode dessin : infos de connexion tant que personne
-// n'a rejoint (efface par draw_mode.h a la premiere connexion WebSocket)
+// Draw mode waiting screen: connection info while nobody has joined
+// (cleared by draw_mode.h on the first WebSocket connection)
 static void drawDrawWait()
 {
   canvas->fillScreen(RGB565_BLACK);
@@ -1391,25 +1394,25 @@ static void drawDrawWait()
   canvas->print("center: exit");
 }
 
-// Extinction "logicielle" avec l'animation "power down" du repo (facon vieille
-// TV CRT) : le perso se compresse verticalement en une ligne avec un flash
-// blanc, puis un point chaud central se dissipe. Ensuite : ecran en veille
-// (display off + sleep in), retroeclairage coupe et verrouille, deep sleep de
-// l'ESP32, reveil par appui sur BTN_AUTO (GPIO RTC). Conso residuelle : boost
-// TP4056 + regulateur du devkit (~qq mA) — OK pour un badge recharge souvent.
+// "Software" power off with the repo's "power down" animation (old CRT TV
+// style): the character squashes vertically into a line with a white flash,
+// then a central hot spot fades away. Then: display asleep (display off +
+// sleep in), backlight cut and latched, ESP32 deep sleep, wake on BTN_AUTO
+// press (RTC GPIO). Residual draw: TP4056 boost + devkit regulator (~a few
+// mA) -- fine for a badge that is recharged often.
 static void powerOff()
 {
-  Serial0.println("extinction (deep sleep) — reveil par le bouton AUTO");
+  Serial0.println("power off (deep sleep) -- wake with the AUTO button");
 
-  // Frame source : ce qui est A L'ECRAN au moment de l'extinction (dernier
-  // frame rendu — animation en cours ou menu), comme une vraie TV qu'on coupe.
+  // Source frame: whatever is ON SCREEN at power-off time (last rendered
+  // frame -- running animation or menu), like a real TV being switched off.
   uint16_t *fb = canvas->getFramebuffer();
   uint16_t *snap = (uint16_t *)malloc(W * H * sizeof(uint16_t));
   if (snap)
   {
     memcpy(snap, fb, W * H * sizeof(uint16_t));
-    // Phase 1 : contraction verticale acceleree vers une ligne de 6 px,
-    // flash blanc sur la fin.
+    // Phase 1: accelerated vertical contraction down to a 6 px line,
+    // white flash at the end.
     uint32_t t0 = millis();
     while (true)
     {
@@ -1438,7 +1441,7 @@ static void powerOff()
       badgeFlush();
     }
     free(snap);
-    // Phase 2 : point chaud central qui se dissipe (halo + coeur)
+    // Phase 2: central hot spot fading away (halo + core)
     t0 = millis();
     while (true)
     {
@@ -1457,7 +1460,7 @@ static void powerOff()
   canvas->fillScreen(RGB565_BLACK);
   badgeFlush();
 
-  if (dmafOk) // le trafic ecran passe par SPI3 depuis dmafInit()
+  if (dmafOk) // display traffic goes through SPI3 since dmafInit()
   {
     dmafCmdBlocking(0x28); // display off
     delay(20);
@@ -1470,36 +1473,36 @@ static void powerOff()
     bus->sendCommand(0x10);
   }
   delay(120);
-  // Coupe le retroeclairage et VERROUILLE l'etat bas pendant le deep sleep
-  // (sans hold, la broche flotterait et le retroeclairage pourrait se rallumer).
+  // Cut the backlight and LATCH the low level during deep sleep (without
+  // hold, the pin would float and the backlight could turn back on).
   digitalWrite(TFT_BL, LOW);
   gpio_hold_en((gpio_num_t)TFT_BL);
   digitalWrite(TFT_BL_LEGACY, LOW);
   gpio_hold_en((gpio_num_t)TFT_BL_LEGACY);
-  neopixelWrite(PIN_RGB, 0, 0, 0); // WS2812 du devkit : noir explicite
+  neopixelWrite(PIN_RGB, 0, 0, 0); // devkit WS2812: explicit black
   pinMode(PIN_RGB, OUTPUT);
   digitalWrite(PIN_RGB, LOW);
-  gpio_hold_en((gpio_num_t)PIN_RGB); // et data verrouillee basse en sommeil
+  gpio_hold_en((gpio_num_t)PIN_RGB); // and data latched low during sleep
   gpio_deep_sleep_hold_en();
-  // Attendre le RELACHEMENT du bouton : l'appui long est encore en cours a cet
-  // instant, et le reveil ext0 se declenche sur niveau bas — sans cette attente
-  // le badge se rendort et se reveille immediatement.
+  // Wait for the button RELEASE: the long press is still in progress at this
+  // point, and the ext0 wakeup triggers on a low level -- without this wait
+  // the badge goes to sleep and wakes up immediately.
   while (digitalRead(BTN_AUTO) == LOW)
     delay(10);
-  delay(100); // anti-rebond du relachement
+  delay(100); // release debounce
   rtc_gpio_pullup_en((gpio_num_t)BTN_AUTO);
   rtc_gpio_pulldown_dis((gpio_num_t)BTN_AUTO);
   esp_sleep_enable_ext0_wakeup((gpio_num_t)BTN_AUTO, 0);
-  // (Le reveil au branchement USB a ete tente puis abandonne — revue Romain
-  // 2026-09-07, niveau ext1 limite et pas le temps de fiabiliser avant la
-  // serie : reveil par bouton central uniquement, la LED du TP4056 sert de
-  // temoin de charge badge eteint.)
+  // (Wake on USB plug-in was tried then dropped -- review 2026-09-07
+  // (Romain), ext1 level limitation and no time to make it reliable before
+  // the production run: wake by center button only, the TP4056 LED acts as
+  // the charge indicator while the badge is off.)
   esp_deep_sleep_start();
 }
 
-// Loader retro du splash de boot : "LOADING..." + barre a blocs segmentes,
-// dessine PAR-DESSUS l'anim Three Conf (uniquement au demarrage), puis passe
-// aux scanlines pour se fondre dans le look CRT. p = progression 0..1.
+// Retro loader of the boot splash: "LOADING..." + segmented block bar, drawn
+// ON TOP of the Three Conf anim (at startup only), then scanlined over to
+// blend into the CRT look. p = progress 0..1.
 static void drawBootLoader(float p, float t)
 {
   const int NB = 12, bw = 14, bh = 14, gap = 4;
@@ -1508,7 +1511,7 @@ static void drawBootLoader(float p, float t)
   const uint16_t pink = rgb565(0xfc, 0xa3, 0xf7);
   const uint16_t dimFrame = rgb565(70, 110, 80);
 
-  // Phrases de chargement qui tournent — humour de dev Three.js
+  // Rotating loading phrases -- Three.js dev humour
   static const char *PHRASES[] = {
       "npm install three",     "compiling shaders",   "baking the donut",
       "spinning the cube",     "computing normals",   "draw calls--",
@@ -1521,7 +1524,7 @@ static void drawBootLoader(float p, float t)
   canvas->setCursor(CX - (int)strlen(txt) * 6, y - 26);
   canvas->print(txt);
 
-  // blocs segmentes
+  // segmented blocks
   int filled = (int)(p * NB + 0.5f);
   for (int i = 0; i < NB; i++)
   {
@@ -1532,17 +1535,17 @@ static void drawBootLoader(float p, float t)
       canvas->drawRect(x, y, bw, bh, dimFrame);
   }
 
-  // scanlines locales pour fondre le loader dans l'ambiance CRT
+  // local scanlines to blend the loader into the CRT mood
   for (int yy = y - 28; yy < y + bh + 2; yy++)
     if (yy % 3 == 0)
       dimRow(yy, 40, 320);
 }
 
-// Generation des textures pendant l'anim de boot. Retourne false quand tout
-// est genere. Execute sur LE COEUR 0 (bootGenTask) pendant que l'anim tourne
-// sur le coeur 1 : aucune de ces fonctions ne touche au canvas partage, et
-// une etape par frame bloquait la frame en cours (freeze visible en debut
-// de splash sur le vrai badge).
+// Texture generation during the boot anim. Returns false once everything is
+// generated. Runs on CORE 0 (bootGenTask) while the anim runs on core 1:
+// none of these functions touch the shared canvas, and doing one step per
+// frame blocked the current frame (freeze visible at the start of the splash
+// on the real badge).
 static bool bootGenStep(int s)
 {
   switch (s)
@@ -1574,52 +1577,52 @@ static void bootGenTask(void *)
   int s = 0;
   while (bootGenStep(s))
     s++;
-  Serial0.printf("generation textures : %lu ms (pendant le splash)\n",
+  Serial0.printf("texture generation: %lu ms (during the splash)\n",
                  (unsigned long)(millis() - t0));
   bootGenDone = true;
   vTaskDelete(nullptr);
 }
 
-// ---------------------------------------------------------------- boucle
+// ------------------------------------------------------------------ loop
 
 void setup()
 {
-  Serial0.begin(115200); // UART0 -> pont CH343 : logs visibles sur /dev/cu.usbmodem*
+  Serial0.begin(115200); // UART0 -> CH343 bridge: logs on /dev/cu.usbmodem*
   Serial0.println("=== Badge threejs.paris - animations GC9B72 ===");
-  prefs.begin("badge", false); // records des jeux (NVS)
-  // REMISE A ZERO DE FLOTTE (revue Romain 2026-09-08) : l'OTA WiFi ne peut
-  // pas effacer la flash, donc le firmware s'en charge — au PREMIER boot
-  // d'une nouvelle "generation", la NVS (identite, scores, calibration...)
-  // et la photo sont effacees. Incrementer RESET_GEN pour declencher un
-  // nouvel effacement de toute la flotte au prochain flash.
-#define RESET_GEN 2 // gen 2 : remise a zero de flotte du 2026-09-09
+  prefs.begin("badge", false); // game records (NVS)
+  // FLEET WIPE (review 2026-09-08 (Romain)): WiFi OTA cannot erase the
+  // flash, so the firmware does it -- on the FIRST boot of a new
+  // "generation", the NVS (identity, scores, calibration...) and the photo
+  // are erased. Increment RESET_GEN to trigger a new wipe of the whole
+  // fleet on the next flash.
+#define RESET_GEN 2 // gen 2: fleet wipe of 2026-09-09
   if (prefs.getUShort("fwgen", 0) != RESET_GEN)
   {
     prefs.clear();
     if (LittleFS.begin(true))
       LittleFS.remove("/photo.565");
     prefs.putUShort("fwgen", RESET_GEN);
-    Serial0.println("flotte : memoire remise a zero (nouvelle generation)");
+    Serial0.println("fleet: memory wiped (new generation)");
   }
-  uiScreenRot = (int)(int8_t)prefs.getChar("rotDeg", 0); // rotation ecran calibree
-  vbatCal = prefs.getShort("vcal", 1000); // calibration jauge batterie par badge
+  uiScreenRot = (int)(int8_t)prefs.getChar("rotDeg", 0); // calibrated rotation
+  vbatCal = prefs.getShort("vcal", 1000); // per-badge battery gauge calibration
 
-  // GARDE DE CHARGE (revue Romain 2026-08-30) : cellule critique + chargeur
-  // branche -> chaque boot complet (anim, PSRAM, retroeclairage) s'effondrait
-  // en brownout et bouclait, l'ecran clignotait et le courant de charge
-  // partait dans les tentatives. Ici on attend, CPU au ralenti et ecran
-  // eteint (la LED du TP4056 sert de temoin), que la cellule remonte avant
-  // de demarrer pour de bon. Debranchement -> on tente le boot normal.
+  // CHARGE GUARD (review 2026-08-30 (Romain)): critical cell + charger
+  // plugged in -> every full boot (anim, PSRAM, backlight) collapsed into a
+  // brownout and looped, the display blinked and the charge current went
+  // into the retries. Here we wait, CPU throttled and display off (the
+  // TP4056 LED acts as the indicator), for the cell to come back up before
+  // starting for real. Unplugged -> we attempt the normal boot.
   {
-    analogReadMilliVolts(PIN_VBUS); // purge de l'echantillonneur partage
+    analogReadMilliVolts(PIN_VBUS); // flush the shared sampler
     bool onUsb = analogReadMilliVolts(PIN_VBUS) > 700;
     uint32_t mv = 0;
     for (int i = 0; i < 4; i++)
       mv += analogReadMilliVolts(PIN_VBAT);
     mv = mv / 4 * 2 * (uint32_t)vbatCal / 1000;
-    if (onUsb && mv > 2500 && mv < 3400) // 2500 = pont absent (proto nu)
+    if (onUsb && mv > 2500 && mv < 3400) // 2500 = no divider (bare proto)
     {
-      Serial0.printf("batterie critique en charge (%lu mV) : attente avant boot\n",
+      Serial0.printf("critical battery, charging (%lu mV): waiting before boot\n",
                      (unsigned long)mv);
       while (true)
       {
@@ -1628,37 +1631,36 @@ void setup()
         for (int i = 0; i < 4; i++)
           s2 += analogReadMilliVolts(PIN_VBAT);
         s2 = s2 / 4 * 2 * (uint32_t)vbatCal / 1000;
-        if (s2 >= 3550) // ~3.4 V reels sous charge : boot serein
+        if (s2 >= 3550) // ~3.4 V real under charge: safe boot
           break;
         analogReadMilliVolts(PIN_VBUS);
         if (analogReadMilliVolts(PIN_VBUS) < 700)
-          break; // debranche par l'utilisateur : on tente
+          break; // unplugged by the user: give it a try
       }
-      Serial0.println("charge ok : boot");
+      Serial0.println("charge ok: boot");
     }
   }
-  g_avatarIdx = prefs.getUChar("avatar", 0) % AVATAR_N;  // avatar/personne du badge
+  g_avatarIdx = prefs.getUChar("avatar", 0) % AVATAR_N;  // badge avatar/person
   g_avatarFaceIdx = g_avatarIdx;
-  // buddy custom + nom + URL du QR (parcours More > Setup, sur telephone)
+  // custom buddy + name + QR URL (More > Setup flow, on the phone)
   g_buddyCustom = prefs.getUChar("bcust", 0) != 0;
   g_buddyCustomDef.hue = prefs.getShort("bhue", 0);
   g_buddyCustomDef.sat = prefs.getUChar("bsat", 100) / 100.0f;
   g_buddyCustomDef.face = prefs.getUChar("bface", 0) % 9;
   prefs.getString("bname", qrName, sizeof(qrName));
-  // Buddy ALEATOIRE par badge tant qu'aucun profil n'est configure (revue
-  // Romain 2026-09-08) : ni nom (Setup/Settings ecrivent "bname") ni buddy
-  // custom -> teinte + visage tires une fois et PERSISTES ("rhue"/"rface",
-  // stables d'un boot a l'autre), appliques en custom NON sauve ("bcust"
-  // reste 0) — le vrai profil, quand il arrive, reprend la main tel quel.
+  // RANDOM per-badge buddy while no profile is configured (review 2026-09-08
+  // (Romain)): no name (Setup/Settings write "bname") and no custom buddy ->
+  // hue + face drawn once and PERSISTED ("rhue"/"rface", stable across
+  // boots), applied as a NOT-saved custom ("bcust" stays 0) -- the real
+  // profile, when it arrives, takes over as is.
   if (!qrName[0] && !g_buddyCustom)
   {
     uint16_t rh = prefs.getUShort("rhue", 0xFFFF);
     uint8_t rf;
     if (rh == 0xFFFF)
     {
-      // tot au boot, esp_random() manque d'entropie (radio eteinte) : on
-      // melange la MAC eFuse, unique par chip — deux badges ne peuvent pas
-      // tirer le meme buddy
+      // early at boot, esp_random() lacks entropy (radio off): we mix in the
+      // eFuse MAC, unique per chip -- two badges cannot draw the same buddy
       uint8_t mac[6] = {0};
       esp_efuse_mac_get_default(mac);
       uint32_t mix = esp_random() ^ ((uint32_t)mac[5] << 16) ^
@@ -1667,7 +1669,7 @@ void setup()
       rf = (uint8_t)((mix >> 9) % 9);
       prefs.putUShort("rhue", rh);
       prefs.putUChar("rface", rf);
-      Serial0.printf("buddy aleatoire : hue %u, visage %u\n", rh, rf);
+      Serial0.printf("random buddy: hue %u, face %u\n", rh, rf);
     }
     else
       rf = prefs.getUChar("rface", 0) % 9;
@@ -1676,30 +1678,30 @@ void setup()
     g_buddyCustomDef.sat = 1.0f;
     g_buddyCustomDef.face = rf;
   }
-  socialMetLoad(); // compteurs de rencontres (ecran Meet > Encounters)
-  lbLoad();        // scores appris des autres badges (Meet > Leaderboard)
-  myPhotoLoad();   // photo uploadee via Setup (Watch > My Photo)
-  socialRssiNear = (int8_t)prefs.getChar("prox", -62); // seuil de proximite (= Normal)
+  socialMetLoad(); // encounter counters (Meet > Encounters screen)
+  lbLoad();        // scores learned from other badges (Meet > Leaderboard)
+  myPhotoLoad();   // photo uploaded via Setup (Watch > My Photo)
+  socialRssiNear = (int8_t)prefs.getChar("prox", -62); // proximity thr (Normal)
   prefs.getString("bcomp", qrCompany, sizeof(qrCompany));
   prefs.getString("bmsg", qrMsg, sizeof(qrMsg));
   if (prefs.getString("qrurl", qrUrl, sizeof(qrUrl)) == 0 || !qrUrl[0])
     snprintf(qrUrl, sizeof(qrUrl), "https://threejs.paris");
 
-  // Bouton PREV — ou BOOT, pratique tant que les boutons ne sont pas cables —
-  // presse pendant l'anim de boot -> mode flash OTA (la fenetre est surveillee
-  // dans la boucle d'anim, plus de temps mort avant l'allumage de l'ecran).
-  // NB : BOOT maintenu PENDANT le reset = bootloader ROM (strapping GPIO 0) ;
-  // il faut donc appuyer juste APRES le reset.
+  // PREV button -- or BOOT, handy while the buttons are not wired -- pressed
+  // during the boot anim -> OTA flash mode (the window is watched inside the
+  // anim loop, no more dead time before the display turns on).
+  // NB: BOOT held DURING the reset = ROM bootloader (GPIO 0 strapping); so
+  // it must be pressed just AFTER the reset.
   pinMode(BTN_PREV, INPUT_PULLUP);
   pinMode(BTN_BOOT, INPUT_PULLUP);
-  // ...ou demande depuis l'entree "Mode Flash OTA" du menu (drapeau RTC RAM)
+  // ...or requested from the menu "Mode Flash OTA" entry (RTC RAM flag)
   if (otaRequest == OTA_MAGIC)
     otaMode = true;
   otaRequest = 0;
 
-  // Retroeclairage : libere un eventuel hold du deep sleep precedent puis allume
-  // (GPIO 9 = badges nappe, GPIO 4 = premiers badges — pilotes en parallele,
-  // la broche non cablee reste simplement en l'air)
+  // Backlight: release any hold left by the previous deep sleep, then turn on
+  // (GPIO 9 = ribbon badges, GPIO 4 = first badges -- driven in parallel,
+  // the unwired pin simply stays floating)
   gpio_hold_dis((gpio_num_t)TFT_BL);
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);
@@ -1707,8 +1709,8 @@ void setup()
   pinMode(TFT_BL_LEGACY, OUTPUT);
   digitalWrite(TFT_BL_LEGACY, HIGH);
   gpio_hold_dis((gpio_num_t)PIN_RGB);
-  neopixelWrite(PIN_RGB, 0, 0, 0); // WS2812 eteinte des le boot (data flottante
-  pinMode(PIN_RGB, OUTPUT);        // = couleur aleatoire possible)
+  neopixelWrite(PIN_RGB, 0, 0, 0); // WS2812 off from boot (floating data
+  pinMode(PIN_RGB, OUTPUT);        // = random colour possible)
   digitalWrite(PIN_RGB, LOW);
 
   pinMode(TFT_TE, INPUT_PULLDOWN);
@@ -1720,31 +1722,31 @@ void setup()
   attachInterrupt(digitalPinToInterrupt(BTN_PREV), btnPrevIsr, FALLING);
   pinMode(BTN_AUTO, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(BTN_AUTO), btnAutoIsr, CHANGE);
-  pinMode(PIN_VBUS, INPUT_PULLDOWN); // detection de charge (LOW si non cable)
+  pinMode(PIN_VBUS, INPUT_PULLDOWN); // charge detection (LOW if not wired)
   pinMode(BTN_BOOT, INPUT_PULLUP);
-  // (BOOT n'est plus attache a une interruption : il est scrute dans loop()
-  // avec 3 fonctions selon la duree d'appui — voir le bloc "bouton BOOT")
+  // (BOOT is no longer attached to an interrupt: it is polled in loop() with
+  // 3 functions depending on the press duration -- see the "BOOT button"
+  // block)
 
   if (!canvas->begin(SPI_FREQ))
   {
-    Serial0.println("ERREUR : canvas->begin() a echoue (framebuffer ou ecran)");
+    Serial0.println("ERROR: canvas->begin() failed (framebuffer or display)");
     while (true)
       delay(1000);
   }
-  // bascule le trafic ecran sur SPI3+DMA (l'init du panneau reste Arduino_GFX)
+  // switch display traffic to SPI3+DMA (panel init stays Arduino_GFX)
   dmafOk = dmafInit();
-  Serial0.printf("PSRAM libre : %u octets\n", (unsigned)ESP.getFreePsram());
+  Serial0.printf("free PSRAM: %u bytes\n", (unsigned)ESP.getFreePsram());
 
 
-  // Sequence de demarrage : anim "Three Conf" (logo + loader) pendant 4 s —
-  // fait aussi office de verification visuelle de la liaison SPI. La
-  // generation des textures tourne EN PARALLELE sur le coeur 0 (l'anim reste
-  // fluide sur le coeur 1), et PREV/BOOT presse pendant l'anim bascule en
-  // mode flash OTA.
-  // NB : tache volontairement sur le COEUR 1 (celui de l'anim) — epinglee au
-  // coeur 0, la generation PSRAM concurrente du rendu provoquait des resets
-  // TG1WDT sur certaines cartes (rail d'alim marginal) ; sur le meme coeur,
-  // l'ordonnanceur entrelace (generation ~5 s, toujours pendant le splash)
+  // Startup sequence: "Three Conf" anim (logo + loader) for 4 s -- doubles as
+  // a visual check of the SPI link. Texture generation runs IN PARALLEL on
+  // core 0 (the anim stays smooth on core 1), and PREV/BOOT pressed during
+  // the anim switches to OTA flash mode.
+  // NB: task deliberately on CORE 1 (the anim's core) -- pinned to core 0,
+  // PSRAM generation concurrent with rendering caused TG1WDT resets on some
+  // boards (marginal power rail); on the same core the scheduler interleaves
+  // (generation ~5 s, still during the splash)
   xTaskCreatePinnedToCore(bootGenTask, "bootgen", 16384, nullptr, 1, nullptr, 1);
   if (!otaMode)
   {
@@ -1752,11 +1754,11 @@ void setup()
     while (millis() - t0 < 4000 && !otaMode)
     {
       float ts = (millis() - t0) / 1000.0f;
-      animThreeConf(ts, -20); // logo remonte pour laisser la place au loader
+      animThreeConf(ts, -20); // logo raised to make room for the loader
       drawBootLoader(ts / 4.0f, ts);
       waitTE();
       badgeFlush();
-      // fenetre OTA : 1,5 s (au-dela, un appui pendant le boot est ignore)
+      // OTA window: 1.5 s (beyond that, a press during boot is ignored)
       if (ts < 1.5f &&
           (digitalRead(BTN_PREV) == LOW || digitalRead(BTN_BOOT) == LOW))
         otaMode = true;
@@ -1765,25 +1767,25 @@ void setup()
 
   if (otaMode)
   {
-    // Point d'acces autonome + serveur OTA ; le reste du setup (animations)
-    // est saute, loop() ne fera que ArduinoOTA.handle().
+    // Standalone access point + OTA server; the rest of setup (animations)
+    // is skipped, loop() will only do ArduinoOTA.handle().
     WiFi.mode(WIFI_AP);
     WiFi.softAP(badgeSsid(), OTA_PASS);
-    ArduinoOTA.onStart([]() { Serial0.println("OTA : debut"); });
+    ArduinoOTA.onStart([]() { Serial0.println("OTA: start"); });
     ArduinoOTA.onProgress([](unsigned int prog, unsigned int total) {
       static int lastPct = -1;
       int pct = prog / (total / 100);
-      if (pct / 5 != lastPct / 5) // rafraichit l'ecran tous les 5 %
+      if (pct / 5 != lastPct / 5) // refresh the display every 5 %
       {
         lastPct = pct;
         canvas->fillRect(80, 220, 200, 14, rgb565(40, 40, 40));
         canvas->fillRect(80, 220, 2 * pct, 14, rgb565(255, 213, 48));
         badgeFlush();
-        Serial0.printf("OTA : %d %%\n", pct);
+        Serial0.printf("OTA: %d %%\n", pct);
       }
     });
-    ArduinoOTA.onEnd([]() { Serial0.println("OTA : OK, redemarrage"); });
-    ArduinoOTA.onError([](ota_error_t e) { Serial0.printf("OTA : erreur %u\n", e); });
+    ArduinoOTA.onEnd([]() { Serial0.println("OTA: OK, restarting"); });
+    ArduinoOTA.onError([](ota_error_t e) { Serial0.printf("OTA: error %u\n", e); });
     ArduinoOTA.begin();
 
     canvas->fillScreen(RGB565_BLACK);
@@ -1803,13 +1805,13 @@ void setup()
     canvas->setCursor(CX - 102, 240);
     canvas->print("hold center: exit");
     badgeFlush();
-    Serial0.printf("MODE FLASH OTA : AP %s / %s, IP %s\n", badgeSsid(), OTA_PASS,
+    Serial0.printf("OTA FLASH MODE: AP %s / %s, IP %s\n", badgeSsid(), OTA_PASS,
                    WiFi.softAPIP().toString().c_str());
     return;
   }
 
-  // Attend la fin de la generation (coeur 0) — en pratique elle se termine
-  // bien avant les 4 s du splash
+  // Wait for the generation to finish (core 0) -- in practice it ends well
+  // before the 4 s of the splash
   while (!bootGenDone)
     delay(5);
 
@@ -1821,8 +1823,8 @@ void loop()
   if (otaMode)
   {
     ArduinoOTA.handle();
-    // Sortie du mode flash SANS flasher (boitier ferme, pas de reset physique) :
-    // appui long 2 s sur le bouton central -> redemarrage normal.
+    // Leaving flash mode WITHOUT flashing (closed case, no physical reset):
+    // 2 s long press on the center button -> normal restart.
     static uint32_t exitHold = 0;
     if (digitalRead(BTN_AUTO) == LOW)
     {
@@ -1850,40 +1852,40 @@ void loop()
   static uint32_t lastBtnMs = 0;
   static uint32_t slotStartMs = 0;
 
-  // Rencontres entre badges : la radio ESP-NOW n'est active que quand le
-  // Conf Buddy est a l'ecran (elle se coupe des qu'on entre dans le menu,
-  // donc toujours AVANT les AP WiFi de Draw/Setup/OTA).
-  // Garde-fou serie (briseur de boucle de crash) : un marqueur NVS est arme
-  // juste avant d'allumer la radio et desarme apres 8 s de fonctionnement.
-  // Si un boot trouve le marqueur arme, la session precedente est morte au
-  // demarrage radio (brownout/POR sur alim marginale) -> radio sociale
-  // coupee pour CETTE session, le badge reste utilisable. Le marqueur est
-  // efface : au prochain cycle d'alimentation, on retente une fois.
+  // Badge-to-badge encounters: the ESP-NOW radio is only active while the
+  // Conf Buddy is on screen (it shuts down as soon as we enter the menu, so
+  // always BEFORE the Draw/Setup/OTA WiFi APs).
+  // Production-run safeguard (crash loop breaker): an NVS marker is armed
+  // just before turning the radio on and disarmed after 8 s of operation.
+  // If a boot finds the marker armed, the previous session died at radio
+  // startup (brownout/POR on a marginal supply) -> social radio disabled for
+  // THIS session, the badge stays usable. The marker is cleared: on the next
+  // power cycle, we try once more.
   static uint32_t socialArmMs = 0;
   static const bool socialBlocked = [] {
     if (esp_reset_reason() == ESP_RST_BROWNOUT || prefs.getUChar("socboot", 0))
     {
       prefs.putUChar("socboot", 0);
-      Serial0.println("social : desactive (crash au demarrage radio "
-                      "precedent — alimentation a verifier)");
+      Serial0.println("social: disabled (crash at previous radio startup "
+                      "-- check the power supply)");
       return true;
     }
     return false;
   }();
   {
-    // La detection ESP-NOW exige une IDENTITE (revue Romain 2026-09-08) :
-    // badge non configure (pas de nom via Setup/Settings) = radio muette —
-    // pas de "qui est a cote" anonyme. L'ecran Proximity (outil orga,
-    // mode sonde) reste actif pour le diagnostic.
+    // ESP-NOW detection requires an IDENTITY (review 2026-09-08 (Romain)):
+    // unconfigured badge (no name via Setup/Settings) = silent radio -- no
+    // anonymous "who is nearby". The Proximity screen (organiser tool, probe
+    // mode) stays active for diagnostics.
     bool wantSession = (((uiMode == UI_ANIM && ACTIVE[slot] == 8) && qrName[0]) ||
                         uiMode == UI_PROX) &&
                        !socialBlocked;
     socialProbeOnly = (uiMode == UI_PROX);
-    // CYCLAGE de l'ecoute pendant Conf Buddy (voir SOCIAL_DUTY_* dans
-    // social.h) ; Proximity reste en continu. Le briseur de boucle "socboot"
-    // n'est arme qu'au PREMIER allumage du cycle d'alimentation : une fois
-    // la radio prouvee 8 s, les rallumages du cyclage ne re-arment pas
-    // (sinon deux ecritures NVS par periode de 12 s).
+    // DUTY CYCLING of the listening during Conf Buddy (see SOCIAL_DUTY_* in
+    // social.h); Proximity stays continuous. The "socboot" loop breaker is
+    // only armed on the FIRST power-up of the power cycle: once the radio
+    // has proven itself for 8 s, the duty-cycle restarts do not re-arm it
+    // (otherwise two NVS writes per 12 s period).
     static uint32_t dutyAnchor = 0;
     static bool socialProven = false;
     bool wantSocial = wantSession;
@@ -1901,7 +1903,7 @@ void loop()
       {
         if (!socialProven)
         {
-          prefs.putUChar("socboot", 1); // arme : si on meurt ici, bloque au boot
+          prefs.putUChar("socboot", 1); // armed: dying here blocks at boot
           socialArmMs = now ? now : 1;
         }
         socialStart();
@@ -1911,7 +1913,7 @@ void loop()
     }
     if (socialOn && socialArmMs && now - socialArmMs > 8000)
     {
-      prefs.putUChar("socboot", 0); // 8 s stables : la radio passe sur cette carte
+      prefs.putUChar("socboot", 0); // 8 s stable: the radio works on this board
       socialArmMs = 0;
       socialProven = true;
     }
@@ -1919,11 +1921,11 @@ void loop()
       socialLoop(now);
   }
 
-  // ---- bouton BOOT seul = navigation complete (pratique au banc, sans
-  // boutons cables) : court = suivant · maintenu >= 0,5 s = bouton central
-  // (le "saut" des jeux part au franchissement du seuil, la validation menu
-  // au relachement) · maintenu >= 2 s = extinction, comme le central long.
-  // Sans effet sur les vrais boutons, qui restent prioritaires.
+  // ---- BOOT button alone = full navigation (handy on the bench, without
+  // wired buttons): short = next * held >= 0.5 s = center button (the games
+  // "jump" fires when crossing the threshold, the menu validation on
+  // release) * held >= 2 s = power off, like the long center press.
+  // No effect on the real buttons, which stay priority.
   {
     static uint32_t bootDownAt = 0;
     static bool bootCenterFired = false, bootOffFired = false;
@@ -1936,26 +1938,26 @@ void loop()
     if (down && bootDownAt && !bootCenterFired && now - bootDownAt >= 500)
     {
       bootCenterFired = true;
-      autoPressMs = now; // "press central" synthetique (saut/action des jeux)
+      autoPressMs = now; // synthetic "center press" (games jump/action)
     }
     if (down && bootDownAt && !bootOffFired && now - bootDownAt >= 2000 &&
         now > 4000)
     {
       bootOffFired = true;
-      powerOff(); // central long = extinction
+      powerOff(); // long center = power off
     }
     if (!down && bootDownAt)
     {
       uint32_t held = now - bootDownAt;
       bootDownAt = 0;
       if (held < 500)
-        btnNextFlag = true; // court : suivant (comportement historique)
+        btnNextFlag = true; // short: next (historical behaviour)
       else if (held < 2000)
-        btnAutoShort = true; // long : central court (menu / valider)
+        btnAutoShort = true; // long: short center (menu / validate)
     }
   }
 
-  // ---- boutons : gauche/droite (anti-rebond 300 ms) + central court/long ----
+  // ---- buttons: left/right (300 ms debounce) + short/long center ----
   bool navNext = false, navPrev = false;
   if ((btnNextFlag || btnPrevFlag) && now - lastBtnMs > 300)
   {
@@ -1965,7 +1967,7 @@ void loop()
   }
   btnNextFlag = btnPrevFlag = false;
 
-  // appui LONG (2 s) sur le central : extinction (ignore les 4 s apres boot)
+  // LONG press (2 s) on the center: power off (ignored for 4 s after boot)
   if (now > 4000 && autoPressMs && now - autoPressMs > 2000 && digitalRead(BTN_AUTO) == LOW)
     powerOff();
   bool autoShort = btnAutoShort;
@@ -1973,15 +1975,15 @@ void loop()
 
   updateBattery(now);
 
-  // Horloge de conf : decompose l'heure RTC (synchronisee par la webapp
-  // Draw) en jour de conf + minutes. Heure jamais synchronisee -> NOW cache.
+  // Conference clock: splits the RTC time (synced by the Draw webapp) into
+  // conference day + minutes. Time never synced -> NOW hidden.
   {
     static uint32_t clockLast = 0;
     if (now - clockLast >= 10000 || clockLast == 0)
     {
       clockLast = now;
       time_t t = time(nullptr);
-      if (t < 1750000000) // avant mi-2025 : RTC jamais reglee
+      if (t < 1750000000) // before mid-2025: RTC never set
       {
         uiNowMin = -1;
         uiNowDay = 0;
@@ -1989,7 +1991,7 @@ void loop()
       else
       {
         struct tm tmv;
-        gmtime_r(&t, &tmv); // l'heure stockee est deja l'heure LOCALE
+        gmtime_r(&t, &tmv); // the stored time is already LOCAL time
         uiNowDay = (tmv.tm_year == 126 && tmv.tm_mon == 8)
                        ? (tmv.tm_mday == 10 ? 1 : (tmv.tm_mday == 11 ? 2 : 0))
                        : 0;
@@ -1998,14 +2000,15 @@ void loop()
     }
   }
 
-  // Protection batterie : sous 3.20 V soutenus 10 s (hors charge), extinction
-  // propre — mieux que d'attendre la coupure brutale du PCM vers 2.5 V, qui
-  // use la LiPo. (Verifie 2026-08-07 : jauge juste a 10 mV pres.)
-  // Seuil RELEVE de 3.02 a 3.20 V (revue 2026-08-15, apres la mort d'une
-  // cellule de proto en decharge profonde) : on sacrifie ~2 min d'autonomie
-  // pour laisser ~8-10 % de reserve reelle — la veille du boost (~0.3 mA,
-  // jamais coupee) mange cette reserve APRES l'extinction, et une reserve
-  // double donne des semaines de marge avant la zone dangereuse (<2.5 V).
+  // Battery protection: below 3.20 V sustained for 10 s (not charging),
+  // clean power off -- better than waiting for the abrupt PCM cutoff near
+  // 2.5 V, which wears the LiPo. (Checked 2026-08-07: gauge accurate to
+  // within 10 mV.)
+  // Threshold RAISED from 3.02 to 3.20 V (review 2026-08-15, after a proto
+  // cell died from deep discharge): we sacrifice ~2 min of runtime to leave
+  // ~8-10 % of real reserve -- the boost standby (~0.3 mA, never cut) eats
+  // that reserve AFTER power off, and a doubled reserve gives weeks of
+  // margin before the dangerous zone (<2.5 V).
   static uint32_t lowSince = 0;
   if (batPct == 0 && batMvRaw > 0 && batMvRaw < 3200 && !batCharging)
   {
@@ -2013,7 +2016,7 @@ void loop()
       lowSince = now;
     else if (now - lowSince > 10000)
     {
-      Serial0.println("batterie critique (<3.20 V) : extinction de protection");
+      Serial0.println("critical battery (<3.20 V): protective power off");
       powerOff();
     }
   }
@@ -2022,7 +2025,7 @@ void loop()
 
   if (uiMode == UI_HOME)
   {
-    // menu principal a bulles : haut/bas = categorie, central = entrer
+    // main bubble menu: up/down = category, center = enter
     if (navNext)
       uiHomeNav(1);
     if (navPrev)
@@ -2032,15 +2035,15 @@ void loop()
       menuCat = uiHomeFocus;
       menuSel = 0;
       uiMode = UI_MENU;
-      Serial0.printf("menu : categorie %s\n", UI_CAT_NAMES[menuCat]);
+      Serial0.printf("menu: category %s\n", UI_CAT_NAMES[menuCat]);
     }
     bool moving = (uiMode == UI_HOME)
                       ? uiDrawHome(dt, batPct, batCharging)
                       : (uiMode == UI_SCHED
                              ? uiDrawSchedule(schedIdx)
                              : uiDrawList(menuCat, menuSel, autoCycle, batPct, batCharging));
-    // pas d'attente TE sur les menus (tearing peu visible) et flush seulement
-    // si quelque chose a change : reactivite maximale, bus SPI au repos sinon
+    // no TE wait on the menus (tearing barely visible) and flush only if
+    // something changed: max responsiveness, SPI bus idle otherwise
     static int homeLastPct = -999;
     static bool homeLastChg = false, homeFirst = true;
     if (moving || navNext || navPrev || autoShort || homeFirst ||
@@ -2057,7 +2060,7 @@ void loop()
 
   if (uiMode == UI_ROT)
   {
-    // gauche/droite : -1/+1 degre ; centre : sauve en NVS et retour au menu
+    // left/right: -1/+1 degree; center: save to NVS and back to the menu
     if (navPrev && uiScreenRot > -15)
       uiScreenRot--;
     if (navNext && uiScreenRot < 15)
@@ -2066,9 +2069,9 @@ void loop()
     if (autoShort)
     {
       prefs.putChar("rotDeg", (int8_t)uiScreenRot);
-      Serial0.printf("rotation ecran sauvee : %+d deg\n", uiScreenRot);
+      Serial0.printf("screen rotation saved: %+d deg\n", uiScreenRot);
       rotShown = -99;
-      setMenuShown = -1; // Rotate vit dans Settings : retour au sous-menu
+      setMenuShown = -1; // Rotate lives in Settings: back to the submenu
       uiMode = UI_SETMENU;
       uiDrawSetMenu(setMenuSel);
       waitTE();
@@ -2088,9 +2091,9 @@ void loop()
 
   if (uiMode == UI_PIN)
   {
-    // code d'acces des Settings : gauche/droite = chiffre -/+, centre =
-    // valider le chiffre ; apres le 5e, bon code -> choix d'avatar, mauvais
-    // code -> flash d'erreur puis retour au menu
+    // Settings access code: left/right = digit -/+, center = validate the
+    // digit; after the 5th, correct code -> avatar choice, wrong code ->
+    // error flash then back to the menu
     if (navPrev)
     {
       pinDigits[pinPos] = (pinDigits[pinPos] + 9) % 10;
@@ -2164,7 +2167,7 @@ void loop()
         for (int i = 0; i < 4; i++)
           if (UI_PROX_LEVELS[i] == socialRssiNear)
             proxLevel = i;
-        uiMode = UI_PROX; // la radio passe en mode sonde (voir loop)
+        uiMode = UI_PROX; // the radio switches to probe mode (see loop)
       }
       else if (setMenuSel == 2) // Rotate screen
       {
@@ -2172,16 +2175,16 @@ void loop()
       }
       else if (setMenuSel == 3) // OTA flash mode
       {
-        Serial0.println("settings : redemarrage en mode flash OTA");
+        Serial0.println("settings: restarting into OTA flash mode");
         otaRequest = OTA_MAGIC;
         delay(50);
         esp_restart();
       }
-      else if (setMenuSel == 4) // Batt : ecran de calibration de la jauge
+      else if (setMenuSel == 4) // Batt: gauge calibration screen
       {
         uiMode = UI_VCAL;
       }
-      else if (setMenuSel == 5) // Batt log : courbe de decharge enregistree
+      else if (setMenuSel == 5) // Batt log: recorded discharge curve
       {
         uiMode = UI_BLOG;
       }
@@ -2210,9 +2213,9 @@ void loop()
 
   if (uiMode == UI_PROX)
   {
-    // reglage de proximite : jauge live du badge le plus proche (radio en
-    // mode sonde), gauche/droite = niveau, centre = sauver. BOUCLE aux
-    // extremites : indispensable avec le seul bouton BOOT (pas de "prev")
+    // proximity setting: live gauge of the nearest badge (radio in probe
+    // mode), left/right = level, center = save. WRAPS at the ends:
+    // essential with the BOOT button alone (no "prev")
     if (navNext)
       proxLevel = (proxLevel + 1) % 4;
     if (navPrev)
@@ -2221,7 +2224,7 @@ void loop()
     {
       socialRssiNear = UI_PROX_LEVELS[proxLevel];
       prefs.putChar("prox", socialRssiNear);
-      Serial0.printf("proximite sauvee : %s (%d dBm)\n",
+      Serial0.printf("proximity saved: %s (%d dBm)\n",
                      UI_PROX_NAMES[proxLevel], (int)socialRssiNear);
       setMenuShown = -1;
       uiMode = UI_SETMENU;
@@ -2240,8 +2243,8 @@ void loop()
 
   if (uiMode == UI_BLOG)
   {
-    // courbe d'autonomie : gauche = remise a zero du log, centre = retour ;
-    // redessine ~1x/s (la courbe evolue lentement)
+    // runtime curve: left = reset the log, center = back; redrawn ~1x/s
+    // (the curve changes slowly)
     static uint32_t blogDrawMs = 0;
     if (navPrev)
     {
@@ -2272,8 +2275,8 @@ void loop()
 
   if (uiMode == UI_VCAL)
   {
-    // calibration de la jauge : gauche/droite = -/+0.3 % sur le facteur du
-    // pont, l'ecran suit en direct ; centre = sauver en NVS et retour
+    // gauge calibration: left/right = -/+0.3 % on the divider factor, the
+    // display follows live; center = save to NVS and back
     if (navNext && vbatCal < 1100)
       vbatCal += 3;
     if (navPrev && vbatCal > 900)
@@ -2281,7 +2284,7 @@ void loop()
     if (autoShort)
     {
       prefs.putShort("vcal", vbatCal);
-      Serial0.printf("calibration jauge sauvee : %d/1000\n", (int)vbatCal);
+      Serial0.printf("gauge calibration saved: %d/1000\n", (int)vbatCal);
       setMenuShown = -1;
       uiMode = UI_SETMENU;
       uiDrawSetMenu(setMenuSel);
@@ -2299,8 +2302,8 @@ void loop()
 
   if (uiMode == UI_SET)
   {
-    // choix de l'avatar/personne du badge : gauche/droite = precedent/
-    // suivant (preview sphere + visage), centre = sauver en NVS et sortir
+    // badge avatar/person choice: left/right = previous/next (sphere + face
+    // preview), center = save to NVS and exit
     if (navPrev)
       setSel = (setSel + AVATAR_N - 1) % AVATAR_N;
     if (navNext)
@@ -2311,25 +2314,25 @@ void loop()
       g_avatarIdx = (uint8_t)setSel;
       g_avatarFaceIdx = g_avatarIdx;
       g_faceForce = -1;
-      if (g_buddyCustom) // choisir un avatar de la table desactive le custom
+      if (g_buddyCustom) // picking a table avatar disables the custom one
       {
         g_buddyCustom = false;
         prefs.putUChar("bcust", 0);
       }
-      // l'avatar choisi devient l'identite du badge : nom pre-rempli dans
-      // Setup (modifiable ensuite) et SSID badge-<Nom> immediats
+      // the chosen avatar becomes the badge identity: name pre-filled in
+      // Setup (editable afterwards) and badge-<Name> SSID immediately
       snprintf(qrName, sizeof(qrName), "%s", AVATARS[setSel].name);
       prefs.putString("bname", qrName);
       snprintf(qrCompany, sizeof(qrCompany), "%s", AVATARS[setSel].comp);
       prefs.putString("bcomp", qrCompany);
-      irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
-      g_ballDirty = true;    // + le sprite de boule (snake/DVD/jeux)
+      irDirtyMask = 0xFFFFFFFFu; // all idle frames must be redone
+      g_ballDirty = true;    // + the ball sprite (snake/DVD/games)
       if (setSpr)
       {
         free(setSpr);
         setSpr = nullptr;
       }
-      Serial0.printf("avatar sauve : %d (%s)\n", setSel, AVATARS[setSel].name);
+      Serial0.printf("avatar saved: %d (%s)\n", setSel, AVATARS[setSel].name);
       setShown = -1;
       setMenuShown = -1;
       uiMode = UI_SETMENU;
@@ -2347,8 +2350,8 @@ void loop()
       setSpr = dvdGenSprite(PAL_RAINBOW, PAL_N, av.hue, av.sat);
       uiDrawAvatarFrame(setSel, AVATAR_N, av.name);
       dvdBlit(setSpr, CX, CY - 26, 78, 255);
-      g_avatarFaceIdx = (uint8_t)setSel; // le visage suit la preview
-      g_faceForce = setSel; // ...meme si un buddy custom est actif
+      g_avatarFaceIdx = (uint8_t)setSel; // the face follows the preview
+      g_faceForce = setSel; // ...even if a custom buddy is active
       drawIdleFaceLook(CX, CY - 26, 78, 0, 0, 0, 1.0f);
       badgeFlush();
       fpsCount++;
@@ -2358,13 +2361,13 @@ void loop()
 
   if (uiMode == UI_SCHED)
   {
-    // programme : gauche/droite = event precedent/suivant, central = retour
+    // schedule: left/right = previous/next event, center = back
     if (navNext)
       schedIdx = (schedIdx + 1) % UI_NEVENTS;
     if (navPrev)
       schedIdx = (schedIdx + UI_NEVENTS - 1) % UI_NEVENTS;
     if (autoShort)
-      uiMode = UI_MENU; // retour a la liste Meet
+      uiMode = UI_MENU; // back to the Meet list
     static int schedLast = -1;
     static bool schedLastNow = false;
     bool nowFlag = uiEventIsNow(UI_EVENTS[schedIdx]);
@@ -2414,7 +2417,7 @@ void loop()
         badgeFlush();
         uiMode = UI_DRAW;
         fpsCount++;
-        return; // sans ce return, le menu se redessine par-dessus l'ecran d'infos
+        return; // without this return, the menu redraws over the info screen
       case UIA_SETUP:
         setupModeEnter();
         setupDrawScreen();
@@ -2442,23 +2445,23 @@ void loop()
         uiMode = UI_LB;
         break;
       case UIA_AUTO:
-        autoCycle = !autoCycle; // bascule sans sortir
+        autoCycle = !autoCycle; // toggle without leaving
         break;
       case UIA_SCHED:
-        uiMode = UI_SCHED; // le programme (entree de la categorie Meet)
+        uiMode = UI_SCHED; // the schedule (Meet category entry)
         break;
       case UIA_ROT:
-        uiMode = UI_ROT; // calibration de la rotation ecran
+        uiMode = UI_ROT; // screen rotation calibration
         break;
       case UIA_SETTINGS:
         memset(pinDigits, 0, sizeof(pinDigits));
         pinPos = 0;
         pinError = false;
         pinRedraw = true;
-        uiMode = UI_PIN; // settings proteges par code (avatar du badge)
+        uiMode = UI_PIN; // code-protected settings (badge avatar)
         break;
       case UIA_OTA:
-        Serial0.println("menu : redemarrage en mode flash OTA");
+        Serial0.println("menu: restarting into OTA flash mode");
         otaRequest = OTA_MAGIC;
         delay(50);
         esp_restart();
@@ -2490,7 +2493,7 @@ void loop()
   if (uiMode == UI_SETUP)
   {
     setupModeLoop();
-    if (autoShort) // central : retour menu, WiFi coupe
+    if (autoShort) // center: back to the menu, WiFi off
     {
       setupModeExit();
       uiMode = UI_MENU;
@@ -2502,7 +2505,7 @@ void loop()
     }
     if (setupClients)
     {
-      // telephone connecte : preview animee en continu (buddy ou QR live)
+      // phone connected: continuous animated preview (buddy or live QR)
       setupDrawLive(now / 1000.0f);
       waitTE();
       badgeFlush();
@@ -2517,13 +2520,13 @@ void loop()
       fpsCount++;
     }
     else
-      delay(2); // laisse respirer le WiFi
+      delay(2); // let the WiFi breathe
     return;
   }
 
   if (uiMode == UI_MET)
   {
-    // liste des rencontres : prev/next = defilement, central = retour
+    // encounters list: prev/next = scroll, center = back
     if (navNext && metScroll + MET_ROWS < metN)
       metScroll++;
     if (navPrev && metScroll > 0)
@@ -2550,8 +2553,8 @@ void loop()
 
   if (uiMode == UI_LB)
   {
-    // leaderboard : prev/next = jeu precedent/suivant (boucle, BOOT-friendly),
-    // central = retour
+    // leaderboard: prev/next = previous/next game (wraps, BOOT-friendly),
+    // center = back
     if (navNext)
       lbGame = (lbGame + 1) % LB_GAMES;
     if (navPrev)
@@ -2578,7 +2581,7 @@ void loop()
 
   if (uiMode == UI_QR)
   {
-    // QR statique + buddy anime au centre ; central = retour menu
+    // static QR + animated buddy in the center; center = back to the menu
     if (autoShort)
     {
       qrScreenRelease();
@@ -2599,7 +2602,7 @@ void loop()
   if (uiMode == UI_DRAW)
   {
     drawModeLoop();
-    if (autoShort) // central : retour menu, WiFi coupe
+    if (autoShort) // center: back to the menu, WiFi off
     {
       drawModeExit();
       uiMode = UI_MENU;
@@ -2609,15 +2612,15 @@ void loop()
       fpsCount++;
       return;
     }
-    drawAnimTick(now); // fait vivre les pinceaux animes (glitter, iris...)
+    drawAnimTick(now); // keeps the animated brushes alive (glitter, iris...)
     if (drawDirty)
     {
-      // flush partiel de la zone modifiee, sans attente TE : latence minimale
+      // partial flush of the dirty area, no TE wait: minimal latency
       drawFlushDirty();
       fpsCount++;
     }
     else
-      delay(2); // rien a afficher : laisse respirer le WiFi
+      delay(2); // nothing to display: let the WiFi breathe
     return;
   }
 
@@ -2625,7 +2628,7 @@ void loop()
   {
     int gi = uiMode - UI_SNAKE;
     bool over = gameIsOver(gi);
-    // detection "press-down" du bouton central (reactif, pour tirer/sauter)
+    // "press-down" detection of the center button (responsive, shoot/jump)
     static uint32_t lastAutoPressSeen = 0;
     bool centerDown = false;
     uint32_t ap = autoPressMs;
@@ -2634,7 +2637,7 @@ void loop()
       lastAutoPressSeen = ap;
       centerDown = true;
     }
-    // sortie universelle : gauche + droite maintenus 0.8 s
+    // universal exit: left + right held for 0.8 s
     static uint32_t bothHold = 0;
     if (digitalRead(BTN_PREV) == LOW && digitalRead(BTN_NEXT) == LOW)
     {
@@ -2644,7 +2647,8 @@ void loop()
     else
       bothHold = 0;
     bool quit = (bothHold && now - bothHold > 800);
-    // central : action de jeu OU retour menu selon le jeu (toujours menu si game over)
+    // center: game action OR back to menu depending on the game (always
+    // menu if game over)
     if (gameCenterIsAction(gi) && !over)
       gBtnCenter = centerDown;
     else
@@ -2665,7 +2669,7 @@ void loop()
     }
     if (over && navNext)
     {
-      gameReset(gi); // rejouer — et on avale l'appui pour ne pas le passer au jeu
+      gameReset(gi); // replay -- and swallow the press so the game misses it
       navNext = navPrev = false;
       gBtnCenter = false;
     }
@@ -2679,7 +2683,7 @@ void loop()
     return;
   }
 
-  // ---- mode animations ----
+  // ---- animations mode ----
   if (navNext)
   {
     slot = (slot + 1) % NACTIVE;
@@ -2696,9 +2700,9 @@ void loop()
   }
   if (autoShort)
   {
-    uiMode = UI_HOME; // menu principal a bulles
+    uiMode = UI_HOME; // main bubble menu
     uiHomeReset();
-    Serial0.println("menu : ouverture");
+    Serial0.println("menu: opening");
   }
   if (autoCycle && now - slotStartMs >= ANIM_DURATION_MS)
   {
@@ -2727,9 +2731,9 @@ void loop()
                                             "idlerainbow", "dvd", "points", "photo",
                                             "photo2", "photo3", "warp", "solar",
                                             "myphoto"};
-    Serial0.printf("animation : %s\n", names[anim]);
+    Serial0.printf("animation: %s\n", names[anim]);
   }
-  float t = (now - animStartMs) / 1000.0f; // temps local a l'animation
+  float t = (now - animStartMs) / 1000.0f; // time local to the animation
 
   switch (anim)
   {
@@ -2751,7 +2755,7 @@ void loop()
   case 15: animSolar(t, dt); break;
   case 16: animMyPhoto(t); break;
   }
-  if (anim == 8) // Conf Buddy : reaction "un ami est la" par-dessus l'anim
+  if (anim == 8) // Conf Buddy: "a friend is here" reaction over the anim
     socialReactDraw(now);
   waitTE();
   badgeFlush();

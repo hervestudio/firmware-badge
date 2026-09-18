@@ -1,21 +1,21 @@
-// Flush ecran ASYNCHRONE via le driver spi_master d'ESP-IDF (DMA + file de
-// transactions), en remplacement du flush bloquant d'Arduino_GFX (registres
-// CPU). Principe :
-//   - l'init du panneau reste faite par Arduino_GFX (canvas->begin, SPI2) ;
-//   - ensuite dmafInit() prend les broches via la matrice GPIO sur SPI3 et
-//     TOUT le trafic ecran passe par ici (fenetre 2A/2B/2C, pixels, sleep) ;
-//   - les pixels partent par chunks DMA depuis deux tampons internes en
-//     ping-pong : le swap d'octets RGB565 (SPI = MSB first) du chunk N se
-//     fait PENDANT que le chunk N-1 est sur le fil -> le CPU ne paie que la
-//     copie (~1 ms/chunk), pas le transfert.
-// Les transactions se terminent DANS L'ORDRE de la file : un simple compteur
-// sequence queued/done suffit pour savoir quand un tampon est reutilisable.
-// Suppose definis avant inclusion : TFT_SCLK/TFT_MOSI/TFT_CS/TFT_DC,
+// ASYNCHRONOUS screen flush via the ESP-IDF spi_master driver (DMA +
+// transaction queue), replacing the blocking Arduino_GFX flush (CPU
+// registers). Principle:
+//   - panel init is still done by Arduino_GFX (canvas->begin, SPI2);
+//   - then dmafInit() takes the pins over via the GPIO matrix on SPI3 and
+//     ALL screen traffic goes through here (2A/2B/2C window, pixels, sleep);
+//   - pixels leave as DMA chunks from two internal ping-pong buffers: the
+//     RGB565 byte swap (SPI = MSB first) of chunk N happens WHILE chunk
+//     N-1 is on the wire -> the CPU only pays for the copy (~1 ms/chunk),
+//     not the transfer.
+// Transactions complete IN QUEUE ORDER: a simple queued/done sequence
+// counter is enough to know when a buffer is reusable.
+// Assumes defined before inclusion: TFT_SCLK/TFT_MOSI/TFT_CS/TFT_DC,
 // SPI_FREQ, W/H, Serial0.
 #pragma once
 #include <driver/spi_master.h>
 
-#define DMAF_CHUNK_PX 16380 // pixels par transaction (~32 Ko, 45 lignes)
+#define DMAF_CHUNK_PX 16380 // pixels per transaction (~32 KB, 45 lines)
 #define DMAF_QUEUE 8
 
 static spi_device_handle_t dmafDev = nullptr;
@@ -23,9 +23,9 @@ static uint16_t *dmafPing[2] = {nullptr, nullptr};
 static spi_transaction_t dmafTrans[DMAF_QUEUE];
 static int dmafHead = 0, dmafInFlight = 0;
 static uint32_t dmafSeqQueued = 0, dmafSeqDone = 0;
-static uint32_t dmafBufSeq[2] = {0, 0}; // derniere transaction de chaque tampon
+static uint32_t dmafBufSeq[2] = {0, 0}; // last transaction of each buffer
 
-// DC pilote par transaction : user = niveau (0 commande, 1 donnees)
+// DC driven per transaction: user = level (0 command, 1 data)
 static void IRAM_ATTR dmafPreCb(spi_transaction_t *t)
 {
   gpio_set_level((gpio_num_t)TFT_DC, (int)(intptr_t)t->user);
@@ -89,7 +89,7 @@ static void dmafWindow(int x, int y, int w, int h)
   dmafCmd(0x2C); // RAMWR
 }
 
-// copie + swap d'octets 2 pixels a la fois (le panneau attend du MSB first)
+// copy + byte swap 2 pixels at a time (the panel expects MSB first)
 static void dmafSwapCopy(uint16_t *dst, const uint16_t *src, int npx)
 {
   const uint32_t *s = (const uint32_t *)src;
@@ -104,10 +104,10 @@ static void dmafSwapCopy(uint16_t *dst, const uint16_t *src, int npx)
     dst[npx - 1] = __builtin_bswap16(src[npx - 1]);
 }
 
-// Envoie un rectangle (src avec stride en pixels). waitEnd = true : bloque
-// jusqu'au dernier octet (flush partiels, extinction) ; false : rend la main
-// des le dernier chunk mis en file (le reste part en DMA pendant le rendu de
-// la frame suivante).
+// Sends a rectangle (src with stride in pixels). waitEnd = true: blocks
+// until the last byte (partial flushes, power-off); false: returns as soon
+// as the last chunk is queued (the rest goes out over DMA while the next
+// frame is being rendered).
 static void dmafFlush(int x, int y, int w, int h, const uint16_t *src,
                       int stride, bool waitEnd)
 {
@@ -120,7 +120,7 @@ static void dmafFlush(int x, int y, int w, int h, const uint16_t *src,
   {
     int rows = h - row < rowsPerChunk ? h - row : rowsPerChunk;
     int npx = rows * w;
-    while (dmafSeqDone < dmafBufSeq[b]) // tampon encore sur le fil
+    while (dmafSeqDone < dmafBufSeq[b]) // buffer still on the wire
       dmafReapOne();
     if (stride == w)
       dmafSwapCopy(dmafPing[b], src + row * stride, npx);
@@ -141,7 +141,7 @@ static void dmafFlush(int x, int y, int w, int h, const uint16_t *src,
       dmafReapOne();
 }
 
-// Commande simple bloquante (0x28 display off / 0x10 sleep in a l'extinction)
+// Simple blocking command (0x28 display off / 0x10 sleep in at power-off)
 static void dmafCmdBlocking(uint8_t cmd)
 {
   dmafCmd(cmd);
@@ -149,8 +149,8 @@ static void dmafCmdBlocking(uint8_t cmd)
     dmafReapOne();
 }
 
-// A appeler UNE fois apres canvas->begin() : bascule les broches sur SPI3 ;
-// le bus Arduino_GFX (SPI2) ne doit plus jamais etre utilise ensuite.
+// Call ONCE after canvas->begin(): switches the pins over to SPI3;
+// the Arduino_GFX bus (SPI2) must never be used again afterwards.
 static bool dmafInit()
 {
   spi_bus_config_t bus = {};
@@ -162,7 +162,7 @@ static bool dmafInit()
   bus.max_transfer_sz = DMAF_CHUNK_PX * 2 + 8;
   if (spi_bus_initialize(SPI3_HOST, &bus, SPI_DMA_CH_AUTO) != ESP_OK)
   {
-    Serial0.println("dmaf : spi_bus_initialize KO");
+    Serial0.println("dmaf: spi_bus_initialize failed");
     return false;
   }
   spi_device_interface_config_t dev = {};
@@ -173,7 +173,7 @@ static bool dmafInit()
   dev.pre_cb = dmafPreCb;
   if (spi_bus_add_device(SPI3_HOST, &dev, &dmafDev) != ESP_OK)
   {
-    Serial0.println("dmaf : spi_bus_add_device KO");
+    Serial0.println("dmaf: spi_bus_add_device failed");
     return false;
   }
   for (int i = 0; i < 2; i++)
@@ -181,10 +181,10 @@ static bool dmafInit()
     dmafPing[i] = (uint16_t *)heap_caps_malloc(DMAF_CHUNK_PX * 2, MALLOC_CAP_DMA);
     if (!dmafPing[i])
     {
-      Serial0.println("dmaf : alloc tampon DMA KO");
+      Serial0.println("dmaf: DMA buffer alloc failed");
       return false;
     }
   }
-  Serial0.println("dmaf : flush DMA asynchrone actif (SPI3)");
+  Serial0.println("dmaf: async DMA flush active (SPI3)");
   return true;
 }

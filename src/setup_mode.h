@@ -1,13 +1,13 @@
-// Mode Setup (More > Setup) : parcours de configuration du badge DEPUIS LE
-// TELEPHONE. Le badge cree le meme AP Wi-Fi que Draw/OTA, sert la webapp
-// 3 etapes (setup_page.h, gzippee) sur http://192.168.4.1 et recoit les
-// reglages en WebSocket texte (port 81) :
-//   badge -> tel  : J{"name":..,"url":..,"hue":H,"sat":S*100,"face":F,"cust":0/1}
-//   tel  -> badge : N<nom>  |  A<hue>,<sat100>,<face>  |  R (revenir a
-//                   l'avatar de la table)  |  U<url>
-// Chaque message est SAUVE en NVS immediatement et le badge affiche une
-// preview live du buddy. Le QR lui-meme se regarde dans Meet > QR Code.
-// Suppose definis avant inclusion : canvas, W/H/CX/CY, rgb565, Serial0,
+// Setup mode (More > Setup): badge configuration flow FROM THE PHONE.
+// The badge creates the same Wi-Fi AP as Draw/OTA, serves the 3-step
+// webapp (setup_page.h, gzipped) at http://192.168.4.1 and receives the
+// settings over text WebSocket (port 81):
+//   badge -> phone: J{"name":..,"url":..,"hue":H,"sat":S*100,"face":F,"cust":0/1}
+//   phone -> badge: N<name>  |  A<hue>,<sat100>,<face>  |  R (back to
+//                   the table avatar)  |  U<url>
+// Each message is SAVED to NVS immediately and the badge shows a live
+// preview of the buddy. The QR itself is viewed in Meet > QR Code.
+// Assumes defined before inclusion: canvas, W/H/CX/CY, rgb565, Serial0,
 // OTA_SSID/OTA_PASS, prefs, qrUrl/qrName (qr_screen.h), dvdGenSprite/dvdBlit,
 // avatarDrawFace/avatarDrawExtras, g_buddyCustom/g_buddyCustomDef,
 // irDirtyMask, mdPrint/mdTextW.
@@ -17,13 +17,13 @@
 #include <WiFiUdp.h>
 #include "setup_page.h"
 
-// DNS captif partage Draw/Setup : toutes les requetes A repondent l'IP du
-// badge -> les sondes de portail captif (iOS/Android) declenchent l'ouverture
-// AUTOMATIQUE de la page a la connexion au WiFi, et http://badge.local tape a
-// la main resout aussi (via ce DNS). Repondeur MAISON, synchrone, poll dans
-// notre boucle : le DNSServer du core 3.x est asynchrone (AsyncUDP, reponses
-// depuis la tache lwIP) et, combine a mDNS, faisait rebooter le badge a
-// l'ouverture de la fiche portail.
+// Captive DNS shared by Draw/Setup: every A query is answered with the
+// badge's IP -> the captive-portal probes (iOS/Android) trigger the
+// AUTOMATIC page opening on WiFi connection, and a hand-typed
+// http://badge.local resolves too (via this DNS). HOMEMADE responder,
+// synchronous, polled in our loop: the core 3.x DNSServer is asynchronous
+// (AsyncUDP, replies from the lwIP task) and, combined with mDNS, made
+// the badge reboot when the portal sheet opened.
 static WiFiUDP *badgeDnsUdp = nullptr;
 static void badgeDnsStart()
 {
@@ -34,32 +34,32 @@ static void badgeDnsLoop()
 {
   if (!badgeDnsUdp)
     return;
-  for (int k = 0; k < 8; k++) // draine la rafale de sondes du portail
+  for (int k = 0; k < 8; k++) // drains the portal's burst of probes
   {
     int len = badgeDnsUdp->parsePacket();
     if (len <= 0)
       return;
     uint8_t buf[512];
     len = badgeDnsUdp->read(buf, sizeof(buf));
-    if (len < 17 || (buf[2] & 0x80)) // trop court ou deja une reponse
+    if (len < 17 || (buf[2] & 0x80)) // too short or already a response
       continue;
-    // QTYPE de la premiere question : saute le nom (labels jusqu'au 0)
+    // QTYPE of the first question: skip the name (labels until 0)
     int q = 12;
     while (q < len && buf[q])
       q += buf[q] + 1;
     if (q + 5 > len)
       continue;
     uint16_t qtype = (buf[q + 1] << 8) | buf[q + 2];
-    // en-tete de reponse : QR=1 AA=1 RA=1, 1 question, ANCOUNT selon le type
-    bool answerA = qtype == 1 || qtype == 255; // A ou ANY
+    // response header: QR=1 AA=1 RA=1, 1 question, ANCOUNT per type
+    bool answerA = qtype == 1 || qtype == 255; // A or ANY
     buf[2] = 0x84;
     buf[3] = 0x80;
     buf[4] = 0;
-    buf[5] = 1; // QDCOUNT force a 1 (on ne recopie que la 1re question)
+    buf[5] = 1; // QDCOUNT forced to 1 (only the 1st question is copied)
     buf[6] = 0;
-    buf[7] = answerA ? 1 : 0; // ANCOUNT (AAAA & co : NOERROR sans reponse)
+    buf[7] = answerA ? 1 : 0; // ANCOUNT (AAAA & co: NOERROR, no answer)
     buf[8] = buf[9] = buf[10] = buf[11] = 0; // NSCOUNT/ARCOUNT
-    int out = q + 5; // fin de la section question
+    int out = q + 5; // end of the question section
     if (answerA)
     {
       const IPAddress ip = WiFi.softAPIP();
@@ -85,18 +85,18 @@ static void badgeDnsStop()
 
 static WebServer *setupHttp = nullptr;
 static WebSocketsServer *setupWs = nullptr;
-static bool setupRedraw = false; // l'etat a change -> repeindre la preview
+static bool setupRedraw = false; // state changed -> repaint the preview
 static uint8_t setupClients = 0;
-static uint16_t *setupSpr = nullptr; // sprite de preview du buddy (cache)
-static uint8_t setupStep = 0;        // etape affichee sur le telephone (0..3)
-static File setupPhotoFile;          // upload photo en cours (LittleFS)
-static uint32_t setupPhotoLeft = 0;  // octets restants attendus
-static bool setupBuilding = false;   // URL en cours de saisie -> QR "chantier"
-static bool setupQrDirty = true;     // l'URL a change -> re-encoder le QR
+static uint16_t *setupSpr = nullptr; // buddy preview sprite (cached)
+static uint8_t setupStep = 0;        // step shown on the phone (0..3)
+static File setupPhotoFile;          // photo upload in progress (LittleFS)
+static uint32_t setupPhotoLeft = 0;  // remaining expected bytes
+static bool setupBuilding = false;   // URL being typed -> "wip" QR
+static bool setupQrDirty = true;     // URL changed -> re-encode the QR
 
-// Ecran d'infos de connexion (tant que le telephone n'est pas la) : QR WiFi
-// a scanner avec la camera (rejoint l'AP, puis le portail ouvre la page) +
-// identifiants en clair et IP de secours
+// Connection info screen (while no phone is connected yet): WiFi QR to
+// scan with the camera (joins the AP, then the portal opens the page) +
+// plain-text credentials and fallback IP
 static void setupDrawScreen()
 {
   canvas->fillScreen(RGB565_BLACK);
@@ -128,14 +128,14 @@ static void setupDrawScreen()
   canvas->print("center: exit");
 }
 
-// Preview live (telephone connecte), animee frame par frame : etapes 1-3 =
-// carte d'identite (buddy + message + nom + entreprise) ; etape 4 (QR,
-// setupStep 3 depuis l'ajout de l'etape photo) = le QR en direct, version
-// "en construction" pendant la saisie de l'URL
+// Live preview (phone connected), animated frame by frame: steps 1-3 =
+// identity card (buddy + message + name + company); step 4 (QR,
+// setupStep 3 since the photo step was added) = the live QR, "under
+// construction" version while the URL is being typed
 static void setupDrawLive(float t)
 {
-  // etape photo (setupStep 2) : PROGRESSION pendant le transfert, puis
-  // apercu plein ecran de la photo recue (revue Romain 2026-09-07)
+  // photo step (setupStep 2): PROGRESS during the transfer, then
+  // full-screen preview of the received photo (review 2026-09-07 (Romain))
   if (setupStep == 2 && setupPhotoFile && setupPhotoLeft)
   {
     canvas->fillScreen(RGB565_BLACK);
@@ -154,12 +154,12 @@ static void setupDrawLive(float t)
     if (g_hasPhoto && g_myPhoto)
       memcpy(canvas->getFramebuffer(), g_myPhoto, (size_t)W * H * 2);
     else
-      uiDrawPhotoPlaceholder(); // pointilles + invitation (pas encore de photo)
+      uiDrawPhotoPlaceholder(); // dotted outline + invite (no photo yet)
     return;
   }
   if (setupStep == 3)
   {
-    if (setupQrDirty) // (re)genere aussi le sprite du buddy du medaillon
+    if (setupQrDirty) // also (re)generates the medallion buddy sprite
     {
       qrScreenPrepare();
       setupQrDirty = false;
@@ -167,7 +167,7 @@ static void setupDrawLive(float t)
     qrScreenDraw(t, setupBuilding);
     return;
   }
-  // sprite regenere seulement quand les parametres changent
+  // sprite regenerated only when the parameters change
   static int lastHue = -1000, lastSat = -1, lastCust = -1, lastAv = -1;
   const AvatarDef &av = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
   int sat100 = (int)(av.sat * 100 + 0.5f);
@@ -187,9 +187,9 @@ static void setupDrawLive(float t)
 
 static void setupSendState(uint8_t num)
 {
-  // couleur/visage effectifs : le custom s'il est actif, sinon l'avatar de
-  // la table (Settings) — les sliders du telephone refletent ainsi l'avatar
-  // choisi et le custom demarre de ces valeurs-la
+  // effective color/face: the custom one when active, otherwise the table
+  // avatar (Settings) - the phone sliders thus reflect the chosen avatar
+  // and the custom starts from those values
   const AvatarDef &av = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
   char msg[330];
   snprintf(msg, sizeof(msg),
@@ -200,8 +200,8 @@ static void setupSendState(uint8_t num)
   setupWs->sendTXT(num, msg);
 }
 
-// copie une chaine recue en filtrant les guillemets (JSON d'etat) et les
-// controles ; garde l'UTF-8 tel quel (emojis du message)
+// copies a received string, filtering quotes (state JSON) and control
+// chars; keeps UTF-8 as is (message emojis)
 static void setupCopyStr(char *dst, size_t cap, const uint8_t *src, size_t len)
 {
   size_t o = 0;
@@ -211,8 +211,8 @@ static void setupCopyStr(char *dst, size_t cap, const uint8_t *src, size_t len)
   dst[o] = 0;
 }
 
-// variante nom/entreprise : translittere les accents latins vers l'ASCII
-// (les polices Dingos/Bebas du badge couvrent 32..126)
+// name/company variant: transliterates Latin accents to ASCII
+// (the badge's Dingos/Bebas fonts cover 32..126)
 static void setupCopyAscii(char *dst, size_t cap, const uint8_t *src, size_t len)
 {
   static const char *FOLD = // Latin-1 0xC0..0xFF
@@ -223,7 +223,7 @@ static void setupCopyAscii(char *dst, size_t cap, const uint8_t *src, size_t len
     uint8_t c = src[i];
     if (c >= 32 && c < 127 && c != '"' && c != '\\')
       dst[o++] = (char)c;
-    else if (c == 0xC3 && i + 1 < len) // UTF-8 Latin-1 supplement
+    else if (c == 0xC3 && i + 1 < len) // UTF-8 Latin-1 Supplement
     {
       uint8_t d = 0xC0 + (src[++i] & 63);
       if (d >= 0xC0)
@@ -241,52 +241,52 @@ static void setupWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t le
     setupClients++;
     setupSendState(num);
     setupRedraw = true;
-    Serial0.printf("setup : client %u connecte\n", num);
+    Serial0.printf("setup: client %u connected\n", num);
     break;
   case WStype_DISCONNECTED:
     if (setupClients)
       setupClients--;
     setupRedraw = true;
-    Serial0.printf("setup : client %u parti\n", num);
+    Serial0.printf("setup: client %u gone\n", num);
     break;
   case WStype_TEXT:
     if (!len)
       break;
     switch (payload[0])
     {
-    case 'N': // nom du speaker
+    case 'N': // speaker name
       setupCopyAscii(qrName, sizeof(qrName), payload + 1, len - 1);
       prefs.putString("bname", qrName);
-      Serial0.printf("setup : nom = \"%s\"\n", qrName);
+      Serial0.printf("setup: name = \"%s\"\n", qrName);
       break;
-    case 'C': // entreprise
+    case 'C': // company
       setupCopyAscii(qrCompany, sizeof(qrCompany), payload + 1, len - 1);
       prefs.putString("bcomp", qrCompany);
-      Serial0.printf("setup : entreprise = \"%s\"\n", qrCompany);
+      Serial0.printf("setup: company = \"%s\"\n", qrCompany);
       break;
-    case 'M': // message (pilule, emojis bienvenus)
+    case 'M': // message (pill, emojis welcome)
       setupCopyStr(qrMsg, sizeof(qrMsg), payload + 1, len - 1);
       prefs.putString("bmsg", qrMsg);
-      Serial0.printf("setup : message = \"%s\"\n", qrMsg);
+      Serial0.printf("setup: message = \"%s\"\n", qrMsg);
       break;
-    case 'U': // URL du QR code (validee cote telephone)
+    case 'U': // QR code URL (validated phone-side)
       setupCopyStr(qrUrl, sizeof(qrUrl), payload + 1, len - 1);
       if (!qrUrl[0])
         snprintf(qrUrl, sizeof(qrUrl), "https://threejs.paris");
       prefs.putString("qrurl", qrUrl);
       setupBuilding = false;
       setupQrDirty = true;
-      Serial0.printf("setup : url = \"%s\"\n", qrUrl);
+      Serial0.printf("setup: url = \"%s\"\n", qrUrl);
       break;
-    case 'B': // URL en cours de saisie / incomplete -> QR en construction
+    case 'B': // URL being typed / incomplete -> QR under construction
       setupBuilding = true;
       break;
-    case 'S': // etape affichee sur le telephone (0..3)
+    case 'S': // step shown on the phone (0..3)
       if (len >= 2)
         setupStep = (uint8_t)((payload[1] - '0') % 4);
       break;
-    case 'P': // debut d'upload photo : "P<octets>" (RGB565 360x360 brut,
-              // recadre cote telephone), suivi de trames binaires acquittees
+    case 'P': // photo upload start: "P<bytes>" (raw RGB565 360x360,
+              // cropped phone-side), followed by acknowledged binary frames
     {
       uint32_t n = strtoul((const char *)payload + 1, nullptr, 10);
       if (n != (uint32_t)W * H * 2 || !LittleFS.begin(true))
@@ -302,19 +302,19 @@ static void setupWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t le
         setupWs->sendTXT(num, "PERR");
       else
       {
-        setupWs->sendTXT(num, "PACK"); // pret pour la premiere trame
-        Serial0.printf("setup : upload photo (%lu octets)\n", (unsigned long)n);
+        setupWs->sendTXT(num, "PACK"); // ready for the first frame
+        Serial0.printf("setup: photo upload (%lu bytes)\n", (unsigned long)n);
       }
       break;
     }
-    case 'X': // suppression de la photo
+    case 'X': // photo deletion
       if (LittleFS.begin(true))
         LittleFS.remove("/photo.565");
       g_hasPhoto = false;
       setupWs->sendTXT(num, "XOK");
-      Serial0.println("setup : photo supprimee");
+      Serial0.println("setup: photo deleted");
       break;
-    case 'A': // buddy custom : hue,sat100,face
+    case 'A': // custom buddy: hue,sat100,face
     {
       int h = 0, s = 100, f = 0;
       if (sscanf((const char *)payload + 1, "%d,%d,%d", &h, &s, &f) == 3)
@@ -327,27 +327,27 @@ static void setupWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t le
         prefs.putShort("bhue", g_buddyCustomDef.hue);
         prefs.putUChar("bsat", (uint8_t)constrain(s, 20, 150));
         prefs.putUChar("bface", g_buddyCustomDef.face);
-        irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
-      g_ballDirty = true;    // + le sprite de boule (snake/DVD/jeux)
-        setupQrDirty = true; // le sprite du medaillon QR aussi
+        irDirtyMask = 0xFFFFFFFFu; // all idle frames to redo
+      g_ballDirty = true;    // + the ball sprite (snake/DVD/games)
+        setupQrDirty = true; // the QR medallion sprite too
       }
       break;
     }
-    case 'R': // retour a l'avatar de la table (Settings)
+    case 'R': // back to the table avatar (Settings)
       g_buddyCustom = false;
       prefs.putUChar("bcust", 0);
-      irDirtyMask = 0xFFFFFFFFu; // toutes les frames idle a refaire
-      g_ballDirty = true;    // + le sprite de boule (snake/DVD/jeux)
-      setupQrDirty = true; // sprite du medaillon QR a regenerer
-      setupSendState(num); // resynchronise sliders/visage du telephone
-      Serial0.println("setup : retour a l'avatar de la table");
+      irDirtyMask = 0xFFFFFFFFu; // all idle frames to redo
+      g_ballDirty = true;    // + the ball sprite (snake/DVD/games)
+      setupQrDirty = true; // QR medallion sprite to regenerate
+      setupSendState(num); // resyncs the phone's sliders/face
+      Serial0.println("setup: back to the table avatar");
       break;
     default:
       break;
     }
     setupRedraw = true;
     break;
-  case WStype_BIN: // trames de l'upload photo, acquittees une par une
+  case WStype_BIN: // photo upload frames, acknowledged one by one
     if (setupPhotoFile && setupPhotoLeft)
     {
       size_t take = len > setupPhotoLeft ? setupPhotoLeft : len;
@@ -364,10 +364,10 @@ static void setupWsEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t le
         setupPhotoFile.close();
         LittleFS.remove("/photo.565");
         LittleFS.rename("/photo.tmp", "/photo.565");
-        g_hasPhoto = false; // myPhotoLoad rearme si le fichier est valide
+        g_hasPhoto = false; // myPhotoLoad rearms it if the file is valid
         myPhotoLoad();
         setupWs->sendTXT(num, g_hasPhoto ? "POK" : "PERR");
-        Serial0.println("setup : photo recue");
+        Serial0.println("setup: photo received");
       }
       else
         setupWs->sendTXT(num, "PACK");
@@ -392,7 +392,7 @@ static void setupModeEnter()
     setupHttp->send(302, "text/plain", "");
   });
   setupHttp->begin();
-  badgeDnsStart(); // portail captif : la page s'ouvre seule a la connexion
+  badgeDnsStart(); // captive portal: the page opens by itself on connect
   setupWs = new WebSocketsServer(81);
   setupWs->onEvent(setupWsEvent);
   setupWs->begin();
@@ -401,7 +401,7 @@ static void setupModeEnter()
   setupStep = 0;
   setupBuilding = false;
   setupQrDirty = true;
-  Serial0.printf("MODE SETUP : AP %s / %s, http://%s\n", badgeSsid(), OTA_PASS,
+  Serial0.printf("SETUP MODE: AP %s / %s, http://%s\n", badgeSsid(), OTA_PASS,
                  WiFi.softAPIP().toString().c_str());
 }
 
@@ -428,5 +428,5 @@ static void setupModeExit()
     free(setupSpr);
     setupSpr = nullptr;
   }
-  Serial0.println("setup : fin, WiFi coupe");
+  Serial0.println("setup: done, WiFi off");
 }

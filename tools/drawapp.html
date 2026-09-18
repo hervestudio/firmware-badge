@@ -79,7 +79,7 @@ function connect() {
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => {
     document.getElementById('st').classList.add('ok');
-    // synchronise l'horloge du badge (heure LOCALE en secondes epoch)
+    // sync the badge clock (LOCAL time in epoch seconds)
     ws.send('T' + Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / 1000));
   };
   ws.onclose = () => { document.getElementById('st').classList.remove('ok');
@@ -96,10 +96,10 @@ function sendSeg(x0, y0, x1, y1) {
   v.setUint16(8, c565(color), true); v.setUint8(10, radius); v.setUint8(11, brush);
   ws.send(b);
 }
-// masque rond local identique a l'ecran du badge
+// local round mask identical to the badge screen
 ctx.beginPath(); ctx.arc(180, 180, 180, 0, 7); ctx.clip();
 function localSeg(x0, y0, x1, y1) {
-  // apercu local approche : les vrais effets (scintillement...) sont sur le badge
+  // rough local preview: the real effects (sparkle...) run on the badge
   let c = color;
   if (brush === 2) c = 'hsl(' + ((x0 + y0) * 1.3 % 360) + ',90%,60%)';
   if (brush === 4) c = '#ff8c42';

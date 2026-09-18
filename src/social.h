@@ -1,13 +1,14 @@
-// Rencontres entre badges (ESP-NOW) : quand le Conf Buddy est affiche, le
-// badge diffuse un beacon broadcast (~1 Hz, canal 1) avec son identite et
-// ecoute ceux des autres. Un badge recu avec un RSSI fort (= a 1-3 m) et pas
-// vu recemment declenche la reaction du buddy (social_ui.h) et s'ajoute au
-// journal des rencontres en NVS ("met", pour le futur ecran social).
+// Badge-to-badge encounters (ESP-NOW): while the Conf Buddy is displayed,
+// the badge sends a broadcast beacon (~1 Hz, channel 1) with its identity
+// and listens for the others'. A badge heard with a strong RSSI (= at
+// 1-3 m) and not seen recently triggers the buddy reaction (social_ui.h)
+// and is added to the encounter log in NVS ("met", for the future social
+// screen).
 //
-// La radio n'est active QUE pendant l'anim Conf Buddy (socialStart/Stop
-// pilotes par la boucle) : pas d'impact batterie dans les menus/jeux, et
-// aucune interference avec les AP WiFi de Draw/Setup/OTA.
-// Suppose definis avant inclusion : qrName, AVATARS/g_avatarIdx,
+// The radio is active ONLY during the Conf Buddy anim (socialStart/Stop
+// driven by the loop): no battery impact in menus/games, and no
+// interference with the Draw/Setup/OTA WiFi APs.
+// Assumed defined before inclusion: qrName, AVATARS/g_avatarIdx,
 // g_buddyCustom/g_buddyCustomDef, prefs, Serial0, social_ui.h (via include).
 #pragma once
 #include <esp_now.h>
@@ -15,25 +16,27 @@
 #include "social_ui.h"
 
 #define SOCIAL_CHANNEL 1
-// Beacon rapproche (600 ms) : avec le CYCLAGE de la radio (voir main.cpp),
-// chaque fenetre d'ecoute de 3 s doit contenir plusieurs emissions pour que
-// deux badges aux fenetres desynchronisees se croisent vite (~10 s).
+// Tight beacon (600 ms): with the radio DUTY CYCLING (see main.cpp), each
+// 3 s listening window must contain several transmissions so that two
+// badges with desynchronized windows find each other fast (~10 s).
 #define SOCIAL_BEACON_MS 600
-// Cyclage d'ecoute pendant Conf Buddy (autonomie, revue Romain 2026-09-01) :
-// l'ecoute continue coute ~90 mA, poste n1 du mode. 3 s d'ecoute par periode
-// de 12 s = ~75 % du poste radio economise, detection d'une rencontre en
-// ~10-15 s (imperceptible : on se croise plus longtemps que ca). L'ecran
-// Proximity garde l'ecoute continue pour sa jauge live.
+// Listen duty cycling during Conf Buddy (battery life, review 2026-09-01
+// (Romain)): continuous listening costs ~90 mA, the mode's top consumer.
+// 3 s of listening per 12 s period = ~75% of the radio budget saved,
+// encounter detected in ~10-15 s (imperceptible: people cross paths longer
+// than that). The Proximity screen keeps continuous listening for its live
+// gauge.
 #define SOCIAL_DUTY_ON 3000
 #define SOCIAL_DUTY_PERIOD 12000
-// Seuil de proximite REGLABLE (Settings > Proximity, NVS "prox") : 4 niveaux
-// de Touch (badges quasi colles) a Far (~5 m). -62 = "Normal" par defaut.
-static int8_t socialRssiNear = -62;  // valeur active (UI_PROX_LEVELS)
-static bool socialProbeOnly = false; // ecran Proximity : ecoute sans reagir
-#define SOCIAL_FRESH_MS 2500   // beacon "encore la"
-#define SOCIAL_COOLDOWN_MS 60000    // par badge croise
-#define SOCIAL_GLOBAL_MS 25000      // entre deux reactions, tous badges
-#define SOCIAL_MAXPEERS 40          // toute la serie sans eviction
+// ADJUSTABLE proximity threshold (Settings > Proximity, NVS "prox"):
+// 4 levels from Touch (badges nearly touching) to Far (~5 m).
+// -62 = "Normal" by default.
+static int8_t socialRssiNear = -62;  // active value (UI_PROX_LEVELS)
+static bool socialProbeOnly = false; // Proximity screen: listen, no reaction
+#define SOCIAL_FRESH_MS 2500   // "still here" beacon
+#define SOCIAL_COOLDOWN_MS 60000    // per encountered badge
+#define SOCIAL_GLOBAL_MS 25000      // between two reactions, all badges
+#define SOCIAL_MAXPEERS 40          // the whole series without eviction
 
 struct __attribute__((packed)) SocialBeacon
 {
@@ -44,9 +47,9 @@ struct __attribute__((packed)) SocialBeacon
   uint8_t sat100;
   int16_t hue;
   char name[20];
-  // meilleurs scores (Meet > Leaderboard), ordre LB_GAME_NAMES : Snake,
-  // Pong, Sphere Run, Roundtris. Champ AJOUTE en fin de paquet : les vieux
-  // firmwares (paquet court) restent acceptes, scores a 0.
+  // best scores (Meet > Leaderboard), LB_GAME_NAMES order: Snake, Pong,
+  // Sphere Run, Roundtris. Field ADDED at the end of the packet: old
+  // firmwares (short packet) are still accepted, scores set to 0.
   uint16_t scores[LB_GAMES];
 };
 #define SOCIAL_MAGIC 0x314A4354u // "TCJ1" little-endian
@@ -60,19 +63,20 @@ struct SocialPeer
   float rssi; // EMA
   uint32_t lastSeen;
   uint32_t lastReact;
-  uint16_t scores[LB_GAMES]; // derniers scores annonces (0 si vieux firmware)
+  uint16_t scores[LB_GAMES]; // last announced scores (0 if old firmware)
 };
 
 static SocialPeer socialPeers[SOCIAL_MAXPEERS];
 static int socialNPeers = 0;
 static bool socialOn = false;
 static uint32_t socialNextBeacon = 0;
-static uint16_t socialMyBest[LB_GAMES]; // mes records, caches a socialStart
+static uint16_t socialMyBest[LB_GAMES]; // my records, cached at socialStart
 static portMUX_TYPE socialMux = portMUX_INITIALIZER_UNLOCKED;
 static const uint8_t SOCIAL_BCAST[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
-// ---- Leaderboard : persistance NVS des tables lb* (fusion lbMerge dans
-// menu_ui.h, partagee avec l'emulateur). "lb1" : "nom\tsnake\tpong\trun\ttetris\n".
+// ---- Leaderboard: NVS persistence of the lb* tables (lbMerge merge in
+// menu_ui.h, shared with the emulator).
+// "lb1": "name\tsnake\tpong\trun\ttetris\n".
 static void lbSave()
 {
   String m;
@@ -117,7 +121,7 @@ static void lbLoad()
   }
 }
 
-// Callback ESP-NOW (tache WiFi) : met a jour la table sous spinlock, court.
+// ESP-NOW callback (WiFi task): updates the table under spinlock, kept short.
 static void socialRecvCb(const esp_now_recv_info *info, const uint8_t *data,
                          int len)
 {
@@ -149,7 +153,7 @@ static void socialRecvCb(const esp_now_recv_info *info, const uint8_t *data,
     socialPeers[idx].lastReact = 0;
   }
   SocialPeer &p = socialPeers[idx];
-  p.rssi = p.rssi * 0.6f + rssi * 0.4f; // lisse le bruit du RSSI
+  p.rssi = p.rssi * 0.6f + rssi * 0.4f; // smooths the RSSI noise
   p.lastSeen = now;
   p.avatar = b->avatar;
   memcpy(p.name, b->name, sizeof(b->name));
@@ -167,14 +171,14 @@ static void socialStart()
     return;
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
-  // puissance d'emission bridee : (1) portee courte voulue pour la detection
-  // de proximite, (2) reduit le pic de courant radio qui peut faire chuter
-  // le rail d'alim (reset POWERON observe sur certaines cartes)
+  // capped TX power: (1) short range wanted for proximity detection,
+  // (2) reduces the radio current spike that can drop the power rail
+  // (POWERON reset observed on some boards)
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
   esp_wifi_set_channel(SOCIAL_CHANNEL, WIFI_SECOND_CHAN_NONE);
   if (esp_now_init() != ESP_OK)
   {
-    Serial0.println("social : esp_now_init KO");
+    Serial0.println("social: esp_now_init failed");
     WiFi.mode(WIFI_OFF);
     return;
   }
@@ -186,14 +190,14 @@ static void socialStart()
   esp_now_register_recv_cb(socialRecvCb);
   socialNPeers = 0;
   socialNextBeacon = 0;
-  // scores annonces dans le beacon : relus a chaque allumage de la radio
-  // (une partie jouee entre-temps est donc prise en compte au retour idle)
+  // scores announced in the beacon: re-read every time the radio turns on
+  // (a game played in between is thus reflected when returning to idle)
   socialMyBest[0] = prefs.getUShort("snakeBest", 0);
   socialMyBest[1] = prefs.getUShort("pongBest", 0);
   socialMyBest[2] = prefs.getUShort("runBest", 0);
   socialMyBest[3] = prefs.getUShort("tetroBest", 0);
   socialOn = true;
-  Serial0.println("social : radio ON (Conf Buddy)");
+  Serial0.println("social: radio ON (Conf Buddy)");
 }
 
 static void socialStop()
@@ -204,16 +208,16 @@ static void socialStop()
   WiFi.mode(WIFI_OFF);
   socialOn = false;
   if (lbDirty)
-    lbSave(); // derniers scores appris pendant cette session radio
-  // arret PROPRE : la radio n'a pas tue le badge -> desarme le marqueur du
-  // briseur de boucle (sinon, quitter l'idle dans les 8 s laissait le
-  // marqueur arme et le boot suivant bloquait le social a tort)
+    lbSave(); // last scores learned during this radio session
+  // CLEAN stop: the radio did not kill the badge -> disarm the boot-loop
+  // breaker marker (otherwise, leaving idle within 8 s left the marker
+  // armed and the next boot wrongly blocked the social feature)
   prefs.putUChar("socboot", 0);
-  Serial0.println("social : radio OFF");
+  Serial0.println("social: radio OFF");
 }
 
-// Persistance des compteurs de rencontres (table partagee metNames/metCounts
-// de menu_ui.h) en NVS "met2" : lignes "nom\tcompte\n"
+// Persistence of the encounter counters (shared metNames/metCounts table
+// from menu_ui.h) in NVS "met2": lines "name\tcount\n"
 static void socialMetSave()
 {
   String m;
@@ -249,8 +253,8 @@ static void socialMetLoad()
   }
 }
 
-// RSSI lisse du pair le plus recent/fort (jauge live de l'ecran Proximity) ;
-// retourne -100 si personne d'entendu depuis 3 s
+// Smoothed RSSI of the most recent/strongest peer (Proximity screen live
+// gauge); returns -100 if nobody has been heard for 3 s
 static float socialNearestRssi()
 {
   float best = -100;
@@ -263,8 +267,8 @@ static float socialNearestRssi()
   return best;
 }
 
-// A appeler chaque frame quand la radio est active : beacon periodique +
-// detection de rencontre (RSSI fort, cooldown par badge)
+// Call every frame while the radio is active: periodic beacon +
+// encounter detection (strong RSSI, per-badge cooldown)
 static void socialLoop(uint32_t now)
 {
   if (!socialOn)
@@ -285,13 +289,13 @@ static void socialLoop(uint32_t now)
     memcpy(b.scores, socialMyBest, sizeof(b.scores));
     esp_now_send(SOCIAL_BCAST, (const uint8_t *)&b, sizeof(b));
   }
-  // diagnostic : pairs entendus + RSSI lisse (toutes les 3 s)
+  // diagnostics: peers heard + smoothed RSSI (every 3 s)
   static uint32_t socialLogMs = 0;
   if (now - socialLogMs > 3000)
   {
     socialLogMs = now;
-    // copie sous verrou, impression HORS section critique (jamais d'UART
-    // avec les interruptions coupees)
+    // copy under lock, print OUTSIDE the critical section (never touch
+    // the UART with interrupts disabled)
     SocialPeer snap[SOCIAL_MAXPEERS];
     int nsnap;
     portENTER_CRITICAL(&socialMux);
@@ -301,11 +305,11 @@ static void socialLoop(uint32_t now)
     for (int i = 0; i < nsnap; i++)
       if (now - snap[i].lastSeen < 5000)
       {
-        Serial0.printf("social : \"%s\" rssi %.0f (seuil %d) vu il y a %lu ms\n",
+        Serial0.printf("social: \"%s\" rssi %.0f (threshold %d) seen %lu ms ago\n",
                        snap[i].name, snap[i].rssi, (int)socialRssiNear,
                        (unsigned long)(now - snap[i].lastSeen));
-        // leaderboard : fusionne les scores annonces (tache principale,
-        // jamais dans le callback WiFi — la NVS reste hors section critique)
+        // leaderboard: merges the announced scores (main task, never in
+        // the WiFi callback — NVS stays outside the critical section)
         lbMerge(snap[i].name, snap[i].scores);
       }
     static uint32_t lbSaveMs = 0;
@@ -313,14 +317,14 @@ static void socialLoop(uint32_t now)
     {
       lbSaveMs = now;
       lbSave();
-      Serial0.println("social : leaderboard sauve (NVS)");
+      Serial0.println("social: leaderboard saved (NVS)");
     }
   }
 
-  // rencontre : parmi les pairs frais/proches/hors cooldown, on salue LE
-  // PLUS PROCHE (meilleur RSSI), au plus une reaction toutes les 25 s — dans
-  // une grappe de badges, le buddy salue calmement au lieu d'enchainer
-  if (socialProbeOnly) // ecran Proximity : ecoute/emet mais ne reagit pas
+  // encounter: among the fresh/close/off-cooldown peers, greet THE CLOSEST
+  // one (best RSSI), at most one reaction every 25 s — in a cluster of
+  // badges the buddy greets calmly instead of chaining reactions
+  if (socialProbeOnly) // Proximity screen: listens/sends but never reacts
     return;
   if (now < socialReactUntil)
     return;
@@ -356,7 +360,7 @@ static void socialLoop(uint32_t now)
     socialLastReact = now;
     socialReactTrigger(reactName, now);
     socialMetSave();
-    Serial0.printf("social : rencontre avec \"%s\" (rssi %.0f)\n", reactName,
+    Serial0.printf("social: encounter with \"%s\" (rssi %.0f)\n", reactName,
                    bestRssi);
   }
 }

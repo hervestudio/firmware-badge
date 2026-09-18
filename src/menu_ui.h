@@ -1,13 +1,13 @@
-// UI menu du badge — PARTAGEE entre le firmware (main.cpp) et l'emulateur
-// (tools/emulator/emu.cpp) : une seule source pour les deux rendus.
+// Badge menu UI -- SHARED between the firmware (main.cpp) and the emulator
+// (tools/emulator/emu.cpp): a single source for both renderers.
 //
-// - Menu principal "bulles" : 4 categories (Play/Watch/Meet/More) en cercles
-//   pastel avec une petite physique (ressorts + collisions : les bulles se
-//   poussent quand la selection grossit).
-// - Sous-menus : liste par categorie avec defilement amorti + pilule de
-//   selection ajustee au label (position/largeur/couleur animees).
+// - Main "bubbles" menu: 4 categories (Play/Watch/Meet/More) as pastel
+//   circles with a small physics sim (springs + collisions: the bubbles
+//   push each other when the selection grows).
+// - Submenus: per-category list with damped scrolling + a selection pill
+//   fitted to the label (animated position/width/color).
 //
-// Depend de : canvas, rgb565, RGB565_BLACK/WHITE, W/H/CX/CY, millis(),
+// Depends on: canvas, rgb565, RGB565_BLACK/WHITE, W/H/CX/CY, millis(),
 // mfPrint/mfTextW (Dingos ExtraBold), mdPrint (Dingos Medium), expf/sqrtf,
 // constrain, snprintf.
 #pragma once
@@ -21,18 +21,18 @@ static const uint16_t UI_PASTELS[UI_NCATS] = {
     rgb565(0x9d, 0x97, 0xed), rgb565(0x7e, 0xdb, 0xb0)};
 
 static const char *UI_PLAY_IT[] = {"Snake", "Pong", "Sphere Run", "Roundtris"};
-// ("Sphere Pet" retire du menu — revue Romain 2026-08-29 ; le code du jeu
-// (tama.h, UI_PET) reste en place, re-ajouter l'entree suffit a le retablir)
+// ("Sphere Pet" removed from the menu -- review 2026-08-29 (Romain); the
+// game code (tama.h, UI_PET) stays in place, re-adding the entry restores it)
 static const char *UI_WATCH_IT[] = {"Conf Buddy", "Snake", "Disco", "Globe",
                                     "Three Conf", "DVD", "Points", "Warp",
                                     "Solar System", "My Photo"};
-// ("My Photo" n'apparait que si une photo a ete uploadee via Setup :
-// g_hasPhoto est declare par chaque plateforme avant l'include)
+// ("My Photo" only appears if a photo was uploaded via Setup:
+// g_hasPhoto is declared by each platform before the include)
 
-// ---- rencontres (qui j'ai croise, combien de fois) : table partagee,
-// alimentee par socialReactTrigger (social_ui.h), persistee en NVS "met2"
-// cote firmware, affichee par l'ecran Meet > Encounters
-// niveaux du reglage de proximite des rencontres (Settings > Proximity)
+// ---- encounters (who I met, how many times): shared table, fed by
+// socialReactTrigger (social_ui.h), persisted in NVS "met2" on the
+// firmware side, displayed by the Meet > Encounters screen
+// levels of the encounter proximity setting (Settings > Proximity)
 static const int8_t UI_PROX_LEVELS[4] = {-30, -55, -62, -70};
 static const char *UI_PROX_NAMES[4] = {"Touch", "Close", "Normal", "Far"};
 
@@ -41,19 +41,19 @@ static char metNames[MET_MAX][21];
 static uint16_t metCounts[MET_MAX];
 static int metN = 0;
 
-// Leaderboard des jeux (Meet > Leaderboard) : meilleurs scores connus des
-// badges croises, appris passivement via les beacons ESP-NOW (social.h,
-// fusion par maximum), persistes en NVS "lb1"
-#define LB_GAMES 4 // ordre FIGE du beacon : Snake, Pong, Sphere Run, Roundtris
+// Games leaderboard (Meet > Leaderboard): best scores known from badges
+// met, learned passively via ESP-NOW beacons (social.h, merge by
+// maximum), persisted in NVS "lb1"
+#define LB_GAMES 4 // FROZEN beacon order: Snake, Pong, Sphere Run, Roundtris
 static const char *LB_GAME_NAMES[LB_GAMES] = {"Snake", "Pong", "Sphere Run",
                                               "Roundtris"};
 static char lbNames[MET_MAX][21];
 static uint16_t lbScores[MET_MAX][LB_GAMES];
 static int lbN = 0;
-static bool lbDirty = false; // scores appris non encore persistes
+static bool lbDirty = false; // learned scores not yet persisted
 
-// Fusion par MAXIMUM des scores annonces par un badge (beacon ESP-NOW cote
-// firmware, rencontre simulee cote emulateur)
+// Merge by MAXIMUM of the scores announced by a badge (ESP-NOW beacon on
+// the firmware side, simulated encounter on the emulator side)
 static void lbMerge(const char *name, const uint16_t *sc)
 {
   if (!name[0])
@@ -63,7 +63,7 @@ static void lbMerge(const char *name, const uint16_t *sc)
     if (sc[g])
       any = true;
   if (!any)
-    return; // rien a apprendre (vieux firmware ou jamais joue)
+    return; // nothing to learn (old firmware or never played)
   int idx = -1;
   for (int i = 0; i < lbN; i++)
     if (strncmp(lbNames[i], name, sizeof(lbNames[0]) - 1) == 0)
@@ -74,7 +74,7 @@ static void lbMerge(const char *name, const uint16_t *sc)
   if (idx < 0)
   {
     if (lbN >= MET_MAX)
-      return; // table pleine (40 = toute la serie, ne devrait pas arriver)
+      return; // table full (40 = the whole series, should not happen)
     idx = lbN++;
     snprintf(lbNames[idx], sizeof(lbNames[0]), "%s", name);
     memset(lbScores[idx], 0, sizeof(lbScores[0]));
@@ -88,7 +88,7 @@ static void lbMerge(const char *name, const uint16_t *sc)
 }
 
 
-// nombre d'entrees par categorie, "Back" compris (toujours en dernier)
+// entry count per category, "Back" included (always last)
 static int uiListCount(int cat)
 {
   switch (cat)
@@ -96,8 +96,8 @@ static int uiListCount(int cat)
   case UIC_PLAY: return 5;
   case UIC_WATCH: return g_hasPhoto ? 11 : 10;
   case UIC_MEET: return 5; // Schedule + QR Code + Encounters + Leaderboard + Back
-  default: return 5; // More : Draw, Setup, Auto cycle, Settings, Back
-                     // (OTA / Rotate / Batt deplaces dans Settings, sous PIN)
+  default: return 5; // More: Draw, Setup, Auto cycle, Settings, Back
+                     // (OTA / Rotate / Batt moved into Settings, behind PIN)
   }
 }
 
@@ -134,7 +134,7 @@ static void uiListLabel(int cat, int i, bool autoCyc, char *buf, size_t n)
   }
 }
 
-// resolution d'une selection -> action a executer par l'appelant
+// resolves a selection -> action to be executed by the caller
 enum UiAction : uint8_t { UIA_NONE, UIA_ANIM, UIA_GAME, UIA_DRAW, UIA_AUTO,
                           UIA_OTA, UIA_SCHED, UIA_ROT, UIA_SETTINGS, UIA_BACK,
                           UIA_SETUP, UIA_QR, UIA_MET, UIA_LB };
@@ -150,28 +150,28 @@ static UiAction uiResolve(int cat, int sel, int *arg)
     if (sel == 0)
       return UIA_SCHED;
     if (sel == 1)
-      return UIA_QR; // QR code configure via More > Setup
+      return UIA_QR; // QR code configured via More > Setup
     if (sel == 2)
-      return UIA_MET; // qui j'ai croise, combien de fois
-    return UIA_LB; // scores des jeux, les miens + ceux des badges croises
+      return UIA_MET; // who I met, how many times
+    return UIA_LB; // game scores, mine + those of the badges I met
   default:
     if (sel == 0)
       return UIA_DRAW;
     if (sel == 1)
-      return UIA_SETUP; // parcours de config sur telephone (nom/buddy/QR)
+      return UIA_SETUP; // phone configuration flow (name/buddy/QR)
     if (sel == 2)
       return UIA_AUTO;
-    return UIA_SETTINGS; // protege par code (avatar, proximite, OTA...)
+    return UIA_SETTINGS; // PIN-protected (avatar, proximity, OTA...)
   }
 }
 
-// ----------------------------------- rotation logicielle de l'ecran
-// Certains modules ont la dalle collee legerement de travers sur le PCB :
-// on compense en tournant l'image de quelques degres au moment du flush.
-static int uiScreenRot = 0; // degres, -15..+15, persiste en NVS par l'appelant
+// ----------------------------------- software screen rotation
+// Some modules have the panel glued slightly crooked on the PCB:
+// we compensate by rotating the image a few degrees at flush time.
+static int uiScreenRot = 0; // degrees, -15..+15, saved to NVS by the caller
 
-// etale un 565 sur 32 bits (R|B en mot bas, G en mot haut) : permet le
-// melange pondere des 3 canaux en une seule multiplication
+// spreads a 565 over 32 bits (R|B in low word, G in high word): allows
+// weighted blending of the 3 channels in a single multiplication
 static inline uint32_t uiSpread565(uint16_t c)
 {
   return (c | ((uint32_t)c << 16)) & 0x07E0F81Fu;
@@ -195,9 +195,9 @@ static void uiRotateBlit(const uint16_t *src, uint16_t *dst, int deg)
         drow[x] = 0;
         continue;
       }
-      // "SHARP bilinear" : bilineaire a transition resserree (x2 autour du
-      // demi-pixel) — anti-crenelage sans le flou du bilineaire plein : les
-      // coeurs de pixels restent purs, seuls les bords melangent.
+      // "SHARP bilinear": bilinear with a tightened transition (x2 around
+      // the half-pixel) -- anti-aliasing without full-bilinear blur: pixel
+      // cores stay pure, only the edges blend.
       const uint16_t *s = &src[vy * W + ux];
       int rfx = ((int)((u >> 11) & 31) - 16) * 2 + 16;
       int rfy = ((int)((v >> 11) & 31) - 16) * 2 + 16;
@@ -211,14 +211,14 @@ static void uiRotateBlit(const uint16_t *src, uint16_t *dst, int deg)
   }
 }
 
-// Petit menu des Settings (apres le code PIN) : Avatar / Proximity / Back
+// Small Settings menu (after the PIN code): Avatar / Proximity / Back
 #define SETMENU_N 7 // Avatar, Proximity, Rotate, OTA, Batt, Batt log, Back
 static void uiDrawSetMenu(int sel)
 {
   canvas->fillScreen(RGB565_BLACK);
   mtPrint(CX - mtTextW("SETTINGS") / 2, 40, "SETTINGS", rgb565(0xfb, 0xd9, 0x75));
-  // OTA / Rotate / Batt deplaces depuis More (revue Romain 2026-08-29) :
-  // reserves a l'organisation, derriere le code PIN
+  // OTA / Rotate / Batt moved from More (review 2026-08-29 (Romain)):
+  // reserved for the organizers, behind the PIN code
   char batt[20];
   if (batMvRaw > 0)
     snprintf(batt, sizeof(batt), "Batt: %lu.%02luV", (unsigned long)(batMvRaw / 1000),
@@ -244,14 +244,14 @@ static void uiDrawSetMenu(int sel)
   }
 }
 
-// Etape photo du Setup, cote badge, tant qu'aucune photo n'est recue :
-// emplacement en pointilles + invitation — montre qu'on est bien passe a
-// l'etape 3 (revue Romain 2026-09-07)
+// Setup photo step, badge side, while no photo has been received yet:
+// dotted placeholder + invitation -- shows we did reach step 3
+// (review 2026-09-07 (Romain))
 static void uiDrawPhotoPlaceholder()
 {
   canvas->fillScreen(RGB565_BLACK);
   uint16_t dim = rgb565(110, 110, 110);
-  for (int k = 0; k < 64; k += 2) // cercle pointille
+  for (int k = 0; k < 64; k += 2) // dotted circle
   {
     float a = k * (2 * (float)PI / 64);
     canvas->fillCircle((int)(CX + cosf(a) * 118), (int)(CY + sinf(a) * 118),
@@ -265,17 +265,17 @@ static void uiDrawPhotoPlaceholder()
           rgb565(110, 110, 110));
 }
 
-// Ecran Settings > Batt log : courbe de decharge enregistree pendant que le
-// badge tourne. Ordonnee = %, abscisse = temps ecoule. Pente %/h calculee
-// entre le premier et le dernier echantillon -> projection d'autonomie
-// pleine->vide. gauche = remise a zero, centre = retour.
+// Settings > Batt log screen: discharge curve recorded while the badge
+// runs. Y axis = %, X axis = elapsed time. %/h slope computed between
+// the first and last sample -> full->empty runtime projection.
+// left = reset, center = back.
 static void uiDrawBlog(uint32_t now, int curPct, uint32_t curMv)
 {
   canvas->fillScreen(RGB565_BLACK);
   mfPrint(CX - mfTextW("BATT LOG") / 2, 44, "BATT LOG",
           rgb565(0x9d, 0x97, 0xed));
   const int gx0 = 64, gx1 = 296, gy0 = 92, gy1 = 232;
-  // grille : 0 / 50 / 100 %
+  // grid: 0 / 50 / 100 %
   for (int p = 0; p <= 100; p += 50)
   {
     int y = gy1 - (gy1 - gy0) * p / 100;
@@ -303,7 +303,7 @@ static void uiDrawBlog(uint32_t now, int curPct, uint32_t curMv)
       canvas->drawLine(xa, ya + 1, xb, yb + 1, rgb565(0xfb, 0xd9, 0x75));
     }
   }
-  // stats : duree couverte, etat courant, pente et projection
+  // stats: time span covered, current state, slope and projection
   uint32_t spanMin = blogN > 1 ? (uint32_t)(blogN - 1) * blogIvlMs / 60000 : 0;
   snprintf(buf, sizeof(buf), "%luh%02lu  %d%%  %lu.%02luV",
            (unsigned long)(spanMin / 60), (unsigned long)(spanMin % 60),
@@ -326,11 +326,11 @@ static void uiDrawBlog(uint32_t now, int curPct, uint32_t curMv)
           "left: reset   center: back", rgb565(130, 130, 130));
 }
 
-// Ecran Settings > Batt : CALIBRATION de la jauge par badge. Le pont
-// 100k/100k reel a une tolerance de +/-5 % (150 mV d'ecart mesures sur un
-// badge, revue Romain 2026-08-29) : gauche/droite ajustent un facteur
-// multiplicatif (NVS "vcal", pour-mille) jusqu'a ce que la tension affichee
-// = le multimetre sur B+/B-, centre = sauver.
+// Settings > Batt screen: per-badge gauge CALIBRATION. The real 100k/100k
+// divider has a +/-5 % tolerance (150 mV offset measured on one badge,
+// review 2026-08-29 (Romain)): left/right adjust a multiplicative factor
+// (NVS "vcal", per-mille) until the displayed voltage = the multimeter
+// on B+/B-, center = save.
 static void uiDrawVcal(uint32_t mv, int cal)
 {
   canvas->fillScreen(RGB565_BLACK);
@@ -352,9 +352,9 @@ static void uiDrawVcal(uint32_t mv, int cal)
           rgb565(130, 130, 130));
 }
 
-// Reglage de proximite des rencontres, avec jauge LIVE du badge le plus
-// proche (la radio ecoute en mode sonde pendant cet ecran) : la zone au-dela
-// du seuil est celle qui declenche.
+// Encounter proximity setting, with a LIVE gauge of the nearest badge
+// (the radio listens in probe mode during this screen): the zone beyond
+// the threshold is the one that triggers.
 static void uiDrawProx(int level, float liveRssi)
 {
   canvas->fillScreen(RGB565_BLACK);
@@ -364,7 +364,7 @@ static void uiDrawProx(int level, float liveRssi)
   char db[16];
   snprintf(db, sizeof(db), "%d dBm", (int)UI_PROX_LEVELS[level]);
   bbPrint(CX - bbTextW(db) / 2, 150, db, rgb565(150, 160, 150));
-  // jauge : -85 (loin) a -25 (colle) ; repere = seuil ; barre = signal live
+  // gauge: -85 (far) to -25 (touching); mark = threshold; bar = live signal
   const int gx0 = 62, gx1 = 298, gy = 210, gh = 16;
   auto rssiToX = [&](float r) {
     float u = (r + 85.0f) / 60.0f;
@@ -373,7 +373,7 @@ static void uiDrawProx(int level, float liveRssi)
   };
   canvas->fillRect(gx0, gy, gx1 - gx0, gh, rgb565(34, 38, 34));
   int tx = rssiToX(UI_PROX_LEVELS[level]);
-  // zone de declenchement (a droite du seuil) legerement teintee
+  // trigger zone (right of the threshold) slightly tinted
   canvas->fillRect(tx, gy, gx1 - tx, gh, rgb565(46, 58, 46));
   if (liveRssi > -95)
   {
@@ -381,7 +381,7 @@ static void uiDrawProx(int level, float liveRssi)
     canvas->fillRect(gx0, gy + 3, rssiToX(liveRssi) - gx0, gh - 6,
                      trig ? rgb565(0x7e, 0xdb, 0xb0) : rgb565(0xfb, 0xd9, 0x75));
   }
-  canvas->fillRect(tx - 1, gy - 5, 3, gh + 10, RGB565_WHITE); // repere seuil
+  canvas->fillRect(tx - 1, gy - 5, 3, gh + 10, RGB565_WHITE); // threshold mark
   if (liveRssi > -95)
   {
     char rs[16];
@@ -395,14 +395,14 @@ static void uiDrawProx(int level, float liveRssi)
           "< > adjust    center: save", rgb565(130, 130, 130));
 }
 
-// Ecran Meet > Encounters : qui j'ai croise, combien de fois (tri par
-// nombre de rencontres decroissant). prev/next = defilement, centre = retour.
+// Meet > Encounters screen: who I met, how many times (sorted by
+// descending encounter count). prev/next = scroll, center = back.
 #define MET_ROWS 6
 static void uiDrawMet(int scroll)
 {
   canvas->fillScreen(RGB565_BLACK);
-  // titre en Dingos menu (plus etroit) et descendu : en mtPrint a y=26 il
-  // debordait de la zone ronde visible (revue Romain 2026-08-29)
+  // title in Dingos menu font (narrower) and lowered: as mtPrint at y=26
+  // it overflowed the visible round area (review 2026-08-29 (Romain))
   mfPrint(CX - mfTextW("ENCOUNTERS") / 2, 46, "ENCOUNTERS",
           rgb565(0x9d, 0x97, 0xed));
   if (metN == 0)
@@ -415,7 +415,7 @@ static void uiDrawMet(int scroll)
             rgb565(130, 130, 130));
     return;
   }
-  // tri par compte decroissant (indices, insertion — n <= 40)
+  // sort by descending count (indices, insertion -- n <= 40)
   uint8_t ord[MET_MAX];
   for (int i = 0; i < metN; i++)
     ord[i] = (uint8_t)i;
@@ -439,7 +439,7 @@ static void uiDrawMet(int scroll)
     snprintf(buf, sizeof(buf), "x%u", (unsigned)metCounts[i]);
     mfPrint(296 - mfTextW(buf), y, buf, rgb565(0xfb, 0xd9, 0x75));
   }
-  // indicateurs de defilement
+  // scroll indicators
   if (scroll > 0)
     mdPrint(CX - mdTextW("^") / 2, 76, "^", rgb565(130, 130, 130));
   if (scroll + MET_ROWS < metN)
@@ -448,22 +448,22 @@ static void uiDrawMet(int scroll)
           rgb565(130, 130, 130));
 }
 
-// Ecran Meet > Leaderboard : un jeu a la fois, classement des badges croises
-// + soi ("You", surligne). prev/next = jeu suivant/precedent, centre = retour.
-// Toujours 6 lignes max ; si "You" sort du top 6, il remplace la 6e ligne
-// avec son vrai rang.
+// Meet > Leaderboard screen: one game at a time, ranking of the badges
+// met + self ("You", highlighted). prev/next = next/previous game,
+// center = back. Always 6 rows max; if "You" falls out of the top 6, it
+// replaces the 6th row with its real rank.
 #define LB_ROWS 6
 static void uiDrawLB(int game, const uint16_t *mine)
 {
   canvas->fillScreen(RGB565_BLACK);
-  // titre en Dingos menu et descendu (meme raison que ENCOUNTERS)
+  // title in Dingos menu font and lowered (same reason as ENCOUNTERS)
   mfPrint(CX - mfTextW("LEADERBOARD") / 2, 46, "LEADERBOARD",
           rgb565(0x9d, 0x97, 0xed));
   char sub[24];
   snprintf(sub, sizeof(sub), "< %s >", LB_GAME_NAMES[game]);
   bbPrint(CX - bbTextW(sub) / 2, 82, sub, rgb565(0xfb, 0xd9, 0x75));
-  // participants : badges croises avec un score non nul + soi (sentinelle
-  // MET_MAX). Tri decroissant par score du jeu affiche (n <= 41, insertion).
+  // participants: badges met with a non-zero score + self (sentinel
+  // MET_MAX). Descending sort by displayed game score (n <= 41, insertion).
   auto sc = [&](uint8_t i) -> uint16_t {
     return i == MET_MAX ? mine[game] : lbScores[i][game];
   };
@@ -480,7 +480,7 @@ static void uiDrawLB(int game, const uint16_t *mine)
     while (j >= 0 && (sc(ord[j]) < sc(k) ||
                       (sc(ord[j]) == sc(k) && ord[j] == MET_MAX)))
     {
-      ord[j + 1] = ord[j]; // a egalite, "You" passe apres (fair-play)
+      ord[j + 1] = ord[j]; // on a tie, "You" ranks after (fair play)
       j--;
     }
     ord[j + 1] = k;
@@ -501,7 +501,7 @@ static void uiDrawLB(int game, const uint16_t *mine)
   char buf[16];
   for (int r = 0; r < LB_ROWS && r < n; r++)
   {
-    // derniere ligne visible : "You" avec son vrai rang s'il est plus bas
+    // last visible row: "You" with its real rank if it is lower
     int rank = (r == LB_ROWS - 1 && selfRank >= LB_ROWS) ? selfRank : r;
     uint8_t i = ord[rank];
     bool self = (i == MET_MAX);
@@ -517,8 +517,8 @@ static void uiDrawLB(int game, const uint16_t *mine)
           rgb565(130, 130, 130));
 }
 
-// Ecran de calibration : aligner la barre d'horizon jaune avec l'horizontale
-// physique du badge (gauche/droite = -1/+1 degre, centre = sauver et sortir)
+// Calibration screen: align the yellow horizon bar with the badge's
+// physical horizontal (left/right = -1/+1 degree, center = save and exit)
 static void uiDrawRotate(int deg)
 {
   canvas->fillScreen(RGB565_BLACK);
@@ -527,7 +527,7 @@ static void uiDrawRotate(int deg)
   canvas->drawCircle(CX, CY, 100, grid);
   for (int y = 30; y < H - 30; y += 3)
     canvas->drawPixel(CX, y, grid);
-  // barre d'HORIZON : elle doit etre parfaitement horizontale a l'oeil
+  // HORIZON bar: it must look perfectly horizontal to the eye
   canvas->fillRect(30, CY - 2, W - 60, 4, rgb565(0xfb, 0xd9, 0x75));
   bbPrint(180 - bbTextW("SCREEN TILT") / 2, 74, "SCREEN TILT", RGB565_WHITE);
   char t[8];
@@ -538,13 +538,13 @@ static void uiDrawRotate(int deg)
           rgb565(130, 130, 130));
 }
 
-// ------------------------------- Settings : code d'acces + choix d'avatar
-// Les Settings (avatar/personne du badge) sont proteges par un code a 5
-// chiffres : gauche/droite = chiffre -/+, centre = valider et passer au
-// suivant. Mauvais code = retour au menu.
+// ------------------------------- Settings: access code + avatar choice
+// Settings (avatar/person of the badge) are protected by a 5-digit code:
+// left/right = digit -/+, center = confirm and move on to the next one.
+// Wrong code = back to the menu.
 #define UI_PIN_LEN 4
-// 2010 : annee de creation de three.js (code DEFINITIF serie, revue
-// Romain 2026-09-08 — a remplace le 00000 provisoire des tests)
+// 2010: year three.js was created (FINAL production code, review
+// 2026-09-08 (Romain) -- replaced the provisional 00000 used for tests)
 static const uint8_t UI_PIN_CODE[UI_PIN_LEN] = {2, 0, 1, 0};
 
 static void uiDrawPin(const uint8_t *digits, int pos, bool error)
@@ -563,7 +563,7 @@ static void uiDrawPin(const uint8_t *digits, int pos, bool error)
     uint16_t frame = (i == pos) ? accent : rgb565(70, 82, 72);
     canvas->fillRoundRect(bx, by, bw, bh, 9, frame);
     canvas->fillRoundRect(bx + 2, by + 2, bw - 4, bh - 4, 7, RGB565_BLACK);
-    if (i < pos || i == pos) // chiffres deja saisis + chiffre en cours
+    if (i < pos || i == pos) // digits already entered + current digit
     {
       char d[2] = {(char)('0' + digits[i]), 0};
       mtPrint(bx + bw / 2 - mtTextW(d) / 2, by + 13, d,
@@ -577,8 +577,8 @@ static void uiDrawPin(const uint8_t *digits, int pos, bool error)
           rgb565(130, 130, 130));
 }
 
-// Cadre de l'ecran de choix d'avatar : la plateforme dessine la sphere (et le
-// visage) PAR-DESSUS, centree en (CX, CY - 26), rayon ~78.
+// Avatar picker screen frame: the platform draws the sphere (and the
+// face) ON TOP, centered at (CX, CY - 26), radius ~78.
 static void uiDrawAvatarFrame(int idx, int total, const char *name)
 {
   canvas->fillScreen(RGB565_BLACK);
@@ -594,7 +594,7 @@ static void uiDrawAvatarFrame(int idx, int total, const char *name)
           rgb565(110, 110, 110));
 }
 
-// -------------------------------------------------------- tete batterie
+// -------------------------------------------------------- battery header
 static void uiBatteryHeader(int pct, bool charging)
 {
   char pctTxt[8];
@@ -602,7 +602,7 @@ static void uiBatteryHeader(int pct, bool charging)
     snprintf(pctTxt, sizeof(pctTxt), "%d%%", pct);
   else
     snprintf(pctTxt, sizeof(pctTxt), "--%%");
-  // centrage PARFAIT du groupe icone (44 px avec la tetine) + espace + texte
+  // PERFECT centering of the icon group (44 px with nub) + space + text
   const int bx = 180 - (44 + 10 + mdTextW(pctTxt)) / 2, by = 44;
   uint16_t frame = rgb565(210, 210, 210);
   canvas->drawRoundRect(bx, by, 40, 22, 4, frame);
@@ -624,15 +624,15 @@ static void uiBatteryHeader(int pct, bool charging)
   }
 }
 
-// ------------------------------------------- menu principal a bulles
+// ------------------------------------------- bubble main menu
 struct UiBubble
 {
   float x, y, vx, vy, r;
 };
 static UiBubble uiBub[UI_NCATS];
 static int uiHomeFocus = 0;
-// ancrages et rayons de base (composes d'apres la maquette : Play a gauche,
-// Watch en haut a droite, Meet en bas au centre, More en bas a droite)
+// anchors and base radii (laid out from the mockup: Play on the left,
+// Watch top right, Meet bottom center, More bottom right)
 static const float UI_BUB_HOME[UI_NCATS][2] = {
     {116, 184}, {246, 146}, {184, 264}, {283, 246}};
 static const float UI_BUB_R[UI_NCATS] = {72, 76, 66, 52};
@@ -656,19 +656,19 @@ static bool uiDrawHome(float dt, int batPct, bool batCharging)
     dt = 0.05f;
   canvas->fillScreen(RGB565_BLACK);
 
-  // Physique en SOUS-PAS FIXES de 16 ms : a ~12 fps le badge recevait des pas
-  // de ~90 ms — le rayon grossissait plus vite que le solveur de collisions ne
-  // separait les bulles (morsures). En sous-echantillonnant, l'ESP simule
-  // exactement comme l'emulateur a 60 fps, quel que soit son framerate.
+  // Physics in FIXED 16 ms SUBSTEPS: at ~12 fps the badge was getting
+  // ~90 ms steps -- the radius grew faster than the collision solver could
+  // separate the bubbles (overlap bites). By substepping, the ESP simulates
+  // exactly like the emulator at 60 fps, whatever its framerate.
   float rem = dt;
   while (rem > 0.0001f)
   {
     float h = rem > 0.016f ? 0.016f : rem;
     rem -= h;
 
-    // cibles de rayon (la focus grossit) + ressort vers l'ancrage ; l'ancrage
-    // est CLAMPE aux murs selon le rayon courant, sinon le ressort et le mur
-    // se battent en permanence (vibration + bulle qui ecrase sa voisine)
+    // radius targets (the focused one grows) + spring toward the anchor;
+    // the anchor is CLAMPED to the walls per current radius, otherwise the
+    // spring and the wall fight forever (jitter + bubble crushing neighbor)
     for (int i = 0; i < UI_NCATS; i++)
     {
       float tr = UI_BUB_R[i] * (i == uiHomeFocus ? 1.26f : 0.80f);
@@ -688,7 +688,7 @@ static bool uiDrawHome(float dt, int batPct, bool batCharging)
       uiBub[i].vx += (hx - uiBub[i].x) * 26.0f * h;
       uiBub[i].vy += (hy - uiBub[i].y) * 26.0f * h;
     }
-    // collisions : la bulle qui grossit POUSSE ses voisines
+    // collisions: the growing bubble PUSHES its neighbors
     for (int a = 0; a < UI_NCATS; a++)
       for (int b = a + 1; b < UI_NCATS; b++)
       {
@@ -709,7 +709,7 @@ static bool uiDrawHome(float dt, int batPct, bool batCharging)
           uiBub[b].vy += ny * ov * 4.0f;
         }
       }
-    // integration + amortissement + murs (ecran rond, bandeau batterie)
+    // integration + damping + walls (round screen, battery header band)
     for (int i = 0; i < UI_NCATS; i++)
     {
       float damp = expf(-h * 4.0f);
@@ -724,7 +724,7 @@ static bool uiDrawHome(float dt, int batPct, bool batCharging)
       {
         uiBub[i].x = CX + ddx / dd * maxd;
         uiBub[i].y = CY + ddy / dd * maxd;
-        // annule la composante de vitesse SORTANTE (sinon ca vibre au mur)
+        // cancel the OUTGOING velocity component (else it jitters at wall)
         float dot = (uiBub[i].vx * ddx + uiBub[i].vy * ddy) / dd;
         if (dot > 0)
         {
@@ -740,7 +740,7 @@ static bool uiDrawHome(float dt, int batPct, bool batCharging)
       }
     }
   }
-  // dessin : les non-focus en contour, la focus en dernier, pleine
+  // drawing: non-focused ones as outlines, the focused one last, filled
   for (int pass = 0; pass < 2; pass++)
     for (int i = 0; i < UI_NCATS; i++)
     {
@@ -755,7 +755,7 @@ static bool uiDrawHome(float dt, int batPct, bool batCharging)
       {
         canvas->fillCircle(x, y, r, col);
         tcol = RGB565_BLACK;
-        // au survol : pastille noire avec fleche "play" a droite du label
+        // when focused: black dot with a "play" arrow right of the label
         int tw = mfTextW(nm), ir = 13, gap = 8;
         int x0 = x - (tw + gap + 2 * ir) / 2;
         mfPrint(x0, y - 8, nm, tcol);
@@ -765,7 +765,7 @@ static bool uiDrawHome(float dt, int batPct, bool batCharging)
       }
       else
       {
-        canvas->drawCircle(x, y, r, col); // contour ~3 px
+        canvas->drawCircle(x, y, r, col); // ~3 px outline
         canvas->drawCircle(x, y, r - 1, col);
         canvas->drawCircle(x, y, r - 2, col);
         tcol = col;
@@ -775,7 +775,7 @@ static bool uiDrawHome(float dt, int batPct, bool batCharging)
 
   uiBatteryHeader(batPct, batCharging);
 
-  // encore en mouvement ? (permet a l'appelant de sauter le flush au repos)
+  // still moving? (lets the caller skip the flush when at rest)
   float act = 0;
   for (int i = 0; i < UI_NCATS; i++)
   {
@@ -785,22 +785,22 @@ static bool uiDrawHome(float dt, int batPct, bool batCharging)
   return act > 0.8f;
 }
 
-// --------------------------------------------------- ecran Schedule
-// Design Figma "Internal - Three.js Conference" : pastille DAY en haut,
-// type d'event + horaire en Bebas Neue, titre en Dingos ExtraBold 30,
-// pastille NOW, fleches gauche/droite en bas. Donnees d'exemple en dur —
-// remplacees par le vrai programme quand Romain le fournit.
+// --------------------------------------------------- Schedule screen
+// Figma design "Internal - Three.js Conference": DAY pill at the top,
+// event type + time slot in Bebas Neue, title in Dingos ExtraBold 30,
+// NOW pill, left/right arrows at the bottom. Hardcoded sample data --
+// replaced by the real program once Romain provides it.
 struct UiEvent
 {
   uint8_t day;
   const char *type, *time, *l1, *l2;
 };
 
-// Horloge de conf, alimentee par la plateforme (main.cpp : RTC synchronisee
-// via la webapp Draw ; emulateur : heure du navigateur ou parametre d'URL).
-// uiNowMin < 0 = heure inconnue -> aucune pastille NOW.
-static int uiNowDay = 0;  // 1 ou 2 pendant la conf, 0 sinon
-static int uiNowMin = -1; // minutes locales du jour (0..1439)
+// Conference clock, fed by the platform (main.cpp: RTC synced via the
+// Draw webapp; emulator: browser time or URL parameter).
+// uiNowMin < 0 = unknown time -> no NOW pill.
+static int uiNowDay = 0;  // 1 or 2 during the conf, 0 otherwise
+static int uiNowMin = -1; // local minutes of the day (0..1439)
 
 static bool uiEventIsNow(const UiEvent &e)
 {
@@ -808,17 +808,17 @@ static bool uiEventIsNow(const UiEvent &e)
     return false;
   int h1, m1, h2, m2;
   if (sscanf(e.time, "%d:%d - %d:%d", &h1, &m1, &h2, &m2) != 4)
-    return false; // jalon sans plage ("18:30") : pas de NOW
+    return false; // milestone without a range ("18:30"): no NOW
   int s = h1 * 60 + m1, en = h2 * 60 + m2;
   if (en < s)
-    en += 24 * 60; // plage qui passe minuit
+    en += 24 * 60; // range crossing midnight
   return uiNowMin >= s && uiNowMin < en;
 }
-// Programme officiel — source : Google Sheet "Three.js Conf Paris"
-// (onglets Day 1/Day 2, releve du 2026-09-08). Lignes coupees pour 2 x
-// Dingos 30, entrees de logistique interne omises.
+// Official program -- source: Google Sheet "Three.js Conf Paris"
+// (Day 1/Day 2 tabs, snapshot of 2026-09-08). Lines split to fit 2 x
+// Dingos 30, internal logistics entries omitted.
 static const UiEvent UI_EVENTS[] = {
-    // ---- Day 1 · jeudi 10
+    // ---- Day 1 - Thursday 10
     {1, "INFO", "09:00 - 10:00", "Doors open", "& coffee"},
     {1, "TALK", "10:00 - 10:05", "David Ronai", "opening talk"},
     {1, "SPEAKER", "10:05 - 10:35", "Vicente", "Lucendo"},
@@ -841,7 +841,7 @@ static const UiEvent UI_EVENTS[] = {
     {1, "PARTY", "17:00 - 18:30", "Toast &", "networking"},
     {1, "PANEL", "17:15 - 17:45", "Generative", "art"},
     {1, "INFO", "18:30", "Venue", "closes"},
-    // ---- Day 2 · vendredi 11
+    // ---- Day 2 - Friday 11
     {2, "BREAKFAST", "08:00 - 09:00", "VIP with", "speakers"},
     {2, "INFO", "09:00 - 09:30", "Doors", "open"},
     {2, "TALK", "09:25 - 09:30", "David Ronai", "quick intro"},
@@ -873,7 +873,7 @@ static bool uiDrawSchedule(int idx)
   canvas->fillScreen(RGB565_BLACK);
   const UiEvent &e = UI_EVENTS[idx];
 
-  // pastille DAY (bleu jour 1, rose jour 2), texte navy ExtraBold
+  // DAY pill (blue day 1, pink day 2), navy ExtraBold text
   uint16_t dayCol = (e.day == 1) ? rgb565(0xa5, 0xc9, 0xf1) : rgb565(0xfc, 0xa3, 0xf7);
   char dayTxt[8];
   snprintf(dayTxt, sizeof(dayTxt), "DAY %d", e.day);
@@ -881,16 +881,16 @@ static bool uiDrawSchedule(int idx)
   canvas->fillRoundRect(180 - dw / 2, 26, dw, 44, 22, dayCol);
   mfPrint(180 - mfTextW(dayTxt) / 2, 40, dayTxt, rgb565(0x1d, 0x24, 0x40));
 
-  // type (gauche) + horaire (droite) en Bebas Neue
+  // type (left) + time slot (right) in Bebas Neue
   bbPrint(66, 128, e.type, RGB565_WHITE);
   bbPrint(312 - bbTextW(e.time), 128, e.time, RGB565_WHITE);
 
-  // titre sur 1-2 lignes en ExtraBold 30
+  // title on 1-2 lines in ExtraBold 30
   mtPrint(66, 162, e.l1, RGB565_WHITE);
   if (e.l2 && e.l2[0])
     mtPrint(66, 162 + 36, e.l2, RGB565_WHITE);
 
-  // pastille NOW (uniquement si l'heure est connue et dans la plage)
+  // NOW pill (only if the time is known and within the range)
   if (uiEventIsNow(e))
   {
     int nw = bbTextW("NOW") + 30;
@@ -898,16 +898,16 @@ static bool uiDrawSchedule(int idx)
     bbPrint(66 + 15, 250, "NOW", RGB565_WHITE);
   }
 
-  // fleches de navigation en bas
+  // navigation arrows at the bottom
   int cyb = 320;
   canvas->fillCircle(160, cyb, 15, rgb565(45, 45, 45));
   canvas->fillTriangle(165, cyb - 6, 165, cyb + 6, 154, cyb, rgb565(130, 130, 130));
   canvas->fillCircle(200, cyb, 15, RGB565_WHITE);
   canvas->fillTriangle(196, cyb - 6, 196, cyb + 6, 207, cyb, RGB565_BLACK);
-  return false; // ecran statique : l'appelant ne flush que sur changement
+  return false; // static screen: the caller only flushes on change
 }
 
-// ------------------------------------ liste par categorie (scroll anime)
+// ------------------------------------ per-category list (animated scroll)
 #define UI_LIST_VISIBLE 6
 
 static bool uiDrawList(int cat, int menuSel, bool autoCyc, int batPct,
@@ -930,7 +930,7 @@ static bool uiDrawList(int cat, int menuSel, bool autoCyc, int batPct,
   char selLabel[32];
   uiListLabel(cat, menuSel, autoCyc, selLabel, sizeof(selLabel));
   bool selIsBack = (menuSel == count - 1);
-  // "Back" : pilule BLANCHE (pas pastel) + place pour la fleche retour
+  // "Back": WHITE pill (not pastel) + room for the back arrow
   float targetW = mfTextW(selLabel) + 30.0f + (selIsBack ? 18.0f : 0.0f);
   uint16_t sc = selIsBack ? rgb565(255, 255, 255) : UI_PASTELS[menuSel % 4];
   float scR = (float)(((sc >> 11) & 31) << 3), scG = (float)(((sc >> 5) & 63) << 2),
@@ -968,7 +968,7 @@ static bool uiDrawList(int cat, int menuSel, bool autoCyc, int batPct,
     uint16_t tc = (i == menuSel) ? RGB565_BLACK : rgb565(175, 175, 175);
     if (i == menuSel && i == count - 1)
     {
-      // "Back" survole : petite fleche retour a gauche du mot
+      // "Back" focused: small back arrow left of the word
       int tw = mfTextW(label);
       int x0 = 180 - (tw + 18) / 2;
       int yy = (int)(y + 0.5f);

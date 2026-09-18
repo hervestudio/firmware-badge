@@ -1,25 +1,25 @@
-// Ecran "QR Code" (Meet > QR Code) — PARTAGE firmware / emulateur.
-// Rend le QR de l'URL configuree via More > Setup : fond blanc, modules
-// encre #211C3B, coeurs des mires lavande (design du sticker), et le Conf
-// Buddy ANIME au centre dans un medaillon blanc (~10 % de la surface :
-// l'ECC HIGH tolere 30 % de codewords abimes, large marge de lecture).
-// Depend de : canvas, rgb565, RGB565_WHITE, W/H/CX/CY, qrcodegen,
+// "QR Code" screen (Meet > QR Code) - SHARED firmware / emulator.
+// Renders the QR of the URL configured via More > Setup: white background,
+// ink #211C3B modules, lavender finder cores (sticker design), and the
+// ANIMATED Conf Buddy centered in a white medallion (~10% of the area:
+// ECC HIGH tolerates 30% damaged codewords, wide readability margin).
+// Depends on: canvas, rgb565, RGB565_WHITE, W/H/CX/CY, qrcodegen,
 // dvdGenSprite/dvdBlit, avatarDrawFace/avatarDrawExtras, PAL_RAINBOW/PAL_N,
 // mdPrint/mdTextW, sinf/cosf/fmodf, free.
 #pragma once
 #include "qrcodegen.h"
-#include "emoji_text.h" // pilule message de la carte : Dingos Medium + emojis
+#include "emoji_text.h" // card message pill: Dingos Medium + emojis
 
 #define QR_URL_MAX 96
 #define QR_NAME_MAX 24
 static char qrUrl[QR_URL_MAX] = "https://threejs.paris";
 static char qrName[QR_NAME_MAX] = "";
 static char qrCompany[28] = "";
-static char qrMsg[48] = ""; // peut contenir des emojis (UTF-8, emoji_text.h)
+static char qrMsg[48] = ""; // may contain emojis (UTF-8, emoji_text.h)
 
-// SSID du badge : unique par personne — "badge-<Nom>" des que le nom est
-// configure via Setup (assaini pour le SSID : alphanumerique et tirets),
-// sinon le nom generique. Utilise par les AP WiFi Draw / Setup / OTA.
+// Badge SSID: unique per person - "badge-<Name>" once the name has been
+// configured via Setup (sanitized for the SSID: alphanumeric and dashes),
+// otherwise the generic name. Used by the Draw / Setup / OTA WiFi APs.
 static const char *badgeSsid()
 {
   static char ssid[33];
@@ -40,9 +40,9 @@ static const char *badgeSsid()
   return ssid;
 }
 
-// Petit QR utilitaire sur carte blanche arrondie, centre en (cx, cy) —
-// utilise par les ecrans d'attente Setup/Draw pour le QR WiFi (scan camera
-// -> le telephone rejoint l'AP -> le portail captif ouvre la page)
+// Small utility QR on a rounded white card, centered at (cx, cy) -
+// used by the Setup/Draw waiting screens for the WiFi QR (camera scan
+// -> the phone joins the AP -> the captive portal opens the page)
 static void qrMiniDraw(int cx, int cy, int target, const char *text)
 {
   static uint8_t mini[qrcodegen_BUFFER_LEN_FOR_VERSION(6)];
@@ -55,7 +55,7 @@ static void qrMiniDraw(int cx, int cy, int target, const char *text)
   if (scale < 1)
     scale = 1;
   int px = size * scale, x0 = cx - px / 2, y0 = cy - px / 2;
-  const int m = 8, rr = 8; // zone calme + coins arrondis
+  const int m = 8, rr = 8; // quiet zone + rounded corners
   canvas->fillRect(x0 - m, y0 - m - rr, px + 2 * m, px + 2 * m + 2 * rr,
                    RGB565_WHITE);
   canvas->fillRect(x0 - m - rr, y0 - m, px + 2 * m + 2 * rr, px + 2 * m,
@@ -73,10 +73,10 @@ static void qrMiniDraw(int cx, int cy, int target, const char *text)
 
 static uint8_t qrModules[qrcodegen_BUFFER_LEN_FOR_VERSION(8)];
 static bool qrValid = false;
-static uint16_t *qrSpr = nullptr; // sprite sphere du buddy (dvdGenSprite)
+static uint16_t *qrSpr = nullptr; // buddy sphere sprite (dvdGenSprite)
 
-// (Re)genere le QR et le sprite du buddy — a appeler a l'entree de l'ecran
-// (l'URL ou le buddy ont pu changer via Setup entre deux visites)
+// (Re)generates the QR and the buddy sprite - call on screen entry
+// (the URL or buddy may have changed via Setup between two visits)
 static void qrScreenPrepare()
 {
   uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(8)];
@@ -97,10 +97,10 @@ static void qrScreenRelease()
   }
 }
 
-// Carte d'identite du badge (design Figma) : buddy anime + pilule message
-// blanche chevauchant la sphere + NOM en Dingos titre + entreprise en Bebas.
-// Utilisee par la preview du Setup (et plus tard l'ecran social). Depend en
-// plus de mtPrint/mtTextW et bbPrint/bbTextW (a inclure avant).
+// Badge identity card (Figma design): animated buddy + white message pill
+// overlapping the sphere + NAME in Dingos title + company in Bebas.
+// Used by the Setup preview (and later the social screen). Also depends
+// on mtPrint/mtTextW and bbPrint/bbTextW (include beforehand).
 static void qrBuddyAnim(float cx, float cy, float fr, float t,
                         const uint16_t *spr);
 static void badgeCardDraw(float t, const uint16_t *spr)
@@ -109,22 +109,23 @@ static void badgeCardDraw(float t, const uint16_t *spr)
   qrBuddyAnim(CX, 150, 72.0f, t, spr);
   if (qrMsg[0])
   {
-    // pilule blanche accrochee en haut a droite de la sphere, contour 2 px
-    // #3E3E3E (stroke = pilule grise legerement plus grande dessous),
-    // padding horizontal serre (proportions de la maquette Figma).
-    // Garantie "jamais coupe par l'ecran rond" : si la pilule est trop large
-    // pour la corde du cercle a y0=84, elle descend par paliers (corde plus
-    // large vers le milieu) ; cas extreme restant -> texte elide avec "..".
+    // white pill hooked to the top right of the sphere, 2 px #3E3E3E
+    // outline (stroke = slightly larger grey pill underneath), tight
+    // horizontal padding (proportions of the Figma mockup).
+    // "Never clipped by the round screen" guarantee: if the pill is too
+    // wide for the circle's chord at y0=84, it steps down (the chord
+    // widens toward the middle); remaining extreme case -> text elided
+    // with "..".
     const int ph = 28, pad = 10;
     char msg[sizeof(qrMsg) + 2];
     snprintf(msg, sizeof(msg), "%s", qrMsg);
-    int tw = mxTextW(msg), total = tw + 2 * pad; // largeur visuelle pilule
+    int tw = mxTextW(msg), total = tw + 2 * pad; // visual pill width
     if (total < ph)
       total = ph;
     int y0 = 84, half = 0;
     for (;;)
     {
-      int dy = 181 - y0; // le bord haut est le plus proche du bord d'ecran
+      int dy = 181 - y0; // the top edge is closest to the screen edge
       half = (int)sqrtf(180.0f * 180.0f - (float)dy * dy);
       if (total + 8 <= 2 * half || y0 >= 128)
         break;
@@ -132,19 +133,19 @@ static void badgeCardDraw(float t, const uint16_t *spr)
     }
     while (total + 8 > 2 * half && strlen(msg) > 3)
     {
-      msg[strlen(msg) - 3] = 0; // retire un caractere (approx UTF-8 ok :
-      strcat(msg, "..");        // on coupe large, puis re-mesure)
+      msg[strlen(msg) - 3] = 0; // drops one character (UTF-8 approx ok:
+      strcat(msg, "..");        // cut generously, then re-measure)
       tw = mxTextW(msg);
       total = tw + 2 * pad;
     }
     int xmin = 181 - half + 4, xmax = 181 + half - 4;
-    int L = CX + 44; // bord gauche visuel de la pilule
+    int L = CX + 44; // visual left edge of the pill
     if (L + total > xmax)
       L = xmax - total;
     if (L < xmin)
       L = xmin;
     const int r = ph / 2, cy = y0 + r;
-    const int rx0 = L + r, rw = total - ph; // rect entre les deux bouts ronds
+    const int rx0 = L + r, rw = total - ph; // rect between the round ends
     const uint16_t stroke = rgb565(0x3E, 0x3E, 0x3E);
     canvas->fillRect(rx0, y0 - 2, rw, ph + 4, stroke);
     canvas->fillCircle(rx0, cy, r + 2, stroke);
@@ -173,13 +174,13 @@ static void badgeCardDraw(float t, const uint16_t *spr)
   }
 }
 
-// Buddy anime (respiration, regard qui se promene, clignements) — utilise
-// par l'ecran QR (medaillon) et la preview live du mode Setup
+// Animated buddy (breathing, wandering gaze, blinks) - used by the QR
+// screen (medallion) and the Setup mode live preview
 static void qrBuddyAnim(float cx, float cy, float fr, float t,
                         const uint16_t *spr)
 {
   float bob = sinf(t * 1.6f) * fr * 0.055f;
-  float ph = fmodf(t, 3.7f); // clignement bref toutes les ~3,7 s
+  float ph = fmodf(t, 3.7f); // brief blink every ~3.7 s
   float openness = 1.0f;
   if (ph > 3.45f)
   {
@@ -198,11 +199,11 @@ static void qrBuddyAnim(float cx, float cy, float fr, float t,
   avatarDrawExtras(cx, cy + bob, fr, breathe);
 }
 
-// Une frame de l'ecran QR (t en secondes) : QR INVERSE plein ecran — fond
-// noir, modules blancs, coeurs des mires lavande (iOS et les lecteurs
-// modernes lisent les QR inverses ; verifie au decodage sur captures).
-// building = QR "en construction" (modules aleatoires qui se remplissent,
-// pendant la saisie de l'URL dans Setup).
+// One frame of the QR screen (t in seconds): full-screen INVERTED QR -
+// black background, white modules, lavender finder cores (iOS and modern
+// readers decode inverted QRs; verified by decoding screen captures).
+// building = "under construction" QR (random modules filling in, while
+// the URL is being typed in Setup).
 static void qrScreenDraw(float t, bool building = false)
 {
   const uint16_t lav = rgb565(0x9d, 0x97, 0xed);
@@ -216,8 +217,8 @@ static void qrScreenDraw(float t, bool building = false)
 
   if (building)
   {
-    // placeholder "en construction" : mires reelles + modules aleatoires qui
-    // apparaissent progressivement (nouveau tirage a chaque cycle)
+    // "under construction" placeholder: real finder patterns + random
+    // modules appearing progressively (new draw each cycle)
     unsigned seed = (unsigned)(t / 2.6f) * 2654435761u + 12345u;
     float prog = fmodf(t, 2.6f) / 2.2f;
     for (int y = 0; y < size; y++)
@@ -249,7 +250,7 @@ static void qrScreenDraw(float t, bool building = false)
       {
         if (!qrcodegen_getModule(qrModules, x, y))
           continue;
-        // coeur 3x3 des trois mires en lavande, comme sur le sticker
+        // 3x3 core of the three finder patterns in lavender, like the sticker
         bool core = (x >= 2 && x <= 4 && y >= 2 && y <= 4) ||
                     (x >= size - 5 && x <= size - 3 && y >= 2 && y <= 4) ||
                     (x >= 2 && x <= 4 && y >= size - 5 && y <= size - 3);
@@ -265,11 +266,11 @@ static void qrScreenDraw(float t, bool building = false)
     canvas->print("bad URL");
   }
 
-  // medaillon noir (efface les modules) + buddy anime au centre
+  // black medallion (erases the modules) + animated buddy in the center
   canvas->fillCircle(CX, CY, 40, RGB565_BLACK);
   qrBuddyAnim(CX, CY, 34.0f, t, qrSpr);
 
-  // nom du speaker (configure via Setup) sous le QR
+  // speaker name (configured via Setup) below the QR
   if (qrName[0])
   {
     int tw = mdTextW(qrName);

@@ -1,4 +1,4 @@
-// Webapp de dessin gzippee (generee depuis tools/drawapp.html).
+// Gzipped drawing webapp (generated from tools/drawapp.html).
 #pragma once
 #include <stdint.h>
 

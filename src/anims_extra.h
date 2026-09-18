@@ -1,6 +1,6 @@
-// Animations "Three Globe" et "Three Conf" (vintage) portees de
-// screen-anims.js. Fichier partage entre main.cpp et le harnais de test
-// desktop : n'utiliser que l'API canvas->, rgb565/hsv2rgb565, frand,
+// "Three Globe" and "Three Conf" (vintage) animations ported from
+// screen-anims.js. File shared between main.cpp and the desktop test
+// harness: use only the canvas-> API, rgb565/hsv2rgb565, frand,
 // W/H/CX/CY/RADIUS.
 #pragma once
 #include <string.h>
@@ -8,9 +8,9 @@
 #include "speaker_photo.h"
 #include "speaker_photo3.h"
 
-// ---------------------------------------------------- helpers CRT / couleurs
+// ---------------------------------------------------- CRT / color helpers
 
-// Assombrit une ligne du framebuffer (~x0.81), pour les scanlines CRT
+// Darkens one framebuffer row (~x0.81), for the CRT scanlines
 static void dimRow(int y, int x0, int x1)
 {
   uint16_t *fb = canvas->getFramebuffer();
@@ -23,7 +23,7 @@ static void dimRow(int y, int x0, int x1)
   }
 }
 
-// Gradient horizontal ecran du globe : magenta -> cyan -> jaune
+// Horizontal screen gradient of the globe: magenta -> cyan -> yellow
 static uint16_t globeGradient(int x)
 {
   const int GR = (int)(RADIUS * 0.92f);
@@ -47,10 +47,11 @@ static uint16_t globeGradient(int x)
   return rgb565(r, g, b);
 }
 
-// ------------------------------------- logo TG (globe) : pretraitement + rendu
+// ------------------------------------- TG logo (globe): preprocessing + render
 
-// Version du logo pour le globe : sous-titre "CONFERENCE" retire, contre-formes
-// fermees marquees 3 (navy opaque), seul le fond exterieur reste transparent.
+// Logo version for the globe: "CONFERENCE" subtitle removed, closed
+// counterforms marked 3 (opaque navy), only the outer background stays
+// transparent.
 static int8_t *tgLogo = nullptr;
 
 static void initTgLogo()
@@ -61,10 +62,10 @@ static void initTgLogo()
   {
     int8_t v = TC_DATA[i] - '0';
     if (v == 1 && i / TC_W >= 66)
-      v = 0; // retire "CONFERENCE"
+      v = 0; // removes "CONFERENCE"
     tgLogo[i] = v;
   }
-  // flood fill du fond exterieur depuis les bords
+  // flood fill of the outer background from the edges
   uint8_t *ext = (uint8_t *)calloc(n, 1);
   int *stack = (int *)malloc(n * sizeof(int));
   int sp = 0;
@@ -96,12 +97,12 @@ static void initTgLogo()
   }
   for (int i = 0; i < n; i++)
     if (tgLogo[i] == 0 && !ext[i])
-      tgLogo[i] = 3; // trou ferme -> navy
+      tgLogo[i] = 3; // closed hole -> navy
   free(stack);
   free(ext);
 }
 
-// Peint le logo TG par runs verticaux : cols[v] = couleur (0 -> transparent)
+// Paints the TG logo as vertical runs: cols[v] = color (0 -> transparent)
 static void tgPaint(float offx, float offy, const uint16_t cols[4], const bool skip[4])
 {
   const float scale = (2.0f * RADIUS * 0.90f) / TC_W;
@@ -131,14 +132,15 @@ static void tgPaint(float offx, float offy, const uint16_t cols[4], const bool s
 
 // -------------------------------------------------------------- three globe
 
-// Globe filaire retro (meridiens + paralleles) en degrade magenta/cyan/jaune
-// fixe a l'ecran, logo THREE CONF .JS net par-dessus, scanlines CRT.
+// Retro wireframe globe (meridians + parallels) in a magenta/cyan/yellow
+// gradient fixed to the screen, sharp THREE CONF .JS logo on top, CRT
+// scanlines.
 static void animGlobe(float t)
 {
   const uint16_t NAVY = rgb565(10, 7, 38); // #0a0726
 
   canvas->fillScreen(rgb565(22, 20, 58)); // #16143a
-  // lueur violette douce derriere le globe (degrade approxime)
+  // soft purple glow behind the globe (approximated gradient)
   canvas->fillCircle(CX, (int)(CY * 0.94f), (int)(RADIUS * 0.75f), rgb565(34, 27, 66));
   canvas->fillCircle(CX, (int)(CY * 0.92f), (int)(RADIUS * 0.45f), rgb565(45, 33, 75));
 
@@ -146,8 +148,8 @@ static void animGlobe(float t)
   const float ct = cosf(tilt), st = sinf(tilt);
   const float rotY = t * 0.4f;
 
-  // trace une polyligne sur la sphere : halo dim decale +/-1px puis trait net
-  // P(phi, lam) -> ecran
+  // strokes a polyline on the sphere: dim halo offset +/-1px then a sharp
+  // line. P(phi, lam) -> screen
   auto project = [&](float phi, float lam, int *sx, int *sy) {
     float cphi = cosf(phi);
     float X = cphi * cosf(lam), Y = sinf(phi), Z = cphi * sinf(lam);
@@ -163,7 +165,7 @@ static void animGlobe(float t)
     canvas->drawLine(x0, y0 + 1, x1, y1 + 1, dim);
     canvas->drawLine(x0, y0, x1, y1, col);
   };
-  // 16 meridiens (26 segments)
+  // 16 meridians (26 segments)
   for (int j = 0; j < 16; j++)
   {
     float lam = (float)j / 16 * 2 * PI + rotY;
@@ -178,7 +180,7 @@ static void animGlobe(float t)
       py = sy;
     }
   }
-  // 8 paralleles (52 segments)
+  // 8 parallels (52 segments)
   for (int i = 1; i < 9; i++)
   {
     float phi = -PI / 2 + (float)i / 9 * PI;
@@ -194,7 +196,7 @@ static void animGlobe(float t)
     }
   }
 
-  // logo net et plat par-dessus : 4 passes de contour navy puis vraies couleurs
+  // sharp flat logo on top: 4 navy outline passes then the real colors
   const uint16_t PINK = rgb565(0xfc, 0xa3, 0xf7), YELL = rgb565(0xfb, 0xd9, 0x75);
   const uint16_t outline[4] = {0, NAVY, NAVY, NAVY};
   const uint16_t colors[4] = {0, PINK, YELL, NAVY};
@@ -206,27 +208,27 @@ static void animGlobe(float t)
   tgPaint(0, o, outline, skipNone);
   tgPaint(0, 0, colors, skipNone);
 
-  // scanlines CRT (1 ligne sur 3)
+  // CRT scanlines (1 row out of 3)
   for (int y = 0; y < H; y += 3)
     dimRow(y, 0, W);
 }
 
 // -------------------------------------------------------------- three conf
 
-// Logo vintage : intro colonnes qui glissent de la gauche, lettres en
-// arc-en-ciel anime, fond a trame de points, scanlines + bob vertical.
+// Vintage logo: intro with columns sliding in from the left, letters in
+// an animated rainbow, dot-pattern background, scanlines + vertical bob.
 static void animThreeConf(float t, int yOff = 0)
 {
-  // yOff : decalage vertical optionnel (le splash de boot remonte le logo de
-  // 20 px pour laisser respirer le loader ; l'anim du menu reste centree).
+  // yOff: optional vertical offset (the boot splash raises the logo by
+  // 20 px to give the loader some room; the menu anim stays centered).
   const uint16_t BG = rgb565(0x0c, 0x14, 0x0e);
-  const float cell = 1.5f; // echelle du logo (1.0 = taille native 185x80)
+  const float cell = 1.5f; // logo scale (1.0 = native size 185x80)
   const int gw = (int)(TC_W * cell), gh = (int)(TC_H * cell);
   const int x0 = CX - gw / 2;
   const int y0base = CY - gh / 2 + yOff;
 
   canvas->fillScreen(BG);
-  // trame de points discrete
+  // subtle dot pattern
   uint16_t dotC = rgb565(19, 31, 22);
   for (int yy = 0; yy < H; yy += 8)
     for (int xx = 0; xx < W; xx += 8)
@@ -241,12 +243,12 @@ static void animThreeConf(float t, int yOff = 0)
   {
     if (gx > front)
       break;
-    float fp = min(1.0f, max(0.0f, (front - gx) / SLIDE)); // 0 (arrive) -> 1 (cale)
+    float fp = min(1.0f, max(0.0f, (front - gx) / SLIDE)); // 0=arriving, 1=settled
     int dx = (int)(-(1 - fp) * (1 - fp) * SLIDE_DIST);
     int colX = x0 + (int)(gx * cell) + dx;
     int colW = max(1, x0 + (int)((gx + 1) * cell) - (x0 + (int)(gx * cell)));
     float alpha = 0.25f + 0.75f * fp;
-    // arc-en-ciel anime sur les lettres (roses ET badge .JS)
+    // animated rainbow on the letters (pink ones AND the .JS badge)
     uint8_t hue = (uint8_t)(fmodf(gx * 2.4f + t * 130.0f, 360.0f) * 255.0f / 360.0f);
     uint16_t pinkC = hsv2rgb565(hue, 130, (uint8_t)(246 * alpha));
     uint16_t whiteC = rgb565((int)(255 * alpha), (int)(255 * alpha), (int)(255 * alpha));
@@ -267,39 +269,40 @@ static void animThreeConf(float t, int yOff = 0)
     }
   }
 
-  // trait lumineux au front d'arrivee
+  // bright line at the arrival front
   if (t < T_IN)
   {
     int fx = x0 + (int)(min((float)TC_W, front) * cell);
     canvas->fillRect(fx - 1, y0, 3, gh, rgb565(220, 220, 220));
   }
 
-  // scanlines CRT (1 ligne sur 3)
+  // CRT scanlines (1 row out of 3)
   for (int y = 0; y < H; y += 3)
     dimRow(y, 0, W);
 }
 
 // ------------------------------------------------------------ idle rainbow
 
-// Le perso plein ecran (drawCharacter 'rainbow') : texture sphere qui tourne
-// avec le regard (11 frames -30..+30 deg, blend des 2 plus proches), vignette
-// de bord + highlights fixes cuits dans les frames, grain ecran, visage idle.
+// Full-screen character (drawCharacter 'rainbow'): sphere texture that
+// turns with the gaze (11 frames -30..+30 deg, blend of the 2 nearest),
+// edge vignette + fixed highlights baked into the frames, screen grain,
+// idle face.
 #define IR_SPR 112
 #define IR_FRAMES 11
 #define IR_MAXROT 30.0f
 #define IR_SIGMA2 (2 * 0.16f * 0.16f)
-#define IR_CUTOFF2 (0.55f * 0.55f) // au-dela, poids gaussien negligeable
-static uint8_t *irFrames[IR_FRAMES]; // RGB888 (3 octets/px) : 8 bits/canal,
-                                     // la quantification 565 n'arrive qu'a
-                                     // la fin (dithering) -> plus de banding
+#define IR_CUTOFF2 (0.55f * 0.55f) // beyond this, gaussian weight negligible
+static uint8_t *irFrames[IR_FRAMES]; // RGB888 (3 bytes/px): 8 bits/channel,
+                                     // 565 quantization only happens at
+                                     // the end (dithering) -> no banding
 static uint8_t *irScratch = nullptr;
-// tables de reechantillonnage bilineaire demi-resolution -> texture
+// bilinear resampling tables, half resolution -> texture
 static uint16_t irTIdx[W / 2];
 static uint8_t irTFrac[W / 2];
 static int8_t irNoise[256];
-static float irExpLUT[130]; // expf(-d2/sigma2) tabule -> generation ~8x plus rapide
+static float irExpLUT[130]; // expf(-d2/sigma2) tabulated -> ~8x faster gen
 
-// Overscan identique au JS : la sphere est un peu plus grande que l'ecran
+// Same overscan as the JS: the sphere is a bit larger than the screen
 #define IR_SB (RADIUS * 0.13f)
 #define IR_DRAWN (W + 2 * IR_SB)
 
@@ -308,7 +311,7 @@ static void irInit()
   for (int i = 0; i < IR_FRAMES; i++)
     irFrames[i] = (uint8_t *)malloc(IR_SPR * IR_SPR * 3);
   irScratch = (uint8_t *)malloc(IR_SPR * IR_SPR * 3);
-  // le rendu se fait en demi-resolution (blocs 2x2) : echantillon au centre
+  // rendering runs at half resolution (2x2 blocks): sample at the center
   for (int x = 0; x < W / 2; x++)
   {
     float tf = (2 * x + 0.5f + IR_SB) * IR_SPR / IR_DRAWN - 0.5f;
@@ -320,16 +323,16 @@ static void irInit()
     irTFrac[x] = (uint8_t)((tf - (int)tf) * 16);
   }
   for (int i = 0; i < 256; i++)
-    irNoise[i] = (int8_t)frand(0.0f, 8.0f); // dither ordonne 0..7 (pas de
-                                            // quantification R/B en 565)
+    irNoise[i] = (int8_t)frand(0.0f, 8.0f); // ordered dither 0..7 (the R/B
+                                            // quantization step in 565)
   for (int i = 0; i < 130; i++)
     irExpLUT[i] = expf(-(i * (IR_CUTOFF2 / 128.0f)) / IR_SIGMA2);
 }
 
-// Genere une frame de rotation : blend gaussien des points tournes autour de Y,
-// vibrance, puis vignette de bord + highlights (fixes a l'ecran) cuits dedans.
-// Les couleurs passent par la transformation de l'AVATAR actif (teinte +
-// saturation, voir avatars.h) : chaque badge a sa sphere.
+// Generates one rotation frame: gaussian blend of the points rotated
+// around Y, vibrance, then edge vignette + highlights (fixed on screen)
+// baked in. Colors go through the active AVATAR's transform (hue +
+// saturation, see avatars.h): each badge has its own sphere.
 static void irGenFrame(int fi)
 {
   const float rotDeg = -IR_MAXROT + fi * (2 * IR_MAXROT / (IR_FRAMES - 1));
@@ -337,10 +340,10 @@ static void irGenFrame(int fi)
   const float cosT = cosf(theta), sinT = sinf(theta);
   const float satBoost = 1.75f, lumBoost = 1.12f;
   const float d2toLut = 128.0f / IR_CUTOFF2;
-  const float rTex = IR_SPR * 229.0f / 466.0f; // rayon boule dans la frame (ratio JS)
+  const float rTex = IR_SPR * 229.0f / 466.0f; // ball radius in the frame (JS ratio)
 
-  // couleurs de la palette transformees par l'avatar actif (ou le buddy
-  // custom configure via Setup, qui prend le pas sur la table)
+  // palette colors transformed by the active avatar (or the custom buddy
+  // configured via Setup, which takes precedence over the table)
   const AvatarDef &av = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
   float PC[PAL_N][3];
   for (unsigned k = 0; k < PAL_N; k++)
@@ -361,7 +364,7 @@ static void irGenFrame(int fi)
     }
   }
 
-  // points de la palette tournes autour de l'axe Y
+  // palette points rotated around the Y axis
   float rpx[PAL_N], rpy[PAL_N], rvis[PAL_N];
   for (unsigned k = 0; k < PAL_N; k++)
   {
@@ -408,12 +411,12 @@ static void irGenFrame(int fi)
           pb = (lum + (pb - lum) * satBoost) * lumBoost;
         }
       }
-      // position ecran du texel (fixe) -> vignette + highlights cuits
+      // screen position of the texel (fixed) -> baked vignette + highlights
       float sx = -IR_SB + (x + 0.5f) * IR_DRAWN / IR_SPR;
       float sy = -IR_SB + (y + 0.5f) * IR_DRAWN / IR_SPR;
       float dxc = sx - CX, dyc = sy - CY;
       float rr = sqrtf(dxc * dxc + dyc * dyc) / RADIUS;
-      // rimShade prononce : rgba(12,7,20) 0 -> 0.22@0.60 -> 0.70@0.88 -> 1.0@1.0
+      // strong rimShade: rgba(12,7,20) 0 -> 0.22@0.60 -> 0.70@0.88 -> 1.0@1.0
       float a;
       if (rr < 0.60f)
         a = rr / 0.60f * 0.22f;
@@ -424,7 +427,7 @@ static void irGenFrame(int fi)
       pr = pr * (1 - a) + 12 * a;
       pg = pg * (1 - a) + 7 * a;
       pb = pb * (1 - a) + 20 * a;
-      // highlight principal haut-gauche (blanc dore, additif)
+      // main top-left highlight (golden white, additive)
       float d1x = sx - (CX - RADIUS * 0.35f), d1y = sy - (CY - RADIUS * 0.45f);
       float u1 = sqrtf(d1x * d1x + d1y * d1y) / (RADIUS * 0.42f);
       if (u1 < 1)
@@ -440,7 +443,7 @@ static void irGenFrame(int fi)
         pg += 244 * ha;
         pb += 205 * ha;
       }
-      // highlight secondaire haut-droite (rose tendre, additif)
+      // secondary top-right highlight (soft pink, additive)
       float d2x = sx - (CX + RADIUS * 0.55f), d2y = sy - (CY - RADIUS * 0.20f);
       float u2 = sqrtf(d2x * d2x + d2y * d2y) / (RADIUS * 0.25f);
       if (u2 < 1)
@@ -462,21 +465,22 @@ static void animIdleRainbow(float t)
   float lookX, lookY, openness;
   getIdle(t, &lookX, &lookY, &openness);
 
-  // rencontre sociale : la sphere suit l'expression — regard gele en douceur
-  // (equivalent des lookFreeze des triggers du visualiseur)
+  // social encounter: the sphere follows the expression -- gaze smoothly
+  // frozen (equivalent of the visualizer triggers' lookFreeze)
   lookX *= (1.0f - g_lookFreeze);
   lookY *= (1.0f - g_lookFreeze);
 
-  // choix des 2 frames de rotation + blend (comme getSphereFramesBlended)
+  // pick the 2 rotation frames + blend (like getSphereFramesBlended)
   float fidx = (lookX * IR_MAXROT + IR_MAXROT) / (2 * IR_MAXROT / (IR_FRAMES - 1));
   int lo = (int)fidx;
   if (lo < 0)
     lo = 0;
   if (lo > IR_FRAMES - 2)
     lo = IR_FRAMES - 2;
-  // regeneration apres changement d'avatar/buddy : les frames AFFICHEES
-  // (lo, lo+1) sont refaites immediatement — sinon on voyait l'ancienne
-  // sphere un instant — puis une frame de fond par appel pour le reste
+  // regeneration after an avatar/buddy change: the DISPLAYED frames
+  // (lo, lo+1) are redone immediately -- otherwise the old sphere was
+  // visible for an instant -- then one background frame per call for the
+  // rest
   if (irDirtyMask)
   {
     irDirtyMask &= (1u << IR_FRAMES) - 1;
@@ -512,20 +516,20 @@ static void animIdleRainbow(float t)
     tex = texB;
   else
   {
-    // lerp par octet, pleine precision 8 bits
+    // per-byte lerp, full 8-bit precision
     const int inv = 16 - alpha16;
     for (int i = 0; i < IR_SPR * IR_SPR * 3; i++)
       irScratch[i] = (uint8_t)((texA[i] * inv + texB[i] * alpha16) >> 4);
     tex = irScratch;
   }
 
-  // upscale bilineaire en demi-resolution (chaque echantillon remplit un bloc
-  // 2x2) + grain discret : ~2x plus rapide, invisible sur ces degrades doux.
-  // g_sphereYOff : rebond vertical de la sphere pendant une reaction sociale
-  // (bandes decouvertes remises a noir).
-  // g_sphereScale : battement de coeur du mode Love — tables d'echantillonnage
-  // regenerees pour la frame (180 entrees, cout negligeable), pixels hors
-  // texture -> noir (la sphere retrecit proprement sur fond noir)
+  // bilinear upscale at half resolution (each sample fills a 2x2 block)
+  // + subtle grain: ~2x faster, invisible on these soft gradients.
+  // g_sphereYOff: vertical bounce of the sphere during a social reaction
+  // (uncovered bands reset to black).
+  // g_sphereScale: Love mode heartbeat -- sampling tables regenerated for
+  // the frame (180 entries, negligible cost), pixels outside the texture
+  // -> black (the sphere shrinks cleanly on a black background)
   const float ss = g_sphereScale;
   const bool scaled = ss < 0.999f || ss > 1.001f;
   static uint16_t sIdx[W / 2];
@@ -552,9 +556,9 @@ static void animIdleRainbow(float t)
   const uint16_t *TIdx = scaled ? sIdx : irTIdx;
   const uint8_t *TFrac = scaled ? sFrac : irTFrac;
   uint16_t *fb = canvas->getFramebuffer();
-  // cache de 2 lignes source en RAM interne, invalide a chaque frame (la
-  // texture change) : l'interpolation pioche en memoire rapide, la PSRAM
-  // n'est lue que sequentiellement
+  // 2 source rows cached in internal RAM, invalidated every frame (the
+  // texture changes): interpolation reads from fast memory, PSRAM is
+  // only read sequentially
   static uint8_t rowCache[2][IR_SPR * 3 + 4];
   int rowCached = -2;
   const int yOff = g_sphereYOff;
@@ -569,7 +573,7 @@ static void animIdleRainbow(float t)
     uint16_t *d1 = (dy + 1 >= 0 && dy + 1 < H) ? &fb[(dy + 1) * W] : nullptr;
     if (!d0 && !d1)
       continue;
-    if (scaled && sOut[y2]) // ligne hors sphere retrecie -> noir
+    if (scaled && sOut[y2]) // row outside the shrunken sphere -> black
     {
       if (d0)
         memset(d0, 0, W * sizeof(uint16_t));
@@ -580,7 +584,7 @@ static void animIdleRainbow(float t)
     int srcRow = TIdx[y2];
     if (srcRow != rowCached)
     {
-      if (srcRow == rowCached + 1) // avance d'une ligne : B devient A
+      if (srcRow == rowCached + 1) // advanced one row: B becomes A
       {
         memcpy(rowCache[0], rowCache[1], IR_SPR * 3);
         memcpy(rowCache[1], &tex[(srcRow + 1) * IR_SPR * 3], IR_SPR * 3);
@@ -597,7 +601,7 @@ static void animIdleRainbow(float t)
     int fy = TFrac[y2];
     for (int x2 = 0; x2 < W / 2; x2++)
     {
-      if (scaled && sOut[x2]) // colonne hors sphere -> noir
+      if (scaled && sOut[x2]) // column outside the sphere -> black
       {
         int xx = x2 * 2;
         if (d0)
@@ -612,8 +616,8 @@ static void animIdleRainbow(float t)
       int r = (p00[0] * w00 + p00[3] * w10 + p01[0] * w01 + p01[3] * w11) >> 8;
       int g = (p00[1] * w00 + p00[4] * w10 + p01[1] * w01 + p01[4] * w11) >> 8;
       int b = (p00[2] * w00 + p00[5] * w10 + p01[2] * w01 + p01[5] * w11) >> 8;
-      // quantification 565 avec dither ordonne (0..7) : casse les bandes de
-      // degrade sans grain visible
+      // 565 quantization with ordered dither (0..7): breaks gradient
+      // banding without visible grain
       int d8 = irNoise[(x2 * 7 + y2 * 131) & 255];
       r += d8;
       g += d8 >> 1;
@@ -640,12 +644,12 @@ static void animIdleRainbow(float t)
 
 // ------------------------------------------------------------------- dvd
 
-// Sphere-perso qui rebondit facon ecran de veille DVD : trainee, etincelles au
-// bord, et changement de palette a chaque rebond (rainbow, sunset, acid,
-// bubblegum, love — VORTEX_PALS du JS). Les 5 sprites sont pre-generes au boot
-// par le meme blend gaussien que la sphere du snake.
+// Character sphere bouncing around like a DVD screensaver: trail, sparks on
+// impact, and a palette change at every bounce (rainbow, sunset, acid,
+// bubblegum, love -- VORTEX_PALS from the JS). The 5 sprites are pre-generated
+// at boot by the same gaussian blend as the snake sphere.
 
-// Palette "Love" — rose romantique custom (PAL_LOVE de screen-anims.js)
+// "Love" palette -- custom romantic pink (PAL_LOVE from screen-anims.js)
 static const float PAL_LOVE[][5] = {
     {-0.65, -0.65, 255, 215, 230}, {-0.43, -0.65, 255, 220, 220}, {-0.22, -0.65, 255, 200, 210},
     {0.00, -0.65, 255, 180, 200}, {0.22, -0.65, 240, 160, 190}, {0.43, -0.65, 210, 130, 170},
@@ -669,9 +673,9 @@ static const float PAL_LOVE[][5] = {
     {-0.797, -0.460, 255, 230, 230}, {0.000, -0.920, 250, 195, 210}};
 
 #define DVD_NPAL 5
-static uint16_t *dvdSprites[DVD_NPAL]; // [0] = pointe sur ballSprite (rainbow)
+static uint16_t *dvdSprites[DVD_NPAL]; // [0] = points to ballSprite (rainbow)
 
-// rgb <-> hsl pour les variantes decalees en teinte (port de shiftHue du JS)
+// rgb <-> hsl for the hue-shifted variants (port of shiftHue from the JS)
 static void rgb2hsl(float r, float g, float b, float *h, float *s, float *l)
 {
   r /= 255; g /= 255; b /= 255;
@@ -706,16 +710,16 @@ static void hsl2rgb(float h, float s, float l, float *r, float *g, float *b)
   *b = hue2rgb1(p, q, h - 1.0f / 3) * 255;
 }
 
-// Genere un sprite de sphere depuis une table de points {px,py,r,g,b},
-// avec option de decalage de teinte (comme shiftHue du JS). Meme rendu que
-// initBallSprite : blend gaussien + vibrance + grain, via la LUT d'expf.
+// Generates a sphere sprite from a {px,py,r,g,b} point table, with optional
+// hue shifting (like shiftHue in the JS). Same rendering as initBallSprite:
+// gaussian blend + vibrance + grain, through the expf LUT.
 static uint16_t *dvdGenSprite(const float (*pts)[5], int npts, float hueDeg, float satMul)
 {
   uint16_t *dst = (uint16_t *)malloc(SPR * SPR * sizeof(uint16_t));
   const float satBoost = 1.75f, lumBoost = 1.12f, grainAmp = 40.0f;
   const float r = SPR / 2.0f - 1;
   const float d2toLut = 128.0f / IR_CUTOFF2;
-  // palette transformee + visibilite
+  // transformed palette + visibility
   float P[64][5], vis[64];
   for (int k = 0; k < npts; k++)
   {
@@ -788,7 +792,7 @@ static void dvdInitSprites()
   dvdSprites[4] = dvdGenSprite(PAL_LOVE, sizeof(PAL_LOVE) / sizeof(PAL_LOVE[0]), 0, 1.0f); // love
 }
 
-// Blit du sprite avec attenuation de luminosite (trainee) — masque disque
+// Sprite blit with brightness attenuation (trail) -- disc mask
 static void dvdBlit(const uint16_t *spr, int cx, int cy, float rf, uint8_t bright)
 {
   int r = (int)rf;
@@ -849,7 +853,7 @@ static void animDvd(float t, float dt)
       dvdSparks[i].life = 0;
   }
 
-  // deplacement + rebond billard sur le bord du disque
+  // movement + billiard bounce off the disc edge
   dvdX += dvdVx * dt;
   dvdY += dvdVy * dt;
   float dx = dvdX - CX, dy = dvdY - CY;
@@ -862,7 +866,7 @@ static void animDvd(float t, float dt)
     dvdVy -= 2 * dot * ny;
     dvdX = CX + nx * maxR;
     dvdY = CY + ny * maxR;
-    dvdPal = (dvdPal + 1) % DVD_NPAL; // change de palette a chaque rebond
+    dvdPal = (dvdPal + 1) % DVD_NPAL; // new palette at every bounce
     for (int i = 0; i < 6; i++)
       if (dvdSparks[i].life <= 0)
       {
@@ -873,7 +877,7 @@ static void animDvd(float t, float dt)
 
   canvas->fillScreen(rgb565(10, 8, 20)); // #0a0814
 
-  // trainee : fantomes attenues derriere la sphere, le long de la vitesse
+  // trail: dimmed ghosts behind the sphere, along the velocity vector
   float vn = sqrtf(dvdVx * dvdVx + dvdVy * dvdVy);
   float ux = dvdVx / vn, uy = dvdVy / vn;
   for (int i = 5; i >= 1; i--)
@@ -883,11 +887,11 @@ static void animDvd(float t, float dt)
     dvdBlit(dvdSprites[dvdPal], (int)gx, (int)gy, ballR * (1 - 0.04f * i),
             (uint8_t)(56 - i * 8));
   }
-  // sphere + visage anime
+  // sphere + animated face
   dvdBlit(dvdSprites[dvdPal], (int)dvdX, (int)dvdY, ballR, 255);
   drawIdleFace(dvdX, dvdY, ballR, t);
 
-  // etincelles : anneaux blancs qui s'etendent et s'eteignent
+  // sparks: white rings that expand and fade out
   for (int i = 0; i < 6; i++)
   {
     if (dvdSparks[i].life <= 0)
@@ -903,8 +907,8 @@ static void animDvd(float t, float dt)
 
 // ---------------------------------------------------------------- points
 
-// Nuage de 300 points 3D qui tourne et morphe sphere -> cube -> tore,
-// profondeur = taille + eclat ("GPGPU particles").
+// Cloud of 300 3D points rotating and morphing sphere -> cube -> torus,
+// depth = size + brightness ("GPGPU particles").
 #define PTS_N 300
 static float ptsShapes[3][PTS_N][3];
 
@@ -983,15 +987,15 @@ static void animPoints(float t)
   }
 }
 
-// ------------------------------------------------------- photo du speaker
+// ---------------------------------------------------------- speaker photo
 
-// Avatar plein ecran : copie directe du tableau flash vers le framebuffer.
+// Full-screen avatar: direct copy from the flash array to the framebuffer.
 static void animPhoto(float)
 {
   memcpy(canvas->getFramebuffer(), SPEAKER_PHOTO, (size_t)W * H * 2);
 }
 
-// Deuxieme avatar (test photo couleur), statique comme animPhoto.
+// Second avatar (color photo test), static like animPhoto.
 static void animPhoto3(float)
 {
   memcpy(canvas->getFramebuffer(), SPEAKER_PHOTO3, (size_t)W * H * 2);
@@ -1002,8 +1006,8 @@ static void animPhoto2(float t)
 {
   uint16_t *fb = canvas->getFramebuffer();
 
-  // zoom 1.00..1.05 (vers l'interieur uniquement : jamais d'echantillon hors
-  // image), reechantillonnage nearest en virgule fixe 16.16
+  // zoom 1.00..1.05 (inward only: never samples outside the image),
+  // nearest resampling in 16.16 fixed point
   float s = 1.025f + 0.025f * sinf(t * 0.9f);
   uint32_t inv = (uint32_t)(65536.0f / s);
   for (int y = 0; y < H; y++)
@@ -1016,7 +1020,7 @@ static void animPhoto2(float t)
       row[x] = src[u >> 16];
   }
 
-  // barre de balayage CRT : bande claire qui descend (periode ~8.7 s)
+  // CRT sweep bar: bright band scrolling down (period ~8.7 s)
   float yb = fmodf(t * 55.0f, (float)(H + 120)) - 60.0f;
   for (int dyy = -18; dyy <= 18; dyy++)
   {
@@ -1035,16 +1039,16 @@ static void animPhoto2(float t)
     }
   }
 
-  // scanlines (1 ligne sur 3)
+  // scanlines (1 row out of 3)
   for (int y = 0; y < H; y += 3)
     dimRow(y, 0, W);
 }
 
 // ------------------------------------------------ 14. warp (hyperespace)
-// Porte de drawWarp (screen-anims.js) : etoiles filantes radiales avec
-// trainee, pulses de vitesse, sphere-perso qui bat au centre. Les couleurs
-// et constantes sont celles du JS ; l'alpha du canvas est remplace par une
-// mise a l'echelle RGB (fond quasi noir -> equivalent visuel).
+// Port of drawWarp (screen-anims.js): radial shooting stars with trails,
+// speed pulses, character sphere beating at the center. Colors and
+// constants come from the JS; the canvas alpha is replaced by RGB scaling
+// (near-black background -> visually equivalent).
 #define WARP_N 100
 static struct
 {
@@ -1116,20 +1120,20 @@ static void animWarp(float t, float dt)
       canvas->drawLine(x0 + (sa > 0 ? 1 : -1), y0, x1 + (sa > 0 ? 1 : -1), y1, col);
   }
 
-  // sphere-perso au centre : elle SE RAPPROCHE pendant les pulses de warp
-  // (revue Romain 2026-08-29) — l'echelle suit la poussee (surge 1..3.4 ->
-  // x0.88..x1.34), + un petit battement residuel
-  // pic a ~x2.2 (revue Romain : plus spectaculaire)
+  // character sphere at the center: it COMES CLOSER during the warp pulses
+  // (review 2026-08-29 (Romain)) -- the scale follows the surge (1..3.4 ->
+  // x0.88..x1.34), plus a small residual beat
+  // peak at ~x2.2 (review (Romain): more spectacular)
   float br = RADIUS * 0.2f * (0.88f + 0.55f * (surge - 1) + 0.03f * sinf(t * 3));
   dvdBlit(dvdSprites[0], CX, CY, br, 255);
   drawIdleFace(CX, CY, br, t);
 }
 
-// ------------------------------------------- 15. solar system (planetes)
-// Porte de drawSolar (screen-anims.js) : soleil = sphere-perso rainbow,
-// 3 planetes (palettes sunset/acid/bubblegum des sprites DVD) sur des
-// orbites elliptiques vues de biais (SQ=0.42), etoiles scintillantes,
-// trainee de points et anneau sur la 2e planete, tri par profondeur.
+// -------------------------------------------- 15. solar system (planets)
+// Port of drawSolar (screen-anims.js): sun = rainbow character sphere,
+// 3 planets (sunset/acid/bubblegum palettes from the DVD sprites) on
+// elliptical orbits seen at an angle (SQ=0.42), twinkling stars, point
+// trail and a ring on the 2nd planet, depth sorting.
 #define SOLAR_NSTARS 70
 static struct
 {
@@ -1148,8 +1152,8 @@ static const struct
     {2, 0.60f, 0.62f, 0.10f, 1.8f, true},    // acid
     {3, 0.82f, 0.42f, 0.065f, 3.6f, false}}; // bubblegum
 
-// ellipse en polyligne (la Canvas de l'emulateur n'a pas drawEllipse) ;
-// gere la rotation (l'anneau du JS est incline de 0.5 rad)
+// polyline ellipse (the emulator Canvas has no drawEllipse); handles
+// rotation (the JS ring is tilted by 0.5 rad)
 static void solarEllipse(float cx, float cy, float rx, float ry, float rot,
                          uint16_t col)
 {
@@ -1189,12 +1193,12 @@ static void animSolar(float t, float)
   const float SQ = 0.42f;
   canvas->fillScreen(rgb565(5, 4, 14)); // #05040e
 
-  // halo du soleil (gradient radial du JS, approxime) — AVANT les orbites
+  // sun halo (radial gradient from the JS, approximated) -- BEFORE orbits
   canvas->fillCircle(CX, CY, (int)(RADIUS * 0.36f), rgb565(24, 18, 22));
   canvas->fillCircle(CX, CY, (int)(RADIUS * 0.22f), rgb565(46, 36, 30));
   canvas->fillCircle(CX, CY, (int)(RADIUS * 0.12f), rgb565(74, 60, 42));
 
-  // etoiles scintillantes (#cfd8ff module par un sinus)
+  // twinkling stars (#cfd8ff modulated by a sine)
   for (int i = 0; i < SOLAR_NSTARS; i++)
   {
     float aS = 0.35f + 0.4f * sinf(t * 2 + solarStars[i].tw);
@@ -1211,7 +1215,7 @@ static void animSolar(float t, float)
     solarEllipse(CX, CY, SOLAR_PL[p].a * RADIUS, SOLAR_PL[p].a * RADIUS * SQ,
                  0, rgb565(38, 38, 46));
 
-  // planetes + soleil, tries par profondeur (z = sin(ang), loin -> pres)
+  // planets + sun, depth-sorted (z = sin(ang), far -> near)
   struct Item
   {
     float sx, sy, r, z, ang, a;
@@ -1239,13 +1243,13 @@ static void animSolar(float t, float)
   for (int i = 0; i < 4; i++)
   {
     Item &it = items[i];
-    if (it.pal < 0) // soleil : sphere-perso rainbow avec visage
+    if (it.pal < 0) // sun: rainbow character sphere with a face
     {
       dvdBlit(dvdSprites[0], CX, CY, it.r, 255);
       drawIdleFace(CX, CY, it.r, t);
       continue;
     }
-    for (int k = 1; k <= 6; k++) // trainee de points sur l'orbite
+    for (int k = 1; k <= 6; k++) // point trail along the orbit
     {
       float a2 = it.ang - k * 0.12f;
       uint8_t g = (uint8_t)(40 * (1 - k / 7.0f));
@@ -1253,7 +1257,7 @@ static void animSolar(float t, float)
                          (int)(CY + sinf(a2) * it.a * RADIUS * SQ),
                          (int)(it.r * 0.28f), rgb565(g, g, g + 4));
     }
-    if (it.ring) // anneau incline de 0.5 rad, comme le JS
+    if (it.ring) // ring tilted by 0.5 rad, like the JS
     {
       solarEllipse(it.sx, it.sy, it.r * 1.75f, it.r * 0.62f, 0.5f,
                    rgb565(140, 131, 110));

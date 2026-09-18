@@ -37,7 +37,7 @@
   input::placeholder { color:#525b52; }
   input:focus, input.filled { border-color:#fbd975; }
   .hint { font-size:13px; line-height:1.55; color:#8f978f; margin:-14px 4px 24px; }
-  /* etape buddy */
+  /* buddy step */
   #prevWrap { display:flex; justify-content:center; margin-bottom:18px; }
   #prev { width:120px; height:120px; }
   input[type=range] { width:100%; height:26px; appearance:none;
@@ -150,10 +150,10 @@
 <script>
 let step = 0, ws = null, hue = 0, sat = 100, face = 0, custom = 0;
 
-// ---- mini rendus des 9 visages (approximation du rendu badge) ----
-// --- sphere du badge repliquee (dvdGenSprite du firmware) : palette
-// PAL_RAINBOW, blend gaussien, vibrance, grain — sprite maitre 112 px en
-// cache, redessine seulement quand teinte/saturation changent
+// ---- mini renders of the 9 faces (approximates the badge render) ----
+// --- badge sphere replicated (firmware dvdGenSprite): PAL_RAINBOW
+// palette, gaussian blend, vibrance, grain — 112 px master sprite kept in
+// cache, redrawn only when hue/saturation change
 const SPH_PAL = [[-0.65,-0.65,250,209,228],[-0.43,-0.65,248,229,157],[-0.22,-0.65,244,213,121],[0.00,-0.65,228,170,144],[0.22,-0.65,214,135,150],[0.43,-0.65,185,100,129],[-0.65,-0.43,251,225,208],[-0.43,-0.43,250,229,177],[-0.22,-0.43,236,197,99],[0.00,-0.43,217,160,69],[0.22,-0.43,202,140,54],[0.43,-0.43,166,99,48],[-0.65,-0.22,249,233,179],[-0.43,-0.22,245,219,152],[-0.22,-0.22,226,166,96],[0.00,-0.22,207,132,71],[0.22,-0.22,177,113,29],[0.43,-0.22,140,75,25],[-0.65,0.00,229,212,104],[-0.43,0.00,221,195,96],[-0.22,0.00,211,125,138],[0.00,0.00,187,86,127],[0.22,0.00,142,60,43],[0.43,0.00,109,41,46],[-0.65,0.22,206,194,82],[-0.43,0.22,190,178,80],[-0.22,0.22,186,110,159],[0.00,0.22,163,63,140],[0.22,0.22,120,39,85],[0.43,0.22,92,27,71],[-0.65,0.43,196,171,83],[-0.43,0.43,161,164,76],[-0.22,0.43,141,128,133],[0.00,0.43,135,53,139],[0.22,0.43,102,31,101],[0.43,0.43,97,30,107],[-0.65,0.65,178,99,142],[-0.43,0.65,133,136,66],[-0.22,0.65,100,113,121],[0.00,0.65,98,55,125],[0.22,0.65,103,35,117],[0.43,0.65,109,36,117],[0.850,0.000,93,95,61],[0.736,0.425,77,68,119],[0.425,0.736,117,40,132],[0.000,0.850,80,76,143],[-0.425,0.736,123,111,58],[-0.736,0.425,208,145,145],[-0.850,0.000,241,181,177],[-0.736,-0.425,251,214,202],[-0.425,-0.736,252,234,169],[0.000,-0.850,232,188,213],[0.425,-0.736,192,104,162],[0.736,-0.425,103,58,52],[-0.797,-0.460,250,204,211],[-0.920,0.000,240,166,218],[0.000,-0.920,233,188,223],[0.460,-0.797,184,97,168]];
 function sphRgb2hsl(r, g, b) {
   r /= 255; g /= 255; b /= 255;
@@ -223,11 +223,11 @@ function sphMaster(hu, sa) {
 }
 function drawFace(ctx, s, id, hu, sa) {
   ctx.clearRect(0, 0, s, s);
-  { const R = s*0.46; ctx.imageSmoothingEnabled = false; // pixels francs (badge)
+  { const R = s*0.46; ctx.imageSmoothingEnabled = false; // crisp pixels (badge)
     ctx.drawImage(sphMaster(hu, sa), s/2-R, s/2-R, R*2, R*2);
     ctx.imageSmoothingEnabled = true; }
-  // ---- visage : portage EXACT de avatarDrawFace (src/avatars.h), vue de
-  // face (cosT=1, openness=1) — memes cotes Figma, memes traits
+  // ---- face: EXACT port of avatarDrawFace (src/avatars.h), front view
+  // (cosT=1, openness=1) — same Figma dimensions, same strokes
   const fr = s * 0.46, cx = s / 2, cy = s / 2, ink = '#272727';
   ctx.fillStyle = ink; ctx.strokeStyle = ink;
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -258,7 +258,7 @@ function drawFace(ctx, s, id, hu, sa) {
       ctx.fill(); }
   };
   switch (id) {
-  case 0: { // museau (perso original) : path SVG du firmware (viewBox 71x73)
+  case 0: { // muzzle (original character): firmware SVG path (viewBox 71x73)
     eye(-0.381, -0.210, 0.099, 0.099); eye(0.381, -0.210, 0.099, 0.099);
     const [mx, scm] = P(0, 0.074), my = Y(0.074);
     const w = 0.316 * fr * scm, h = 0.342 * fr;
@@ -268,7 +268,7 @@ function drawFace(ctx, s, id, hu, sa) {
     ctx.stroke(new Path2D('M32.1099 34.3398C37.0394 44.1075 36.3352 71.3541 7.81445 65.1851'));
     ctx.stroke(new Path2D('M38.8256 34.3398C33.8961 44.1075 34.6003 71.3541 63.1211 65.1851'));
     ctx.restore(); break; }
-  case 1: { // rire : paths SVG Mouth_visage2.svg (73x59), comme le badge
+  case 1: { // laugh: SVG paths from Mouth_visage2.svg (73x59), as on badge
     eye(-0.465, -0.215, 0.095, 0.095); eye(0.465, -0.215, 0.095, 0.095);
     const [mx, scm] = P(0, 0.085), my = Y(0.085);
     const w = 0.485 * fr * scm, h = 0.392 * fr;
@@ -277,19 +277,19 @@ function drawFace(ctx, s, id, hu, sa) {
     ctx.fillStyle = '#fff';
     ctx.fill(new Path2D('M38.2526 56.2221C57.4991 54.998 65.3174 43.6002 66.9171 34.5579C44.6629 27.8063 18.5998 32.2446 7.56836 35.5361C11.2605 47.3106 19.006 57.4462 38.2526 56.2221Z'));
     ctx.restore(); ctx.fillStyle = ink; break; }
-  case 2: { // petit sourire fin
+  case 2: { // thin little smile
     eye(-0.431, -0.213, 0.084, 0.084); eye(0.431, -0.213, 0.084, 0.084);
     const [mx, scm] = P(0, -0.032), w = 0.380 * fr * scm;
     stroke(0, mx - w / 2, w, Y(-0.038) - 0.010 * fr, 0.025 * fr, 0.026 * fr); break; }
-  case 3: { // petite vague
+  case 3: { // small wave
     eye(-0.431, -0.194, 0.103, 0.103); eye(0.431, -0.194, 0.103, 0.103);
     const [mx, scm] = P(0, 0.035), w = 0.440 * fr * scm;
     stroke(1, mx - w / 2, w, Y(0.032), 0.018 * fr, 0.028 * fr); break; }
-  case 4: { // chat : yeux ovales + omega
+  case 4: { // cat: oval eyes + omega
     eye(-0.316, -0.204, 0.075, 0.094); eye(0.316, -0.204, 0.075, 0.094);
     const [mx, scm] = P(0, 0.150), w = 0.580 * fr * scm;
     stroke(2, mx - w / 2, w, Y(0.100), 0.105 * fr, 0.035 * fr); break; }
-  case 5: { // lunettes de soleil : bandeau + verres + rictus
+  case 5: { // sunglasses: bar + lenses + smirk
     const [exl, scl] = P(-0.200, -0.213), [exr, scr] = P(0.200, -0.213);
     const [mxx, scm] = P(0.184, 0.058);
     const barTop = Y(-0.297), barH = 0.065 * fr;
@@ -308,18 +308,18 @@ function drawFace(ctx, s, id, hu, sa) {
     }
     const w = 0.330 * fr * scm;
     stroke(4, mxx - w / 2, w, Y(0.058) + 0.045 * fr, 0.090 * fr, 0.030 * fr); break; }
-  case 6: { // grands yeux fermes ^^ + petit sourire
+  case 6: { // big closed eyes ^^ + little smile
     const [exl, scl] = P(-0.271, -0.184), [exr, scr] = P(0.271, -0.184);
     const aw = 0.297 * fr, amp = 0.050 * fr, base = Y(-0.159);
     stroke(3, exl - aw * scl / 2, aw * scl, base, amp, 0.030 * fr);
     stroke(3, exr - aw * scr / 2, aw * scr, base, amp, 0.030 * fr);
     const [mxx, scm] = P(0.090, 0.178), w = 0.323 * fr * scm;
     stroke(0, mxx - w / 2, w, Y(0.178) - 0.012 * fr, 0.043 * fr, 0.027 * fr); break; }
-  case 7: { // grande moustache ondulee
+  case 7: { // big wavy mustache
     eye(-0.342, -0.168, 0.084, 0.084); eye(0.342, -0.168, 0.084, 0.084);
     const [mx, scm] = P(0, 0.103), w = 0.826 * fr * scm;
     stroke(1, mx - w / 2, w, Y(0.103), 0.033 * fr, 0.035 * fr); break; }
-  case 8: { // yeux etoiles relies par une barre + petit sourire
+  case 8: { // star eyes joined by a bar + little smile
     const [exl, scl] = P(-0.248, -0.129), [exr, scr] = P(0.248, -0.129);
     const ey = Y(-0.129), R = 0.142 * fr;
     ctx.fillRect(exl, ey - 0.035 * fr, exr - exl, 0.070 * fr);
@@ -334,7 +334,7 @@ for (let i = 0; i < 9; i++) {
   const b = document.createElement('button');
   const c = document.createElement('canvas');
   const dprF = Math.min(3, window.devicePixelRatio || 1);
-  c.width = c.height = Math.round(64 * dprF); // taille CSS : width:100% (grille)
+  c.width = c.height = Math.round(64 * dprF); // CSS size: width:100% (grid)
   b.appendChild(c);
   b.onclick = () => { face = i; custom = 1; sync(); sendBuddy(); };
   faces.appendChild(b);
@@ -349,7 +349,7 @@ function sync() {
   document.getElementById('hue').value = hue;
   document.getElementById('sat').value = sat;
 }
-// bord jaune sur les champs remplis (comme la maquette)
+// yellow border on filled fields (as in the mockup)
 document.querySelectorAll('input[type=text],input[type=url]').forEach(i =>
   i.addEventListener('input', () => i.classList.toggle('filled', !!i.value)));
 
@@ -362,7 +362,7 @@ function showStep(n) {
   }
   document.getElementById('back').style.visibility = step ? 'visible' : 'hidden';
   document.getElementById('next').textContent = step === 3 ? 'DONE' : 'NEXT';
-  // le badge suit l'etape : a l'etape QR il affiche le QR code en direct
+  // the badge follows the step: on the QR step it shows the QR code live
   if (ws && ws.readyState === 1) ws.send('S' + step);
 }
 document.getElementById('back').onclick = () => showStep(step - 1);
@@ -371,11 +371,11 @@ document.getElementById('next').onclick = () => {
 };
 document.querySelectorAll('.dot').forEach(d => d.onclick = () => showStep(+d.dataset.s));
 
-// ---- etape photo : recadrage centre 360x360 cote telephone, envoi WS ----
+// ---- photo step: centered 360x360 crop on the phone side, WS upload ----
 const phPrev = document.getElementById('photoPrev'), phCtx = phPrev.getContext('2d');
 const phFile = document.getElementById('photoFile');
 const phBar = document.getElementById('photoBar');
-let phPixels = null;   // Uint16Array 360*360 (RGB565) prete a envoyer
+let phPixels = null;   // Uint16Array 360*360 (RGB565) ready to send
 let phSending = false, phOffset = 0, phOnDone = null;
 document.getElementById('photoPick').onclick = () => phFile.click();
 phFile.onchange = async () => {
@@ -404,12 +404,12 @@ document.getElementById('photoDel').onclick = () => {
   document.getElementById('photoDel').style.display = 'none';
   if (ws && ws.readyState === 1) ws.send('X');
 };
-const PH_CHUNK = 8192; // octets par trame, acquittee par PACK
+const PH_CHUNK = 8192; // bytes per frame, acknowledged by PACK
 function phSendStart() {
   if (!phPixels || !ws || ws.readyState !== 1 || phSending) return;
   phSending = true; phOffset = 0;
   phBar.style.display = 'block'; phBar.firstElementChild.style.width = '0';
-  ws.send('P' + (phPixels.length * 2)); // le badge repond PACK puis on enchaine
+  ws.send('P' + (phPixels.length * 2)); // badge replies PACK, then we continue
 }
 function phSendNext() {
   if (!phSending || !phPixels) return;
@@ -420,7 +420,7 @@ function phSendNext() {
   phOffset = end;
   phBar.firstElementChild.style.width = (phOffset * 100 / bytes.length) + '%';
 }
-function phWsMessage(txt) { // retours du badge pour l'upload
+function phWsMessage(txt) { // badge replies for the upload
   if (txt === 'PACK') { phSendNext(); return true; }
   if (txt === 'POK') {
     phSending = false;
@@ -438,10 +438,10 @@ function phWsMessage(txt) { // retours du badge pour l'upload
   return false;
 }
 
-// ---- liaison badge ----
+// ---- badge link ----
 function connect() {
   try { ws = new WebSocket('ws://' + location.hostname + ':81/'); }
-  catch (_) { return; } // hors badge (file://...) : la page reste utilisable
+  catch (_) { return; } // off-badge (file://...): the page stays usable
   ws.onopen = () => { document.getElementById('st').classList.add('ok');
                       ws.send('S' + step); };
   ws.onclose = () => { document.getElementById('st').classList.remove('ok');
@@ -492,7 +492,7 @@ document.getElementById('msg').oninput = (e) => {
 };
 document.getElementById('url').oninput = (e) => {
   const v = e.target.value.trim();
-  // URL incomplete -> le badge montre un QR "en construction"
+  // incomplete URL -> the badge shows an "under construction" QR
   if (v.length >= 4 && v.includes('.'))
     debounced('u', 500, () => send('U' + v));
   else if (ws && ws.readyState === 1)

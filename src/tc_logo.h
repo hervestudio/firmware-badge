@@ -1,6 +1,6 @@
-// Logo THREE CONF .JS (TC_LOGO de screen-anims.js) : grille 185x80,
-// 1 char par pixel : 0=fond, 1=rose, 2=jaune, 3=blanc
-// Sous-titre : "PARIS 2026" (remplace CONFERENCE, revue Romain 2026-08-17)
+// THREE CONF .JS logo (TC_LOGO from screen-anims.js): 185x80 grid,
+// 1 char per pixel: 0=background, 1=pink, 2=yellow, 3=white
+// Subtitle: "PARIS 2026" (replaces CONFERENCE, review 2026-08-17 (Romain))
 #pragma once
 #define TC_W 185
 #define TC_H 80

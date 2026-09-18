@@ -1,6 +1,6 @@
-// Harnais de test desktop pour les animations badge (snake + disco).
-// Le bloc "PORT" est ecrit contre l'API Arduino_GFX (canvas->...) pour etre
-// copie tel quel dans main.cpp ensuite.
+// Desktop test harness for the badge animations (snake + disco).
+// The "PORT" block is written against the Arduino_GFX API (canvas->...)
+// so it can later be copied as-is into main.cpp.
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -31,7 +31,7 @@ struct Canvas
 {
   uint16_t fb[W * H];
   uint16_t *getFramebuffer() { return fb; }
-  // --- moteur texte : meme police 5x7 que le firmware (glcdfont Adafruit) ---
+  // --- text engine: same 5x7 font as the firmware (Adafruit glcdfont) ---
   int tcx = 0, tcy = 0, tsz = 1;
   uint16_t tcol = 0xFFFF;
   void setCursor(int x, int y) { tcx = x; tcy = y; }
@@ -178,7 +178,7 @@ static float frand(float lo, float hi)
 #define RGB565_BLACK 0
 
 // =====================================================================
-// ==== PORT BEGIN (code destine a etre copie dans main.cpp) ===========
+// ==== PORT BEGIN (code meant to be copied into main.cpp) =============
 // =====================================================================
 
 static inline uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b)
@@ -206,15 +206,15 @@ static uint16_t hsv2rgb565(uint8_t h, uint8_t s, uint8_t v)
   return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
 }
 
-#include "../../src/avatars.h" // 40 avatars (table + visage) — avant anims_extra.h
+#include "../../src/avatars.h" // 40 avatars (table + face) -- before anims_extra.h
 
-// ---- Texture de sphere "rainbow" : blend gaussien des points colores de
-// PAL_RAINBOW (screen-anims.js), vibrance + grain, pre-calculee au boot. ----
+// ---- "Rainbow" sphere texture: Gaussian blend of the colored points of
+// PAL_RAINBOW (screen-anims.js), vibrance + grain, precomputed at boot. ----
 
-#define SPR 112 // taille du sprite (le plus gros usage : tete du snake, 108 px)
+#define SPR 112 // sprite size (largest use: snake head, 108 px)
 static uint16_t *ballSprite = nullptr;
 
-// {px, py, r, g, b} — points de couleur sur le disque unite
+// {px, py, r, g, b} -- color points on the unit disk
 static const float PAL_RAINBOW[][5] = {
     {-0.65, -0.65, 250, 209, 228}, {-0.43, -0.65, 248, 229, 157}, {-0.22, -0.65, 244, 213, 121},
     {0.00, -0.65, 228, 170, 144}, {0.22, -0.65, 214, 135, 150}, {0.43, -0.65, 185, 100, 129},
@@ -240,11 +240,11 @@ static const float PAL_RAINBOW[][5] = {
 
 static void initBallSprite()
 {
-  if (!ballSprite) // regenerable au changement d'avatar (g_ballDirty)
+  if (!ballSprite) // regenerable on avatar change (g_ballDirty)
     ballSprite = (uint16_t *)malloc(SPR * SPR * sizeof(uint16_t));
-  // couleurs transformees par l'avatar actif / le buddy custom (meme
-  // transformation que la sphere idle) : le snake, la palette rainbow de la
-  // DVD et Sphere Run suivent la couleur configuree du badge
+  // colors transformed by the active avatar / custom buddy (same
+  // transformation as the idle sphere): the snake, the DVD rainbow
+  // palette and Sphere Run follow the badge's configured color
   const AvatarDef &avB = g_buddyCustom ? g_buddyCustomDef : AVATARS[g_avatarIdx];
   float PC[PAL_N][3];
   for (unsigned k = 0; k < PAL_N; k++)
@@ -268,7 +268,7 @@ static void initBallSprite()
   const float sigma = 0.16f, sigma2 = 2 * sigma * sigma;
   const float satBoost = 1.75f, lumBoost = 1.12f, grainAmp = 40.0f;
   const float r = SPR / 2.0f - 1;
-  // visibilite des points (rotation 0) : sqrt(max(0, nz))
+  // point visibility (rotation 0): sqrt(max(0, nz))
   float vis[PAL_N];
   for (unsigned k = 0; k < PAL_N; k++)
   {
@@ -281,7 +281,7 @@ static void initBallSprite()
       float nx = (x - SPR / 2.0f) / r, ny = (y - SPR / 2.0f) / r;
       if (nx * nx + ny * ny > 1.0f)
       {
-        ballSprite[y * SPR + x] = 0; // hors disque (jamais lu au blit)
+        ballSprite[y * SPR + x] = 0; // outside the disk (never read at blit)
         continue;
       }
       float tw = 0, pr = 0, pg = 0, pb = 0;
@@ -314,7 +314,7 @@ static void initBallSprite()
     }
 }
 
-// Blit du sprite de sphere, redimensionne au rayon r (nearest, masque disque)
+// Blit of the sphere sprite, resized to radius r (nearest, disk mask)
 static void drawBallSprite(int16_t cx, int16_t cy, float rf)
 {
   int r = (int)rf;
@@ -337,8 +337,8 @@ static void drawBallSprite(int16_t cx, int16_t cy, float rf)
   }
 }
 
-// ---- Bouche SVG du mascotte (MOUTH_SVG de screen-anims.js), rasterisee au
-// boot dans un masque, puis blittee a l'echelle. ----
+// ---- The mascot's SVG mouth (MOUTH_SVG from screen-anims.js),
+// rasterized at boot into a mask, then blitted to scale. ----
 
 #define MOUTH_MW 142 // 71 x 2
 #define MOUTH_MH 146 // 73 x 2
@@ -365,7 +365,7 @@ static void initMouthMask()
 {
   mouthMask = (uint8_t *)calloc(MOUTH_MW * MOUTH_MH, 1);
   const float SC = 2.0f; // viewBox 71x73 -> 142x146
-  // Contour du path rempli, tessellation des 4 cubiques + segments
+  // Outline of the filled path, tessellating the 4 cubics + segments
   float poly[200][2];
   int np = 0;
   const int SEG = 24;
@@ -406,7 +406,7 @@ static void initMouthMask()
     poly[np][0] = x * SC;
     poly[np++][1] = y * SC;
   }
-  // Remplissage scanline pair-impair
+  // Even-odd scanline fill
   for (int yy = 0; yy < MOUTH_MH; yy++)
   {
     float fy = yy + 0.5f;
@@ -431,8 +431,8 @@ static void initMouthMask()
         if (xx >= 0 && xx < MOUTH_MW)
           mouthMask[yy * MOUTH_MW + xx] = 1;
   }
-  // Les deux "virgules" : cubiques tracees en cercles epais (stroke 12.29, round cap)
-  const float SW = 12.2881f * SC / 2; // rayon du trait
+  // The two "commas": cubics traced as thick circles (stroke 12.29, round cap)
+  const float SW = 12.2881f * SC / 2; // stroke radius
   for (int i = 0; i <= 32; i++)
   {
     float s = (float)i / 32;
@@ -443,18 +443,18 @@ static void initMouthMask()
   }
 }
 
-// Blit de la bouche : masque redimensionne (nearest), couleur unie
+// Mouth blit: resized mask (nearest), solid color
 
-// ---- Bouche du visage "rire" (AF_RIRE) : masque 0/1/2 (transparent/encre/
-// blanc) tessele depuis l'export SVG Mouth_visage2.svg (viewBox 73x59,
-// reference Romain 2026-09-07) — meme technique que le museau.
+// ---- Mouth of the "laugh" face (AF_RIRE): 0/1/2 mask (transparent/ink/
+// white) tessellated from the SVG export Mouth_visage2.svg (viewBox 73x59,
+// reference 2026-09-07 (Romain)) -- same technique as the muzzle.
 #define LAUGH_MW 146 // 73 x 2
 #define LAUGH_MH 118 // 59 x 2
 static uint8_t *laughMask = nullptr;
 
 static void laughFillPath(const float *pts, int ncub, uint8_t val)
 {
-  // pts : x0,y0 puis ncub cubiques (c1x,c1y,c2x,c2y,px,py), contour ferme
+  // pts: x0,y0 then ncub cubics (c1x,c1y,c2x,c2y,px,py), closed outline
   const float SC = 2.0f;
   float poly[220][2];
   int np = 0;
@@ -519,7 +519,7 @@ static void initLaughMask()
   laughFillPath(WHITE, 3, 2);
 }
 
-// Blit du rire : masque redimensionne (nearest), encre + blanc
+// Laugh blit: resized mask (nearest), ink + white
 static void drawLaughImg(float cx, float cy, float wpx, float hpx, uint16_t ink)
 {
   int iw = (int)wpx, ih = (int)hpx;
@@ -527,7 +527,7 @@ static void drawLaughImg(float cx, float cy, float wpx, float hpx, uint16_t ink)
     return;
   int x0 = (int)(cx - iw / 2.0f), y0 = (int)(cy - ih / 2.0f);
   uint16_t wht = rgb565(255, 255, 255);
-  // surechantillonnage 2x2 du masque -> couverture encre/blanc, melange AA
+  // 2x2 supersampling of the mask -> ink/white coverage, AA blend
   for (int yy = 0; yy < ih; yy++)
   {
     int mya = (yy * 2) * LAUGH_MH / (ih * 2);
@@ -558,7 +558,7 @@ static void drawMouth(float cx, float cy, float wpx, float hpx, uint16_t ink)
   if (iw < 2 || ih < 2)
     return;
   int x0 = (int)(cx - iw / 2.0f), y0 = (int)(cy - ih / 2.0f);
-  // surechantillonnage 2x2 -> couverture, melange AA (voir avBlend)
+  // 2x2 supersampling -> coverage, AA blend (see avBlend)
   for (int yy = 0; yy < ih; yy++)
   {
     int mya = (yy * 2) * MOUTH_MH / (ih * 2);
@@ -575,19 +575,19 @@ static void drawMouth(float cx, float cy, float wpx, float hpx, uint16_t ink)
   }
 }
 
-// museau du perso original (visage AF_MUSEAU), rendu par la plateforme
+// original character's muzzle (AF_MUSEAU face), rendered by the platform
 static void avatarPlatformMouth(float mx, float my, float mw, float mh, uint16_t ink)
 {
   drawMouth(mx, my, mw, mh, ink);
 }
-// bouche du visage "rire" (masque SVG noir + blanc)
+// mouth of the "laugh" face (black + white SVG mask)
 static void avatarPlatformLaugh(float mx, float my, float mw, float mh, uint16_t ink)
 {
   drawLaughImg(mx, my, mw, mh, ink);
 }
 
-// ---- Etat "idle" du visage : regard vagabond + clignements (port de
-// getIdleState / pickNewLookTarget / drawFaceElements de screen-anims.js) ----
+// ---- "Idle" face state: wandering gaze + blinks (port of
+// getIdleState / pickNewLookTarget / drawFaceElements from screen-anims.js) ----
 
 static struct
 {
@@ -621,7 +621,7 @@ static void pickNewLookTarget(float *tx, float *ty)
   }
 }
 
-// Renvoie lookX, lookY [-1..1] et openness [0..1]
+// Returns lookX, lookY [-1..1] and openness [0..1]
 static void getIdle(float t, float *lookX, float *lookY, float *openness)
 {
   if (t >= idleSt.lookHold)
@@ -652,7 +652,7 @@ static void getIdle(float t, float *lookX, float *lookY, float *openness)
   if (idleSt.blinkStart >= 0)
   {
     float bt = (t - idleSt.blinkStart) / idleSt.blinkDur;
-    if (bt >= 1 || bt < 0) // bt < 0 : le temps local est reparti en arriere
+    if (bt >= 1 || bt < 0) // bt < 0: local time jumped backwards
     {
       idleSt.blinkStart = -1;
       idleSt.nextBlink = t + (frand(0, 1) < 0.25f ? 0.15f : 1.8f + frand(0, 3.5f));
@@ -662,22 +662,22 @@ static void getIdle(float t, float *lookX, float *lookY, float *openness)
   }
 }
 
-// reaction sociale (social_ui.h, inclus par emu.cpp) : remplace le visage
-// pendant les 5 s d'une rencontre entre badges
+// social reaction (social_ui.h, included by emu.cpp): replaces the face
+// during the 5 s of a badge-to-badge encounter
 static bool socialExprFace(float cx, float cy, float fr);
 
-// Visage anime projete sur une sphere de rayon fr centree (cx, cy) :
-// yeux ronds qui suivent le regard (squish lateral), clignement, bouche SVG.
+// Animated face projected onto a sphere of radius fr centered (cx, cy):
+// round eyes following the gaze (lateral squish), blink, SVG mouth.
 static void drawIdleFaceLook(float cx, float cy, float fr, float t,
                              float lookX, float lookY, float openness)
 {
   if (socialExprFace(cx, cy, fr))
-    return; // expression Happy/Wow/Love a la place du visage normal
+    return; // Happy/Wow/Love expression instead of the normal face
   uint16_t ink = rgb565(39, 39, 39); // #272727
   float breathe = sinf(t * 1.8f) * 0.5f;
   float theta = lookX * 30.0f * PI / 180.0f;
-  // visage de l'avatar affiche (9 designs Figma) : projection et rendu
-  // entierement dans avatars.h (partage firmware/emulateur)
+  // face of the displayed avatar (9 Figma designs): projection and
+  // rendering entirely in avatars.h (shared firmware/emulator)
   avatarDrawFace(cx, cy, fr, breathe, lookY * fr * 0.18f, cosf(theta),
                  sinf(theta), openness, ink);
   avatarDrawExtras(cx, cy, fr, breathe);
@@ -690,7 +690,7 @@ static void drawIdleFace(float cx, float cy, float fr, float t)
   drawIdleFaceLook(cx, cy, fr, t, lookX, lookY, openness);
 }
 
-// ------------------------------------------------- snake (trail de spheres)
+// ------------------------------------------------- snake (trail of spheres)
 
 #define SNAKE_N 13
 #define TRAIL_MAX 160
@@ -703,7 +703,7 @@ static int snakeTrailLen = 0;
 static float snakeX, snakeY, snakeAngle;
 static bool snakeInit = false;
 
-// Visage simple du snake (yeux + sourire quadratique, port fidele de drawSnake)
+// Simple snake face (eyes + quadratic smile, faithful port of drawSnake)
 static void drawSnakeFace(float cx, float cy, float r, float t)
 {
   uint16_t ink = rgb565(39, 39, 39);
@@ -724,7 +724,7 @@ static void drawSnakeFace(float cx, float cy, float r, float t)
 
 static void animSnake(float t, float dt)
 {
-  if (g_ballDirty) // avatar/buddy change : re-teinte le sprite de boule
+  if (g_ballDirty) // avatar/buddy changed: re-tint the ball sprite
   {
     g_ballDirty = false;
     initBallSprite();
@@ -800,9 +800,9 @@ static void animSnake(float t, float dt)
     float sr = headR * (1.0f - 0.25f * i / (SNAKE_N - 1));
     drawBallSprite((int16_t)pts[i].x, (int16_t)pts[i].y, sr);
   }
-  // le visage regarde dans la direction du deplacement (angle lisse pour
-  // que le rebond sur les bords ne fasse pas claquer le regard) ; le
-  // clignement vient toujours de getIdle
+  // the face looks in the direction of movement (smoothed angle so
+  // that bounces off the edges do not snap the gaze); blinking still
+  // comes from getIdle
   {
     static float lkx = 0, lky = 0;
     float tx = cosf(snakeAngle), ty = sinf(snakeAngle) * 0.7f;
@@ -814,7 +814,7 @@ static void animSnake(float t, float dt)
   }
 }
 
-// ------------------------------------------------- disco (boule a facettes)
+// ---------------------------------------------------- disco (mirror ball)
 
 static const uint8_t DISCO_PALS[5][3] = {
     {158, 197, 240}, {255, 167, 254}, {255, 203, 138}, {159, 146, 243}, {128, 219, 188}};
@@ -828,10 +828,10 @@ static void animDisco(float t)
 
   canvas->fillScreen(rgb565(8, 6, 16)); // #080610
 
-  // halo discret derriere la boule (avant les lumieres pour ne pas les couvrir)
+  // subtle halo behind the ball (before the lights so it does not hide them)
   canvas->fillCircle(CX, CY, (int16_t)(Rb * 1.12f), rgb565(20, 22, 42));
 
-  // points de lumiere colores qui balayent le fond (scintillants)
+  // colored light dots sweeping the background (twinkling)
   for (int i = 0; i < 42; i++)
   {
     float a = i * 2.39996f + t * 0.35f;
@@ -847,7 +847,7 @@ static void animDisco(float t)
     canvas->fillRect(x - s / 2, y - s / 2, s, s, hsv2rgb565(hue, 200, val));
   }
 
-  // facettes : grille lat/long projetee, hemisphere avant uniquement
+  // facets: projected lat/long grid, front hemisphere only
   for (int i = 0; i < NLAT; i++)
   {
     float f0 = -PI / 2 + (float)i / NLAT * PI;
@@ -892,7 +892,7 @@ static void animDisco(float t)
     }
   }
 
-  // visage anime du perso, face camera, a l'echelle de la boule
+  // animated character face, camera-facing, scaled to the ball
   drawIdleFace(CX, CY, Rb, t);
 }
 
@@ -900,9 +900,9 @@ static void animDisco(float t)
 // ==== PORT END =======================================================
 // =====================================================================
 
-// Nouvelles anims partagees telles quelles avec le firmware
+// New anims shared as-is with the firmware
 #include "anims_extra.h"
-// (tama.h arrive via games.h dans l'emulateur)
+// (tama.h comes in via games.h in the emulator)
 
 static void savePPM(const char *path)
 {
@@ -918,4 +918,4 @@ static void savePPM(const char *path)
   fclose(f);
 }
 
-// (main du harnais retire — voir emu.cpp)
+// (harness main removed -- see emu.cpp)
