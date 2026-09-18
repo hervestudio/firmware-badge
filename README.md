@@ -6,7 +6,7 @@ by the speakers: round TFT screen, games, animations, badge-to-badge encounters
 over ESP-NOW radio, and full configuration from the attendee's phone.
 
 **Try it in your browser** — the real firmware compiled to WebAssembly:
-**https://romainherve.github.io/firmware-badge/**
+**https://hervestudio.github.io/firmware-badge/**
 
 ![Badge render](tools/emulator/badge3d.webp)
 
